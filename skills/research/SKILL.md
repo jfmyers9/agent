@@ -2,15 +2,20 @@
 name: research
 description: >
   Research topics, investigate codebases, and create
-  implementation plans.
+  implementation plans. Two-phase output: spec (what) then
+  plan (how), each with user approval.
   Triggers: 'research', 'investigate', 'explore'.
 allowed-tools: Bash, Read, Write, Task, SendMessage, TaskCreate, TaskUpdate, TaskGet, TaskList, TeamCreate, TeamDelete
-argument-hint: "<topic or question> | <task-id> | --continue | --discard | --team | --depth <medium|high|max>"
+argument-hint: "<topic or question> | <task-id> | --continue | --discard | --team | --depth <medium|high|max> | --auto"
 ---
 
 # Research
 
-Orchestrate research via native tasks and Task delegation.
+Research -> spec -> approve -> plan -> approve. **Never research
+on main thread** — subagents do all codebase exploration.
+
+Two-phase output: **spec** (what) then **plan** (how). Each gets
+user approval before proceeding.
 
 ## Arguments
 
@@ -28,6 +33,8 @@ Orchestrate research via native tasks and Task delegation.
   - `max` — exhaustive: all touched modules, full call chains,
     full dependency graph, annotated snippets, cross-reference
     matrix, 7+ phases with sub-steps and verification criteria
+- `--auto` — skip approval gates (for inner-skill calls like
+  /vibe). Speed over polish.
 
 ## Plan Directory
 
@@ -54,124 +61,167 @@ max 50 chars truncated on word boundary.
 topic: <original topic text>
 project: <absolute path to current working directory>
 created: <ISO 8601 timestamp>
-status: draft | prepared
+status: draft | spec_review | spec_approved | plan_review | approved
 depth: <medium|high|max>
 ---
 
-<full research findings in standard structure>
+## Spec
+
+<spec content — timeless target-state description>
+
+## Plan
+
+<phased implementation plan>
 ```
 
 ## Workflow
 
 ### New Research
 
-1. Create task:
+1. **Create task:**
    ```
    TaskCreate(
      subject: "Research: <topic>",
-     description: "## Acceptance Criteria\n- Findings written to ~/.claude/plans/<project>/<slug>.md\n- Structured as Current State, Recommendation, and phased Next Steps\n- Each phase is independently actionable",
+     description: "## Acceptance Criteria\n- Spec and plan written to ~/.claude/plans/<project>/<slug>.md\n- Spec: timeless target-state (Problem, Recommendation, Architecture, Risks)\n- Plan: phased Next Steps with file paths and done signals",
      activeForm: "Researching <topic>",
      metadata: { type: "task", priority: 2 }
    )
    ```
-2. `TaskUpdate(taskId, status: "in_progress")`
-3. Parse flags and classify topics from $ARGUMENTS:
-   - Extract `--depth <level>` if present (medium|high|max,
-     default: medium). Error if value is not one of the three.
-   - Extract `--team` flag if present.
-   - Strip extracted flags from $ARGUMENTS; remainder is topic text.
-   - Classify remaining topic text to determine mode:
-     - Numbered list items (`1.` / `2.` / `-` / `*`) → extract
-       each as a topic
-     - Comma-separated phrases with "and" → split on commas
-     - Multiple sentences ending in `?` → each is a topic
+   `TaskUpdate(taskId, status: "in_progress")`
 
-   If 2+ topics detected OR `--team` flag → **Team Mode** (step 4b)
-   Otherwise → **Solo Mode** (step 4a)
+2. **Parse flags** and classify topics from $ARGUMENTS:
+   - Extract `--depth <level>` if present (default: medium).
+   - Extract `--team` and `--auto` flags if present.
+   - Strip flags; remainder is topic text.
+   - Classify topic text to determine mode:
+     - Numbered list items / bullet points -> extract each
+     - Comma-separated phrases with "and" -> split on commas
+     - Multiple sentences ending in `?` -> each is a topic
 
-4. Spawn research agent(s).
+   If 2+ topics detected OR `--team` flag -> **Team Mode** (step 3b)
+   Otherwise -> **Solo Mode** (step 3a)
 
-   **a) Solo Mode** — spawn a single Task (subagent_type=Explore,
+3. **Spawn research agent(s).**
+
+   **a) Solo Mode** — spawn Task (subagent_type=Explore,
    model=opus) using the solo prompt template below.
 
-   **b) Team Mode** — create a Claude team for coordinated
-   parallel research.
+   **b) Team Mode** — see Team Mode section below.
 
-   1. Create team: `TeamCreate(team_name="research-<slug>")`
-      Read team config:
-      `~/.claude/teams/research-<slug>/config.json`
-      → extract your `name` field as `<lead-name>`
-   2. Create per-topic tasks under the main research task.
-      Cap at 5 topics; group excess together.
-      ```
-      TaskCreate(
-        subject: "Research: <topic-N>",
-        description: "<topic text>",
-        activeForm: "Researching <topic-N>",
-        metadata: { type: "task", parent_id: "<main-task-id>" }
-      )
-      ```
-   3. Spawn ALL workers in a SINGLE message using the team
-      worker prompt template below. One Task call per topic:
-      ```
-      Task(
-        subagent_type="general-purpose",
-        team_name="research-<slug>",
-        name="researcher-<N>",
-        model=opus,
-        prompt=<team worker prompt>
-      )
-      ```
-      CRITICAL: All Task calls in ONE message for true
-      parallelism.
-   4. Wait for completion — track `completed_count` from
-      worker SendMessage notifications. When all done →
-      proceed to aggregation. If a worker goes idle without
-      completing → check TaskList, mark stuck tasks, proceed
-      when all non-stuck workers done.
-   5. Aggregate findings (see Team Mode Aggregation below).
-   6. Cleanup: `SendMessage(type="shutdown_request")` to each
-      worker. After all acknowledge → `TeamDelete`.
+4. **Validate research:** spot-check architectural claims before
+   proceeding — wrong architecture = wrong plan.
+   - File/behavioral claims: check every odd-numbered claim
+     (1st, 3rd, 5th...), minimum 3.
+   - Each check: Grep or Read a few lines — do NOT read entire
+     files.
+   - Failed check -> dispatch follow-up subagent to correct.
 
-5. Store findings:
-   a. Write plan file:
-      `Write("~/.claude/plans/<project>/<slug>.md",
-        <frontmatter + findings>)`
-   b. Store in task:
-      `TaskUpdate(taskId, metadata: {
-        design: "<findings>", plan_file: "<slug>.md",
-        depth: "<level>" })`
-   For Team Mode, run aggregation before storing.
+### Spec Phase (what we're building)
 
-6. Report results (see Output Format)
+5. **Synthesize spec** from validated research. The spec is a
+   **timeless target-state document** — it describes the system
+   as if already built. After implementation, it should still
+   read as a valid specification.
+
+   - **Problem**: what's broken or missing (the only section that
+     may describe current state).
+   - **Recommendation**: target behavior in present tense,
+     strategy-level. "Webhook delivery uses exponential backoff
+     via BullMQ" — not "Add exponential backoff." No transition
+     verbs (add, replace, migrate, move, change).
+   - **Architecture Context**: the code landscape
+     post-implementation. Describe by module role and pattern,
+     not file path. Paths may appear parenthetically.
+   - **Risks**: edge cases, failure modes, constraints
+
+   The spec excludes implementation details: phases, task
+   breakdowns, files to create/modify. Those belong to the plan.
+
+6. **Store spec:**
+   - Write plan file with spec content, `status: spec_review`
+   - `TaskUpdate(taskId, metadata: { spec: "<spec content>",
+     plan_file: "<slug>.md", depth: "<level>",
+     status_detail: "spec_review" })`
+
+7. **Present spec** — `Spec: t<id> — <topic>`, then Problem,
+   Recommendation, Architecture Context, Risks.
+   If `--auto` -> skip to step 9. Otherwise -> stop for review.
+
+8. **Spec refinement** — if user gives feedback:
+   - **Minor (no new research needed):** revise from stored
+     research + feedback. Update metadata.spec and plan file.
+   - **Major (unexplored code or new approach):** dispatch
+     follow-up subagent with current spec as context. Merge
+     findings. Update metadata.spec and plan file.
+   - Re-present spec. Repeat until approved.
+
+9. **Approve spec:**
+   `TaskUpdate(taskId, metadata: { status_detail: "spec_approved" })`
+   Update plan file status to `spec_approved`.
+
+### Plan Phase (how we're building it)
+
+10. **Generate plan** from approved spec + research findings:
+    - Per phase: title, files (Read/Modify/Create), approach, steps
+    - Dependencies between phases
+    - Every step must include file paths — /implement depends on them
+
+11. **Store plan:**
+    - Update plan file with plan content, `status: plan_review`
+    - `TaskUpdate(taskId, metadata: { design: "<plan content>",
+      status_detail: "plan_review" })`
+
+    metadata.design must be self-contained — full phased breakdown
+    with file paths, approaches. /implement reads this without
+    conversation context.
+
+12. **Present plan** — `Plan: t<id> — <topic>`, then phased
+    approach, dependencies, `Next: /implement`.
+    If `--auto` -> skip to step 14. Otherwise -> stop for review.
+
+13. **Plan refinement** — if user gives feedback:
+    - **Minor:** revise from stored plan + feedback. Update
+      metadata.design and plan file.
+    - **Major (new codebase data):** dispatch follow-up subagent
+      with metadata.design as prior findings. Merge. Update.
+    - **Spec affected?** If feedback changes WHAT (scope, goals,
+      risks) — not just HOW — update metadata.spec too.
+    - Re-present plan. Repeat until approved.
+
+14. **Approve and finalize:**
+    - Update plan file status to `approved`.
+    - `TaskUpdate(taskId, metadata: { status_detail: "approved" })`
+    - Archive previous plan for this project if one exists:
+      `mv ~/.claude/plans/<project>/archive/<old>.md ...` (skip if
+      none)
+    - Report: plan file path, `Next: /implement`
 
 ### Continue Research
 
 1. Resolve source:
-   - If `$ARGUMENTS` matches a task ID → `TaskGet(taskId)`
-   - If `--continue` → `TaskList()`, find first in_progress
+   - If `$ARGUMENTS` matches a task ID -> `TaskGet(taskId)`
+   - If `--continue` -> `TaskList()`, find first in_progress
      "Research:" task. If none found, find most recent plan file
      in `~/.claude/plans/<project>/` via
      `ls -t ~/.claude/plans/<project>/*.md | head -1`
    - If no active plan found, check archive:
      `ls -t ~/.claude/plans/<project>/archive/*.md | head -1`
-     If found, copy it back to active:
-     `cp ~/.claude/plans/<project>/archive/<file> ~/.claude/plans/<project>/`
+     If found, copy it back to active.
      Report: "Restored archived plan: `<filename>`"
+
 2. Load existing context:
-   - From task: read `metadata.design` and `metadata.depth`
-   - From plan file: `Read` the file content, extract `depth`
-     from frontmatter (skip rest of frontmatter)
+   - From task: read `metadata.spec`, `metadata.design`,
+     `metadata.depth`, `metadata.status_detail`
+   - From plan file: `Read` the file, extract frontmatter fields
    - If user provides `--depth` flag, use it (override).
-     Otherwise use the stored depth (default: medium).
-3. Spawn Explore agent with previous findings prepended:
-   "Previous findings:\n<existing-design>\n\n
-   <inject the depth block for the resolved depth level>\n\n
-   Continue the research focusing on: <new-instructions>"
-4. Update both stores:
-   a. `Write` updated findings to plan file
-   b. `TaskUpdate(taskId, metadata: { design: "<updated>" })`
-5. Report results
+
+3. Route by status_detail:
+   - `approved` -> already approved. Report and suggest `/implement`.
+   - `spec_review` / `spec_approved` -> re-present spec, resume
+     from step 7 or 10 respectively.
+   - `plan_review` -> re-present plan, resume from step 12.
+   - No status / `draft` -> dispatch subagent with previous
+     findings prepended, resume from step 4.
 
 ### Discard Plan
 
@@ -180,10 +230,65 @@ depth: <medium|high|max>
 2. If slug provided after `--discard`:
    - Delete `~/.claude/plans/<project>/<slug>.md` (try
      with/without .md extension, partial glob match)
-3. If no slug → delete most recent:
+3. If no slug -> delete most recent:
    `ls -t ~/.claude/plans/<project>/*.md | head -1`
    Then delete it.
 4. Report: "Discarded plan: `<filename>`"
+
+## Team Mode
+
+When 2+ topics detected or `--team` flag:
+
+1. Create team: `TeamCreate(team_name="research-<slug>")`
+   Read team config:
+   `~/.claude/teams/research-<slug>/config.json`
+   -> extract your `name` field as `<lead-name>`
+2. Create per-topic tasks under the main research task.
+   Cap at 5 topics; group excess together.
+   ```
+   TaskCreate(
+     subject: "Research: <topic-N>",
+     description: "<topic text>",
+     activeForm: "Researching <topic-N>",
+     metadata: { type: "task", parent_id: "<main-task-id>" }
+   )
+   ```
+3. Spawn ALL workers in a SINGLE message using the team
+   worker prompt template below. One Task call per topic:
+   ```
+   Task(
+     subagent_type="general-purpose",
+     team_name="research-<slug>",
+     name="researcher-<N>",
+     model=opus,
+     prompt=<team worker prompt>
+   )
+   ```
+   CRITICAL: All Task calls in ONE message for true parallelism.
+4. Wait for completion — track `completed_count` from worker
+   SendMessage notifications. When all done -> proceed. If a
+   worker goes idle without completing -> check TaskList, mark
+   stuck tasks, proceed when all non-stuck workers done.
+5. Aggregate findings (see Team Mode Aggregation).
+6. Cleanup: `SendMessage(type="shutdown_request")` to each
+   worker. After all acknowledge -> `TeamDelete`.
+7. Proceed to step 4 (validate research) in main workflow.
+
+### Team Mode Aggregation
+
+After all workers complete, collect findings from each worker's
+task metadata:
+
+For each topic task: `TaskGet(taskId)` -> extract `metadata.notes`
+
+Then combine:
+1. Prefix each topic's findings with **Topic N: <name>**
+2. Detect cross-topic connections (shared files, dependencies,
+   conflicts)
+3. Renumber phases globally across all topics (Phase 1-N
+   sequential) so /implement can parse them
+4. If cross-topic connections found, add a **Cross-Topic
+   Connections** section at the top
 
 ## Prompt Templates
 
@@ -304,34 +409,30 @@ Produce 7+ phases in Next Steps with sub-steps and explicit
 verification criteria per phase.
 ```
 
-## Team Mode Aggregation
-
-After all workers send completion messages (or stuck detection
-fires), collect findings from each worker's task metadata:
-
-For each topic task: `TaskGet(taskId)` → extract `metadata.notes`
-
-Then combine:
-
-1. Prefix each topic's findings with **Topic N: <name>**
-2. Detect cross-topic connections (shared files, dependencies,
-   conflicts)
-3. Renumber phases globally across all topics (Phase 1-N
-   sequential) so /implement can parse them
-4. If cross-topic connections found, add a **Cross-Topic
-   Connections** section at the top
-
 ## Output Format
 
-**Research Task**: #<id>
+### Spec Output (step 7)
 
-**Key Findings**:
-- Bullet points of critical discoveries
+**Spec: t<id> — <topic>**
 
-**Recommendation**: <one paragraph>
+**Problem**: <what's broken or missing>
 
-**Plan**: `~/.claude/plans/<project>/<slug>.md` — review/edit in `$EDITOR`
-before `/implement`.
+**Recommendation**: <target behavior, present tense>
 
-**Next**: `/implement` to create tasks, edit the plan file first,
+**Architecture Context**: <post-implementation landscape>
+
+**Risks**: <edge cases, failure modes>
+
+Next: approve to proceed to plan, or give feedback.
+
+### Plan Output (step 12)
+
+**Plan: t<id> — <topic>**
+
+<Phased approach — per phase: title, files, approach>
+
+**Plan**: `~/.claude/plans/<project>/<slug>.md` — review/edit
+in `$EDITOR` before `/implement`.
+
+**Next**: `/implement` to execute, edit the plan file first,
 or `/research --discard` if not needed.
