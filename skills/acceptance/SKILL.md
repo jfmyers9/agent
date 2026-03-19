@@ -136,6 +136,14 @@ Collect both agent results. Apply verdict rules:
 | All PASS + any Breaker HIGH | **PARTIAL** |
 | All PASS + no Breaker HIGH | **PASS** |
 
+After computing the verdict, detect consensus findings:
+
+- For each Verifier criterion rated PARTIAL or FAIL, check if the
+  Breaker flagged the same area as HIGH or MEDIUM severity
+- If both independently flagged the same area → tag as
+  **Consensus Finding** (highest-confidence issues)
+- Collect all consensus findings for the report (may be empty)
+
 ### Step 5: Report and Act
 
 Display verdict with summary table:
@@ -146,6 +154,13 @@ Display verdict with summary table:
 | Criterion | Verifier | Breaker Flags |
 |---|---|---|
 | <criterion> | PASS/PARTIAL/FAIL | HIGH/MEDIUM/LOW or — |
+
+### Consensus Findings
+(only include if overlap detected)
+
+| Criterion | Verifier Verdict | Breaker Severity | Notes |
+|---|---|---|---|
+| <criterion> | PARTIAL/FAIL | HIGH/MEDIUM | <brief description> |
 
 ### Verifier Details
 <structured per-criterion results>

@@ -80,15 +80,42 @@ Plans live at `~/.claude/plans/<project>/review-<slug>.md`.
       ```
       Apply Large Diff Handling when gathering context.
 
+   a2. **Detect primary language** from changed file extensions:
+       - `.go` → go
+       - `.ts`, `.tsx` → typescript
+       - `.py` → python
+       - `.rs` → rust
+       Count files per language. If a recognized language has the
+       most changed files → set `$LANG` to it. If no recognized
+       language dominates or all files are config/docs → `$LANG`
+       is empty (skip language reviewer).
+
+   a3. **Detect plan file** for design coherence review:
+       Compute `<branch-slug>` from `$REVIEW_BRANCH` (lowercase,
+       replace non-alnum with hyphens, strip trailing hyphens).
+       Compute `<project>` same as Plan Directory section.
+       ```
+       plan_file=$(ls ~/.claude/plans/<project>/*<branch-slug>*.md 2>/dev/null | head -1)
+       if [ -z "$plan_file" ]; then
+         plan_file=$(ls ~/.claude/plans/<project>/archive/*<branch-slug>*.md 2>/dev/null | head -1)
+       fi
+       ```
+       If `$plan_file` is found, extract the `## Spec` section
+       content (everything from `## Spec` to the next `## ` heading
+       or end of file) → store as `$SPEC_CONTENT`. If no `## Spec`
+       section exists in the file, treat as no plan found.
+       Set `$HAS_PLAN` = true if spec content was extracted,
+       false otherwise.
+
    b. Create team:
       `TeamCreate(team_name="review-<branch-slug>")`
       Read team config:
       `~/.claude/teams/review-<branch-slug>/config.json`
       → extract your `name` field as `<lead-name>`
 
-   c. Spawn ALL FOUR workers in ONE message.
-      CRITICAL: All 4 Task calls MUST be in the SAME response.
-      Sequential spawning causes 4x slower execution.
+   c. Spawn all core workers in ONE message.
+      CRITICAL: All Task calls MUST be in the SAME response.
+      Sequential spawning causes slower execution.
       Workers inherit the lead's worktree cwd (created in
       step 2). Review is read-only so shared access is safe.
       Do NOT set isolation="worktree" on workers.
@@ -109,16 +136,28 @@ Plans live at `~/.claude/plans/<project>/review-<slug>.md`.
            team_name="review-<branch-slug>",
            name="operations", model=opus,
            prompt=<Operations Prompt + Team Protocol>)
+      # If $LANG is set, include language reviewer in same message:
+      Task(subagent_type="general-purpose",
+           team_name="review-<branch-slug>",
+           name="lang-<$LANG>", model=opus,
+           prompt=<Language Reviewer Prompt ($LANG) + Team Protocol>)
+      # If $HAS_PLAN is true, include coherence reviewer in same message:
+      Task(subagent_type="general-purpose",
+           team_name="review-<branch-slug>",
+           name="coherence", model=opus,
+           prompt=<Coherence Prompt ($SPEC_CONTENT) + Team Protocol>)
       ```
       Inject `<lead-name>` and gathered context into each
-      prompt's placeholders.
+      prompt's placeholders. Worker count is 4 + 1 if `$LANG`
+      is set + 1 if `$HAS_PLAN` is true (4, 5, or 6 workers).
 
    d. Wait for completion — track `completed_count` from
-      worker SendMessage notifications. When all 4 done →
-      aggregate. If a worker goes idle without completing →
-      check TaskList, proceed when all non-stuck done. Tag
-      partial results: "Note: <perspective> did not return
-      results."
+      worker SendMessage notifications. Expected count is
+      4 + 1 if language + 1 if coherence (4, 5, or 6).
+      When all expected workers done → aggregate. If a worker
+      goes idle without completing → check TaskList, proceed
+      when all non-stuck done. Tag partial results: "Note:
+      <perspective> did not return results."
       If 2+ workers fail → aggregate available results, note
       which perspectives did not return findings, then clean up:
       `SendMessage(type="shutdown_request")` to each worker,
@@ -171,9 +210,11 @@ Plans live at `~/.claude/plans/<project>/review-<slug>.md`.
    git fetch origin $REVIEW_BRANCH
    git checkout $REVIEW_BRANCH || git checkout -b $REVIEW_BRANCH origin/$REVIEW_BRANCH
    ```
-4. Re-spawn in Perspective Mode: 4 workers, each with "Previous
-   team review findings:\n<design>\n\nContinue reviewing from
-   the <perspective> perspective..."
+4. Re-spawn in Perspective Mode: 4 core workers + language
+   reviewer if `$LANG` detected + coherence reviewer if
+   `$HAS_PLAN` (same as step 6), each with
+   "Previous team review findings:\n<design>\n\nContinue
+   reviewing from the <perspective> perspective..."
 5. Aggregate new findings with previous (re-run Perspective
    Aggregation)
 6. Cleanup: `SendMessage(type="shutdown_request")` to each
@@ -258,6 +299,20 @@ Review each file strictly through an architectural lens:
 - **Simpler alternatives**: Could the same goal be achieved with
   less complexity? Any unnecessary indirection?
 
+## Shared Concerns
+
+Flag these cross-cutting issues through your architectural lens —
+tag each `[shared:<category>]`:
+
+- **Error handling** `[shared:error-handling]`: boundary violations,
+  error propagation across module/service boundaries
+- **Data flow** `[shared:data-flow]`: coupling introduced by data
+  paths, boundary-crossing data dependencies
+- **State mutation** `[shared:state-mutation]`: encapsulation
+  violations, unclear ownership of mutable state
+- **Interface boundaries** `[shared:interface-boundaries]`: contract
+  clarity, abstraction leaks, versioning implications
+
 Return COMPLETE findings as text (do NOT write files). Structure
 findings as phases for downstream task creation:
 
@@ -273,7 +328,8 @@ findings as phases for downstream task creation:
 Only include phases that have findings. Skip empty phases.
 For each finding include: file, line(s), what's wrong, suggested fix.
 Stay in your lane: don't flag code-level style, security specifics,
-or pre-existing design flaws in unchanged code.
+or pre-existing design flaws in unchanged code — except for shared
+concerns tagged `[shared:<category>]`.
 ```
 
 #### Code Quality
@@ -320,6 +376,20 @@ Review each file strictly through a code quality lens:
 - **Best practices**: Any anti-patterns, deprecated APIs, or
   known footguns in the language/framework?
 
+## Shared Concerns
+
+Flag these cross-cutting issues through your code quality lens —
+tag each `[shared:<category>]`:
+
+- **Error handling** `[shared:error-handling]`: readability of error
+  paths, clarity of error messages and context
+- **Data flow** `[shared:data-flow]`: clarity of data
+  transformations, naming consistency across the flow
+- **State mutation** `[shared:state-mutation]`: predictability of
+  mutations, hidden side effects
+- **Interface boundaries** `[shared:interface-boundaries]`: API
+  ergonomics, discoverability, self-documenting signatures
+
 Return COMPLETE findings as text (do NOT write files). Structure
 findings as phases for downstream task creation:
 
@@ -335,7 +405,8 @@ findings as phases for downstream task creation:
 Only include phases that have findings. Skip empty phases.
 For each finding include: file, line(s), what's wrong, suggested fix.
 Stay in your lane: don't flag architecture, security threat modeling,
-or pre-existing quality issues in unchanged code.
+or pre-existing quality issues in unchanged code — except for shared
+concerns tagged `[shared:<category>]`.
 ```
 
 #### Devil's Advocate
@@ -389,6 +460,20 @@ Review each file by trying to break it:
   evolves? Any implicit coupling to current behavior that will
   silently break?
 
+## Shared Concerns
+
+Flag these cross-cutting issues through your adversarial lens —
+tag each `[shared:<category>]`:
+
+- **Error handling** `[shared:error-handling]`: information leakage
+  in errors, security-sensitive failure paths
+- **Data flow** `[shared:data-flow]`: injection vectors along data
+  paths, missing validation at trust boundaries
+- **State mutation** `[shared:state-mutation]`: race conditions,
+  atomicity gaps, exploitable state transitions
+- **Interface boundaries** `[shared:interface-boundaries]`: abuse
+  surface area, input validation gaps at boundaries
+
 Return COMPLETE findings as text (do NOT write files). Structure
 findings as phases for downstream task creation:
 
@@ -405,7 +490,8 @@ numbered list>
 Only include phases that have findings. Skip empty phases.
 For each finding include: file, line(s), what's wrong, suggested fix.
 Stay in your lane: don't flag code style, architecture patterns,
-or pre-existing vulnerabilities in unchanged code.
+or pre-existing vulnerabilities in unchanged code — except for
+shared concerns tagged `[shared:<category>]`.
 ```
 
 #### Operations
@@ -453,6 +539,20 @@ Review each file through an operational lens:
   on-call engineer diagnose it from logs and metrics without
   reading the source?
 
+## Shared Concerns
+
+Flag these cross-cutting issues through your operational lens —
+tag each `[shared:<category>]`:
+
+- **Error handling** `[shared:error-handling]`: debuggability of
+  errors, alerting coverage, log context sufficiency
+- **Data flow** `[shared:data-flow]`: observability of data paths,
+  tracing across service boundaries
+- **State mutation** `[shared:state-mutation]`: recovery/rollback
+  safety, state corruption blast radius
+- **Interface boundaries** `[shared:interface-boundaries]`: version
+  compatibility monitoring, deployment-safe contract changes
+
 Return COMPLETE findings as text (do NOT write files). Structure
 findings as phases for downstream task creation:
 
@@ -470,7 +570,158 @@ numbered list>
 Only include phases that have findings. Skip empty phases.
 For each finding include: file, line(s), what's wrong, suggested fix.
 Stay in your lane: don't flag code style, architecture patterns,
-security specifics, or pre-existing ops gaps in unchanged code.
+security specifics, or pre-existing ops gaps in unchanged code —
+except for shared concerns tagged `[shared:<category>]`.
+```
+
+#### Design Coherence
+
+Only spawned when `$HAS_PLAN` is true (plan file with `## Spec`
+section found for this branch).
+
+```
+You are a senior engineer verifying that an implementation matches
+its design specification. You compare the spec (what was planned)
+against the diff (what was built) to catch drift, omissions, and
+mismatches.
+
+You characteristically read the spec as a contract: every API
+signature, component, data flow, and invariant described in the
+spec is a promise that the implementation must keep.
+
+## Spec
+
+<$SPEC_CONTENT>
+
+## Branch
+<branch-name>
+
+## Commits
+<git log main..HEAD --format="%h %s">
+
+## Changed Files
+<file list>
+
+## Diffs
+<git diff main...HEAD for each file>
+
+Review the diff against the spec:
+- **API signatures**: Do implemented function/method signatures
+  match what the spec defines? Parameters, return types, names?
+- **Component completeness**: Is every component/module/endpoint
+  specified in the spec actually implemented in the diff?
+- **Data flows**: Do data transformations and pipeline stages
+  match the architecture described in the spec?
+- **Invariants**: Are constraints, validation rules, and
+  guarantees from the spec maintained in the implementation?
+
+## Don't Flag
+- Minor implementation details not mentioned in the spec
+- Ordering differences that don't affect behavior
+- Code-level style choices (naming conventions, formatting)
+- Extra functionality beyond the spec (additions are fine)
+
+Return COMPLETE findings as text (do NOT write files). Structure:
+
+**Phase 1: Critical Issues**
+<spec violations that break the design contract — numbered list>
+
+**Phase 2: Design Improvements**
+<drift from spec that should be reconciled — numbered list>
+
+**Phase 3: Testing Gaps**
+<spec guarantees lacking test coverage — numbered list>
+
+Only include phases that have findings. Skip empty phases.
+For each finding: file, line(s), spec section violated, what
+diverges, suggested fix.
+Stay in your lane: ONLY flag spec-vs-implementation coherence.
+Do not flag architecture, security, operations, code style, or
+language idioms — those are covered by other reviewers.
+```
+
+#### Language Reviewer
+
+Only spawned when `$LANG` is set. Use the matching block below.
+
+```
+You are a senior <$LANG> engineer with deep expertise in idiomatic
+patterns and common pitfalls specific to the language ecosystem.
+
+## Language Focus
+
+{{if $LANG == "go"}}
+- **Error handling**: check `err != nil` consistently, no silently
+  ignored errors, wrap with context via `fmt.Errorf("...: %w", err)`
+- **Goroutine leaks**: ensure goroutines have cancellation paths,
+  no unbounded spawns without context/done channels
+- **Interface bloat**: interfaces should be small and consumer-defined,
+  flag interfaces with 5+ methods or defined by the implementer
+- **Context propagation**: `context.Context` passed as first arg,
+  no `context.Background()` in library code, respect cancellation
+{{else if $LANG == "typescript"}}
+- **Type safety**: flag `any` usage, prefer unknown + narrowing,
+  ensure generics are constrained, no unnecessary type assertions
+- **Async/await**: no floating promises (missing await), proper
+  error handling in async paths, no mixing callbacks and promises
+- **Null/undefined handling**: use optional chaining and nullish
+  coalescing, flag non-null assertions (`!`) without justification
+- **Import cycles**: flag circular dependencies between modules
+{{else if $LANG == "python"}}
+- **Type hints**: consistency of annotations across function
+  signatures, use of `Optional` / `Union` / modern `X | Y` syntax
+- **Exception handling**: no bare `except:`, catch specific
+  exceptions, preserve exception chains with `from`
+- **Import structure**: stdlib → third-party → local ordering,
+  no circular imports, no star imports
+- **Context managers**: resources (files, connections, locks) must
+  use `with` statements, flag manual open/close patterns
+{{else if $LANG == "rust"}}
+- **Ownership patterns**: unnecessary clones, borrowing where
+  ownership isn't needed, overly complex lifetime annotations
+- **Unsafe blocks**: each `unsafe` must have a `// SAFETY:` comment
+  justifying soundness, minimize unsafe surface area
+- **Error propagation**: prefer `?` over `.unwrap()` / `.expect()`
+  in library code, use thiserror/anyhow appropriately
+- **Lifetime clarity**: flag elided lifetimes that obscure intent,
+  ensure lifetime names are descriptive in complex signatures
+{{endif}}
+
+## Scope
+Focus on the INTRODUCED code (the diff). Only flag pre-existing
+language issues if the new code directly depends on them.
+
+## Branch
+<branch-name>
+
+## Commits
+<git log main..HEAD --format="%h %s">
+
+## Changed Files
+<file list>
+
+## Diffs
+<git diff main...HEAD for each file>
+
+Review each file strictly through a <$LANG> idiom lens using the
+focus areas above.
+
+Return COMPLETE findings as text (do NOT write files). Structure:
+
+**Phase 1: Critical Issues**
+<language-specific bugs or anti-patterns that will cause problems>
+
+**Phase 2: Design Improvements**
+<idiomatic improvements, better patterns>
+
+**Phase 3: Testing Gaps**
+<language-specific test patterns missing>
+
+Only include phases that have findings. Skip empty phases.
+For each finding: file, line(s), what's wrong, idiomatic fix.
+Stay in your lane: ONLY flag language-specific idiom issues. Do not
+flag architecture, security, operations, or shared concerns — those
+are covered by other reviewers.
 ```
 
 #### Team Worker Protocol
@@ -500,7 +751,8 @@ Append this to each perspective prompt:
 
 ## Perspective Aggregation
 
-After all workers report (or 3 of 4 if one failed), merge:
+After all expected workers report (or all-minus-1 if one failed),
+merge:
 
 ### Step 1: Concatenate with source headers
 
@@ -516,7 +768,23 @@ After all workers report (or 3 of 4 if one failed), merge:
 
 --- OPERATIONS ---
 <operations findings>
+
+# Only if coherence reviewer was spawned:
+--- DESIGN COHERENCE ---
+<coherence findings>
+
+# Only if language reviewer was spawned:
+--- LANGUAGE (<$LANG>) ---
+<language reviewer findings>
 ```
+
+### Step 1.5: Group shared-concern findings
+
+Collect all `[shared:<category>]`-tagged findings across
+perspectives. Group by category + file. For each group, synthesize
+into one multi-angle finding that captures each perspective's take.
+Remove the individual `[shared:*]` findings from the
+per-perspective sections to avoid duplication in Step 3.
 
 ### Step 2: Scan for consensus
 
@@ -532,6 +800,10 @@ all agreeing sources: `[architect, code-quality]`.
 - **Code Quality**: <1-2 sentence overall assessment>
 - **Devil's Advocate**: <1-2 sentence overall assessment>
 - **Operations**: <1-2 sentence overall assessment>
+# Only if coherence reviewer was spawned:
+- **Design Coherence**: <1-2 sentence overall assessment>
+# Only if language reviewer was spawned:
+- **Language (<$LANG>)**: <1-2 sentence overall assessment>
 
 **Consensus** (2+ perspectives agree)
 - Finding [perspective-a, perspective-b]
@@ -539,6 +811,15 @@ all agreeing sources: `[architect, code-quality]`.
 **Perspective Disagreements**
 - <file:line> — <perspective-a> flags <issue> but <perspective-b>
   considers it acceptable because <reason>
+
+**Shared Concern Findings**
+- <file:line> `[shared:<category>]` — synthesized finding combining
+  perspectives: <perspective-a> flags <angle>, <perspective-b>
+  flags <angle>
+
+# Only if coherence reviewer was spawned:
+**Design Coherence**
+- <spec violation or drift finding> [coherence]
 
 **Phase 1: Critical Issues**
 - Finding [source-perspective]
@@ -554,9 +835,12 @@ Reviewer Summaries first (one sentence per persona capturing
 their overall take). Then consensus items. Then disagreements —
 when one persona flags something as critical but another's
 "Don't flag" list covers it, surface the tension rather than
-silently dropping. Remove consensus/disagreement items from
-Phase sections to avoid duplication. Skip empty sections. Most
-impactful first.
+silently dropping. Then shared concern findings (synthesized in
+Step 1.5). Then Design Coherence (if coherence reviewer was
+spawned) — spec-vs-implementation findings before the per-phase
+breakdown. Remove consensus/disagreement/shared-concern items
+from Phase sections to avoid duplication. Skip empty sections.
+Most impactful first.
 
 ## Output Format
 

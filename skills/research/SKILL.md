@@ -137,17 +137,55 @@ depth: <medium|high|max>
    The spec excludes implementation details: phases, task
    breakdowns, files to create/modify. Those belong to the plan.
 
-6. **Store spec:**
+6. **Simplify + challenge spec** — two parallel quality gates
+   before storing.
+
+   **Simplification** (conditional): fires when spec has >5 bullet
+   points in Recommendation OR >3 subsections in Architecture
+   Context. Spawn Task (subagent_type=Explore, model=opus):
+   ```
+   Review this spec for over-specification. Flag:
+   - Recommendations that solve unstated problems
+   - Architecture components that can be merged
+   - Speculative flexibility not required by the problem
+
+   Spec:
+   <spec content>
+
+   Return specific simplifications, or "No simplifications needed".
+   ```
+
+   **Devil's advocate** (always): fires on every spec. Spawn Task
+   (subagent_type=Explore, model=opus):
+   ```
+   Challenge this spec's assumptions:
+   - Is the problem real and worth solving?
+   - Is the scope right, or is it solving too much / too little?
+   - What's the simplest version that addresses the core problem?
+
+   Spec:
+   <spec content>
+
+   Return 1-3 challenges, or "Spec is sound".
+   ```
+
+   If both fire, spawn BOTH in a single message for parallelism.
+   Apply accepted simplifications to the spec. Carry challenges
+   forward to step 8 (spec presentation).
+
+7. **Store spec:**
    - Write plan file with spec content, `status: spec_review`
    - `TaskUpdate(taskId, metadata: { spec: "<spec content>",
      plan_file: "<slug>.md", depth: "<level>",
      status_detail: "spec_review" })`
 
-7. **Present spec** — `Spec: t<id> — <topic>`, then Problem,
-   Recommendation, Architecture Context, Risks.
-   If `--auto` -> skip to step 9. Otherwise -> stop for review.
+8. **Present spec** — `Spec: t<id> — <topic>`, then Problem,
+   Recommendation, Architecture Context, Risks, Challenges.
+   Include the devil's advocate challenges from step 6 in a
+   **Challenges** section after Risks.
+   If `--auto` -> skip to step 10. Otherwise -> stop for review.
 
-8. **Spec refinement** — if user gives feedback:
+9. **Spec refinement** — if user gives feedback:
    - **Minor (no new research needed):** revise from stored
      research + feedback. Update metadata.spec and plan file.
    - **Major (unexplored code or new approach):** dispatch
@@ -155,18 +193,18 @@ depth: <medium|high|max>
      findings. Update metadata.spec and plan file.
    - Re-present spec. Repeat until approved.
 
-9. **Approve spec:**
+10. **Approve spec:**
    `TaskUpdate(taskId, metadata: { status_detail: "spec_approved" })`
    Update plan file status to `spec_approved`.
 
 ### Plan Phase (how we're building it)
 
-10. **Generate plan** from approved spec + research findings:
+11. **Generate plan** from approved spec + research findings:
     - Per phase: title, files (Read/Modify/Create), approach, steps
     - Dependencies between phases
     - Every step must include file paths — /implement depends on them
 
-11. **Store plan:**
+12. **Store plan:**
     - Update plan file with plan content, `status: plan_review`
     - `TaskUpdate(taskId, metadata: { design: "<plan content>",
       status_detail: "plan_review" })`
@@ -175,11 +213,11 @@ depth: <medium|high|max>
     with file paths, approaches. /implement reads this without
     conversation context.
 
-12. **Present plan** — `Plan: t<id> — <topic>`, then phased
+13. **Present plan** — `Plan: t<id> — <topic>`, then phased
     approach, dependencies, `Next: /implement`.
-    If `--auto` -> skip to step 14. Otherwise -> stop for review.
+    If `--auto` -> skip to step 15. Otherwise -> stop for review.
 
-13. **Plan refinement** — if user gives feedback:
+14. **Plan refinement** — if user gives feedback:
     - **Minor:** revise from stored plan + feedback. Update
       metadata.design and plan file.
     - **Major (new codebase data):** dispatch follow-up subagent
@@ -188,7 +226,7 @@ depth: <medium|high|max>
       risks) — not just HOW — update metadata.spec too.
     - Re-present plan. Repeat until approved.
 
-14. **Approve and finalize:**
+15. **Approve and finalize:**
     - Update plan file status to `approved`.
     - `TaskUpdate(taskId, metadata: { status_detail: "approved" })`
     - Archive previous plan for this project if one exists:
@@ -218,8 +256,8 @@ depth: <medium|high|max>
 3. Route by status_detail:
    - `approved` -> already approved. Report and suggest `/implement`.
    - `spec_review` / `spec_approved` -> re-present spec, resume
-     from step 7 or 10 respectively.
-   - `plan_review` -> re-present plan, resume from step 12.
+     from step 8 or 11 respectively.
+   - `plan_review` -> re-present plan, resume from step 13.
    - No status / `draft` -> dispatch subagent with previous
      findings prepended, resume from step 4.
 
@@ -411,7 +449,7 @@ verification criteria per phase.
 
 ## Output Format
 
-### Spec Output (step 7)
+### Spec Output (step 8)
 
 **Spec: t<id> — <topic>**
 
@@ -423,9 +461,11 @@ verification criteria per phase.
 
 **Risks**: <edge cases, failure modes>
 
+**Challenges**: <devil's advocate challenges from step 6, if any>
+
 Next: approve to proceed to plan, or give feedback.
 
-### Plan Output (step 12)
+### Plan Output (step 13)
 
 **Plan: t<id> — <topic>**
 
