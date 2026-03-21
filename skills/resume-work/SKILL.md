@@ -83,9 +83,9 @@ Fetch task, team, and plan state:
 - `TaskList()` for in_progress/pending tasks
 - Read `~/.claude/teams/*/config.json` for active teams
 - Determine `<project>`: `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
-- `ls -t ~/.claude/plans/<project>/*.md 2>/dev/null | head -5`
+- `ls -t ~/workspace/blueprints/<project>/*.md 2>/dev/null | head -5`
   for pending plan files
-- `ls -t ~/.claude/plans/<project>/archive/*.md 2>/dev/null | head -5`
+- `ls -t ~/workspace/blueprints/<project>/archive/*.md 2>/dev/null | head -5`
   for archived (previously prepared) plans
 
 ### 3. Summarize

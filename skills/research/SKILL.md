@@ -39,13 +39,13 @@ user approval before proceeding.
 ## Plan Directory
 
 Plans are scoped by project to avoid collisions across repos:
-`~/.claude/plans/<project>/` where `<project>` is the `basename`
+`~/workspace/blueprints/<project>/` where `<project>` is the `basename`
 of the git root directory (or cwd if not in a repo).
 
 Archived plans (consumed by `/implement`) live in the `archive/`
 subdirectory and can be restored via `--continue`.
 
-Create the directory on first write: `mkdir -p ~/.claude/plans/<project>/`
+Create the directory on first write: `mkdir -p ~/workspace/blueprints/<project>/`
 
 ## Slug Generation
 
@@ -82,7 +82,7 @@ depth: <medium|high|max>
    ```
    TaskCreate(
      subject: "Research: <topic>",
-     description: "## Acceptance Criteria\n- Spec and plan written to ~/.claude/plans/<project>/<slug>.md\n- Spec: timeless target-state (Problem, Recommendation, Architecture, Risks)\n- Plan: phased Next Steps with file paths and done signals",
+     description: "## Acceptance Criteria\n- Spec and plan written to ~/workspace/blueprints/<project>/<slug>.md\n- Spec: timeless target-state (Problem, Recommendation, Architecture, Risks)\n- Plan: phased Next Steps with file paths and done signals",
      activeForm: "Researching <topic>",
      metadata: { type: "task", priority: 2 }
    )
@@ -230,7 +230,7 @@ depth: <medium|high|max>
     - Update plan file status to `approved`.
     - `TaskUpdate(taskId, metadata: { status_detail: "approved" })`
     - Archive previous plan for this project if one exists:
-      `mv ~/.claude/plans/<project>/archive/<old>.md ...` (skip if
+      `mv ~/workspace/blueprints/<project>/archive/<old>.md ...` (skip if
       none)
     - Report: plan file path, `Next: /implement`
 
@@ -240,10 +240,10 @@ depth: <medium|high|max>
    - If `$ARGUMENTS` matches a task ID -> `TaskGet(taskId)`
    - If `--continue` -> `TaskList()`, find first in_progress
      "Research:" task. If none found, find most recent plan file
-     in `~/.claude/plans/<project>/` via
-     `ls -t ~/.claude/plans/<project>/*.md | head -1`
+     in `~/workspace/blueprints/<project>/` via
+     `ls -t ~/workspace/blueprints/<project>/*.md | head -1`
    - If no active plan found, check archive:
-     `ls -t ~/.claude/plans/<project>/archive/*.md | head -1`
+     `ls -t ~/workspace/blueprints/<project>/archive/*.md | head -1`
      If found, copy it back to active.
      Report: "Restored archived plan: `<filename>`"
 
@@ -266,10 +266,10 @@ depth: <medium|high|max>
 1. Determine `<project>`:
    `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
 2. If slug provided after `--discard`:
-   - Delete `~/.claude/plans/<project>/<slug>.md` (try
+   - Delete `~/workspace/blueprints/<project>/<slug>.md` (try
      with/without .md extension, partial glob match)
 3. If no slug -> delete most recent:
-   `ls -t ~/.claude/plans/<project>/*.md | head -1`
+   `ls -t ~/workspace/blueprints/<project>/*.md | head -1`
    Then delete it.
 4. Report: "Discarded plan: `<filename>`"
 
@@ -471,7 +471,7 @@ Next: approve to proceed to plan, or give feedback.
 
 <Phased approach — per phase: title, files, approach>
 
-**Plan**: `~/.claude/plans/<project>/<slug>.md` — review/edit
+**Plan**: `~/workspace/blueprints/<project>/<slug>.md` — review/edit
 in `$EDITOR` before `/implement`.
 
 **Next**: `/implement` to execute, edit the plan file first,

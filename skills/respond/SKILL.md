@@ -15,7 +15,7 @@ Triage PR review feedback and recommend actions.
 
 `<project>` = `basename` of git root (or cwd if not in a repo).
 Determine via: `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
-Plans live at `~/.claude/plans/<project>/respond-pr-<number>.md`.
+Plans live at `~/workspace/blueprints/<project>/respond-pr-<number>.md`.
 
 ## Arguments
 
@@ -107,7 +107,7 @@ Plans live at `~/.claude/plans/<project>/respond-pr-<number>.md`.
    - PR reply drafts → notes: TaskUpdate(taskId, metadata: {notes: "<replies>"})
    - Write plan file (after finalization, not first pass):
      ```
-     Write("~/.claude/plans/<project>/respond-pr-<number>.md", <frontmatter + phased findings>)
+     Write("~/workspace/blueprints/<project>/respond-pr-<number>.md", <frontmatter + phased findings>)
      ```
      Frontmatter:
      ```yaml
@@ -268,7 +268,7 @@ then `/respond --continue` to finalize for `/implement`.
 
 **Finalized**: N items to action, N replies drafted
 
-**Plan**: `~/.claude/plans/<project>/respond-pr-<N>.md` — review/edit
+**Plan**: `~/workspace/blueprints/<project>/respond-pr-<N>.md` — review/edit
 in `$EDITOR` before `/implement`.
 
 **Next**: `/implement` to create tasks, or edit the plan file first.

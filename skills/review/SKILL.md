@@ -15,7 +15,7 @@ Orchestrate code review via tasks and Task delegation.
 
 `<project>` = `basename` of git root (or cwd if not in a repo).
 Determine via: `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
-Plans live at `~/.claude/plans/<project>/review-<slug>.md`.
+Plans live at `~/workspace/blueprints/<project>/review-<slug>.md`.
 
 ## Arguments
 
@@ -102,9 +102,9 @@ Plans live at `~/.claude/plans/<project>/review-<slug>.md`.
        replace non-alnum with hyphens, strip trailing hyphens).
        Compute `<project>` same as Plan Directory section.
        ```
-       plan_file=$(ls ~/.claude/plans/<project>/*<branch-slug>*.md 2>/dev/null | head -1)
+       plan_file=$(ls ~/workspace/blueprints/<project>/*<branch-slug>*.md 2>/dev/null | head -1)
        if [ -z "$plan_file" ]; then
-         plan_file=$(ls ~/.claude/plans/<project>/archive/*<branch-slug>*.md 2>/dev/null | head -1)
+         plan_file=$(ls ~/workspace/blueprints/<project>/archive/*<branch-slug>*.md 2>/dev/null | head -1)
        fi
        ```
        If `$plan_file` is found, extract the `## Spec` section
@@ -181,7 +181,7 @@ Plans live at `~/.claude/plans/<project>/review-<slug>.md`.
       (lowercase, strip filler words, replace non-alnum
       with hyphens, max 50 chars)
    b. Write plan file:
-      `Write("~/.claude/plans/<project>/review-<slug>.md",
+      `Write("~/workspace/blueprints/<project>/review-<slug>.md",
         <frontmatter + findings>)`
       Frontmatter:
       ```yaml
@@ -934,7 +934,7 @@ Most impactful first.
 **Consensus Findings** (flagged by multiple perspectives):
 - <count> consensus findings
 
-**Plan**: `~/.claude/plans/<project>/review-<slug>.md` —
+**Plan**: `~/workspace/blueprints/<project>/review-<slug>.md` —
 review/edit in `$EDITOR` before `/implement`.
 
 **Next**: `/implement` to create tasks, or edit the plan first.

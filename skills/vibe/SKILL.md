@@ -99,8 +99,8 @@ If on a non-main branch already, skip and report:
 Skill("research", args="<prompt>")
 ```
 
-**Verify**: Plan file exists in `~/.claude/plans/<project>/`.
-Check via `ls -t ~/.claude/plans/<project>/*.md | head -1`.
+**Verify**: Plan file exists in `~/workspace/blueprints/<project>/`.
+Check via `ls -t ~/workspace/blueprints/<project>/*.md | head -1`.
 **Update**: `TaskUpdate(trackerId, metadata: { vibe_stage: "research" })`
 **Report**: `[2/4] Researched: plan at <path>`
 

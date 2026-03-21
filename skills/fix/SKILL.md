@@ -15,7 +15,7 @@ Convert user feedback into structured tasks.
 
 `<project>` = `basename` of git root (or cwd if not in a repo).
 Determine via: `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
-Plans live at `~/.claude/plans/<project>/fix-<slug>.md`.
+Plans live at `~/workspace/blueprints/<project>/fix-<slug>.md`.
 
 ## Arguments
 
@@ -65,7 +65,7 @@ a. Generate a kebab-case slug from the feedback summary (lowercase,
    strip filler words, replace non-alnum with hyphens, max 50 chars)
 b. Write plan file:
    ```
-   Write("~/.claude/plans/<project>/fix-<slug>.md", <frontmatter + findings>)
+   Write("~/workspace/blueprints/<project>/fix-<slug>.md", <frontmatter + findings>)
    ```
    Frontmatter:
    ```yaml
@@ -109,7 +109,7 @@ Output format:
 
 **Findings**: N items (X bugs, Y tasks, Z features)
 
-**Plan**: `~/.claude/plans/<project>/fix-<slug>.md` — review/edit in
+**Plan**: `~/workspace/blueprints/<project>/fix-<slug>.md` — review/edit in
 `$EDITOR` before `/implement`.
 
 **Next**: `/implement` to create tasks, or edit the plan file first.

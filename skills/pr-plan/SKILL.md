@@ -26,8 +26,8 @@ a phased plan compatible with `/implement`.
 Determine via:
 `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
 
-Plans live at `~/.claude/plans/<project>/pr-plan-<number>.md`.
-Create on first write: `mkdir -p ~/.claude/plans/<project>/`
+Plans live at `~/workspace/blueprints/<project>/pr-plan-<number>.md`.
+Create on first write: `mkdir -p ~/workspace/blueprints/<project>/`
 
 ## Workflow
 
@@ -107,7 +107,7 @@ Create on first write: `mkdir -p ~/.claude/plans/<project>/`
    TaskCreate(
      subject: "PR Plan: #<PR_NUM>",
      description: "Triage PR comments and research implementation
-       plan. Findings → ~/.claude/plans/<project>/pr-plan-<N>.md",
+       plan. Findings → ~/workspace/blueprints/<project>/pr-plan-<N>.md",
      activeForm: "Planning PR #<PR_NUM> feedback",
      metadata: { type: "task", priority: 2 }
    )
@@ -251,7 +251,7 @@ Each phase independently testable. 3-7 phases max.
 
 **Phases**: <count> implementation phases
 
-**Plan**: `~/.claude/plans/<project>/pr-plan-<N>.md`
+**Plan**: `~/workspace/blueprints/<project>/pr-plan-<N>.md`
 Review/edit in `$EDITOR` before `/implement`.
 
 **Replies**: `TaskGet(<id>)` → check `notes` field for draft
