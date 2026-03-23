@@ -38,14 +38,9 @@ user approval before proceeding.
 
 ## Plan Directory
 
-Plans are scoped by project to avoid collisions across repos:
-`~/workspace/blueprints/<project>/` where `<project>` is the `basename`
-of the git root directory (or cwd if not in a repo).
-
-Archived plans (consumed by `/implement`) live in the `archive/`
-subdirectory and can be restored via `--continue`.
-
-Create the directory on first write: `mkdir -p ~/workspace/blueprints/<project>/`
+@rules/blueprints.md — e.g. `<slug>.md`. Archived plans (consumed
+by `/implement`) live in `archive/` and can be restored via
+`--continue`.
 
 ## Slug Generation
 
@@ -232,6 +227,17 @@ depth: <medium|high|max>
     - Archive previous plan for this project if one exists:
       `mv ~/workspace/blueprints/<project>/archive/<old>.md ...` (skip if
       none)
+
+    ### Blueprints Commit
+
+    If any blueprints files were written or moved during this session,
+    commit them per `@rules/blueprints.md`:
+    ```sh
+    cd ~/workspace/blueprints && \
+      git add -A <project>/ && \
+      git commit -m "research(<project>): <slug>"
+    ```
+
     - Report: plan file path, `Next: /implement`
 
 ### Continue Research
@@ -263,8 +269,7 @@ depth: <medium|high|max>
 
 ### Discard Plan
 
-1. Determine `<project>`:
-   `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
+1. Determine `<project>` per @rules/blueprints.md.
 2. If slug provided after `--discard`:
    - Delete `~/workspace/blueprints/<project>/<slug>.md` (try
      with/without .md extension, partial glob match)
@@ -272,6 +277,16 @@ depth: <medium|high|max>
    `ls -t ~/workspace/blueprints/<project>/*.md | head -1`
    Then delete it.
 4. Report: "Discarded plan: `<filename>`"
+
+### Blueprints Commit
+
+If any blueprints files were written or moved during this session,
+commit them per `@rules/blueprints.md`:
+```sh
+cd ~/workspace/blueprints && \
+  git add -A <project>/ && \
+  git commit -m "research(<project>): <slug>"
+```
 
 ## Team Mode
 

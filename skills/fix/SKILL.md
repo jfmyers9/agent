@@ -13,9 +13,7 @@ Convert user feedback into structured tasks.
 
 ## Plan Directory
 
-`<project>` = `basename` of git root (or cwd if not in a repo).
-Determine via: `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
-Plans live at `~/workspace/blueprints/<project>/fix-<slug>.md`.
+@rules/blueprints.md — prefix: `fix-`, e.g. `fix-<slug>.md`.
 
 ## Arguments
 
@@ -102,6 +100,16 @@ then features). Skip empty phases.
 - Each item: actionable title with file:line when available
 
 ### 4. Report
+
+#### Blueprints Commit
+
+If any blueprints files were written or moved during this session,
+commit them per `@rules/blueprints.md`:
+```sh
+cd ~/workspace/blueprints && \
+  git add -A <project>/ && \
+  git commit -m "fix(<project>): <slug>"
+```
 
 Output format:
 ```

@@ -14,8 +14,7 @@ Run the full development pipeline from a single prompt.
 
 ## Plan Directory
 
-`<project>` = `basename` of git root (or cwd if not in a repo).
-Determine via: `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
+@rules/blueprints.md.
 
 ## Arguments
 

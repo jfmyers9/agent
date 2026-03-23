@@ -13,9 +13,7 @@ Triage PR review feedback and recommend actions.
 
 ## Plan Directory
 
-`<project>` = `basename` of git root (or cwd if not in a repo).
-Determine via: `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
-Plans live at `~/workspace/blueprints/<project>/respond-pr-<number>.md`.
+@rules/blueprints.md — prefix: `respond-pr-`, e.g. `respond-pr-<number>.md`.
 
 ## Arguments
 
@@ -140,7 +138,17 @@ Plans live at `~/workspace/blueprints/<project>/respond-pr-<number>.md`.
    - Update notes with PR reply drafts
 5. **If already finalized** → Spawn subagent with previous findings
    prepended: "Previous findings:\n<design>\n\nContinue..."
-6. Report results (see Output Format — Continuation)
+6. **Blueprints Commit**
+
+   If any blueprints files were written or moved during this session,
+   commit them per `@rules/blueprints.md`:
+   ```sh
+   cd ~/workspace/blueprints && \
+     git add -A <project>/ && \
+     git commit -m "respond(<project>): <slug>"
+   ```
+
+7. Report results (see Output Format — Continuation)
 
 ## Triage Subagent Prompt
 

@@ -22,12 +22,7 @@ a phased plan compatible with `/implement`.
 
 ## Plan Directory
 
-`<project>` = `basename` of git root (or cwd if not in a repo).
-Determine via:
-`basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
-
-Plans live at `~/workspace/blueprints/<project>/pr-plan-<number>.md`.
-Create on first write: `mkdir -p ~/workspace/blueprints/<project>/`
+@rules/blueprints.md — prefix: `pr-plan-`, e.g. `pr-plan-<number>.md`.
 
 ## Workflow
 
@@ -146,7 +141,17 @@ Create on first write: `mkdir -p ~/workspace/blueprints/<project>/`
 7. **Complete task**
    `TaskUpdate(taskId, status: "completed")`
 
-8. **Report results** (see Output Format)
+8. **Blueprints Commit**
+
+   If any blueprints files were written or moved during this session,
+   commit them per `@rules/blueprints.md`:
+   ```sh
+   cd ~/workspace/blueprints && \
+     git add -A <project>/ && \
+     git commit -m "pr-plan(<project>): <slug>"
+   ```
+
+9. **Report results** (see Output Format)
 
 ### Continue Session
 

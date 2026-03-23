@@ -13,9 +13,7 @@ Orchestrate code review via tasks and Task delegation.
 
 ## Plan Directory
 
-`<project>` = `basename` of git root (or cwd if not in a repo).
-Determine via: `basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)`
-Plans live at `~/workspace/blueprints/<project>/review-<slug>.md`.
+@rules/blueprints.md — prefix: `review-`, e.g. `review-<slug>.md`.
 
 ## Arguments
 
@@ -198,7 +196,19 @@ Plans live at `~/workspace/blueprints/<project>/review-<slug>.md`.
         plan_file: "review-<slug>.md" })`
    d. Leave task in_progress
 
-7. **Report results** (see Output Format)
+7. **Report results**
+
+   ### Blueprints Commit
+
+   If any blueprints files were written or moved during this session,
+   commit them per `@rules/blueprints.md`:
+   ```sh
+   cd ~/workspace/blueprints && \
+     git add -A <project>/ && \
+     git commit -m "review(<project>): <slug>"
+   ```
+
+   (see Output Format)
 
 ### Continue Review
 
@@ -235,7 +245,8 @@ Plans live at `~/workspace/blueprints/<project>/review-<slug>.md`.
    `ExitWorktree(action="remove")`.
 8. Update design:
    `TaskUpdate(taskId, metadata: {design: "<updated>"})`
-9. Report results
+9. Blueprints Commit (same as New Review step 7)
+10. Report results
 
 ## Review Scope
 
