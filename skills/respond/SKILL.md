@@ -162,7 +162,8 @@ Triage PR review feedback and recommend actions.
    ```sh
    cd ~/workspace/blueprints && \
      git add -A <project>/ && \
-     git commit -m "respond(<project>): <slug>"
+     git commit -m "respond(<project>): <slug>" && \
+     git push || (git pull --rebase && git push)
    ```
 
 7. Report results (see Output Format — Continuation)

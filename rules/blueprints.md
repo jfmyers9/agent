@@ -42,7 +42,7 @@ Fires once at skill completion, not per-write:
 cd ~/workspace/blueprints && \
   git add -A <project>/ && \
   git commit -m "<type>(<project>): <slug>" && \
-  git push
+  git push || (git pull --rebase && git push)
 ```
 
 ## Archive Protocol

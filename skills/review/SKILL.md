@@ -221,7 +221,8 @@ Orchestrate code review via tasks and Task delegation.
    ```sh
    cd ~/workspace/blueprints && \
      git add -A <project>/ && \
-     git commit -m "review(<project>): <slug>"
+     git commit -m "review(<project>): <slug>" && \
+     git push || (git pull --rebase && git push)
    ```
 
    (see Output Format)

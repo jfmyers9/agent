@@ -235,7 +235,8 @@ depth: <medium|high|max>
     ```sh
     cd ~/workspace/blueprints && \
       git add -A <project>/ && \
-      git commit -m "research(<project>): <slug>"
+      git commit -m "research(<project>): <slug>" && \
+      git push || (git pull --rebase && git push)
     ```
 
     - Report: plan file path, `Next: /implement`
@@ -286,7 +287,8 @@ commit them per `@rules/blueprints.md`:
 ```sh
 cd ~/workspace/blueprints && \
   git add -A <project>/ && \
-  git commit -m "research(<project>): <slug>"
+  git commit -m "research(<project>): <slug>" && \
+  git push || (git pull --rebase && git push)
 ```
 
 ## Team Mode

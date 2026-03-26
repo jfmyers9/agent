@@ -165,7 +165,8 @@ a phased plan compatible with `/implement`.
    ```sh
    cd ~/workspace/blueprints && \
      git add -A <project>/ && \
-     git commit -m "pr-plan(<project>): <slug>"
+     git commit -m "pr-plan(<project>): <slug>" && \
+     git push || (git pull --rebase && git push)
    ```
 
 9. **Report results** (see Output Format)

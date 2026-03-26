@@ -88,7 +88,8 @@ If Step 1 found no tasks, check for plan files before exiting.
     ```sh
     cd ~/workspace/blueprints && \
       git add -A <project>/ && \
-      git commit -m "implement(<project>): <slug>"
+      git commit -m "implement(<project>): <slug>" && \
+      git push || (git pull --rebase && git push)
     ```
 12. `TaskUpdate(epicId, status: "in_progress")`
 13. Proceed to Step 2 with the new epic.

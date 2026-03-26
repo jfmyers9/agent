@@ -108,7 +108,8 @@ commit them per `@rules/blueprints.md`:
 ```sh
 cd ~/workspace/blueprints && \
   git add -A <project>/ && \
-  git commit -m "fix(<project>): <slug>"
+  git commit -m "fix(<project>): <slug>" && \
+  git push || (git pull --rebase && git push)
 ```
 
 Output format:

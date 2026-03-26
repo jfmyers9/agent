@@ -45,6 +45,6 @@ Move a blueprint to `archive/` and commit.
    cd ~/workspace/blueprints && \
      git add -A <project>/ && \
      git commit -m "archive(<project>): <filename>" && \
-     git push
+     git push || (git pull --rebase && git push)
    ```
 5. Report: "Archived: `<filename>`"
