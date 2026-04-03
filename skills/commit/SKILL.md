@@ -1,10 +1,11 @@
 ---
 name: commit
 description: >
-  Create conventional commits with auto-generated messages. Use after making changes, when saving progress,
-  done with a change, ready to commit, or finished implementing. Triggers: /commit, "commit this".
+  Create conventional commits with auto-generated messages. Optionally push with --push (non-Graphite repos).
+  Use after making changes, when saving progress, done with a change, ready to commit, or finished implementing.
+  Triggers: /commit, "commit this".
 allowed-tools: Bash
-argument-hint: "[--amend] [--fixup <commit>] [message]"
+argument-hint: "[--amend] [--fixup <commit>] [--push] [message]"
 ---
 
 # Commit
@@ -16,6 +17,7 @@ Create conventional commits.
 - `[message]` — commit message (generated if omitted)
 - `--amend` — amend the previous commit
 - `--fixup <commit>` — create fixup commit for specified hash
+- `--push` — push after committing (non-Graphite repos only)
 
 ## Autonomy
 
@@ -32,6 +34,8 @@ instructions if they want commits shaped differently.
 1. **Parse Arguments**
    - Extract `--amend` flag from `$ARGUMENTS`
    - Extract `--fixup <hash>` from `$ARGUMENTS`
+   - Extract `--push` flag from `$ARGUMENTS`
+   - If `--push` + `--amend`: warn that amending + pushing may require force push, suggest doing it manually. Stop.
    - Extract commit message (remaining text)
 
 2. **Gather Context (Parallel)**
@@ -60,3 +64,8 @@ instructions if they want commits shaped differently.
 
 6. **Show Result**
    - Display final commit with `git log -1 --oneline`
+   - If `--push`:
+     - Check `gt trunk 2>/dev/null` to detect Graphite
+     - If Graphite detected: warn that `--push` bypasses Graphite branch tracking, suggest `/submit` instead, skip push
+     - If no Graphite: run `git push || (git pull --rebase && git push)`
+     - Display push result or error

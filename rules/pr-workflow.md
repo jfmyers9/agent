@@ -1,6 +1,7 @@
 # PR & Branch Workflow
 
-- Always use Graphite (`gt submit`) for PRs, never `gh pr create`
+- Use Graphite (`gt submit`) for PRs when available, never `gh pr create`
+- In non-Graphite repos, use `/commit --push` to commit and push
 - Leave PRs in draft unless user explicitly asks to mark ready
 - Never close/delete PRs to fix mistakes — update in place
 - Never force push unless user explicitly requests it
