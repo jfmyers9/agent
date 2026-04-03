@@ -13,7 +13,7 @@ Triage PR review feedback and recommend actions.
 
 ## Plan Directory
 
-@rules/blueprints.md — prefix: `respond-pr-`, e.g. `respond-pr-<number>.md`.
+@rules/blueprints.md — type dir: `plan/`, e.g. `plan/<epoch>-respond-pr-<number>.md`.
 
 ## Arguments
 
@@ -122,7 +122,8 @@ Triage PR review feedback and recommend actions.
    - PR reply drafts → notes: TaskUpdate(taskId, metadata: {notes: "<replies>"})
    - Write plan file (after finalization, not first pass):
      ```
-     Write("~/workspace/blueprints/<project>/respond-pr-<number>.md", <frontmatter + phased findings>)
+     mkdir -p ~/workspace/blueprints/<project>/plan/
+     Write("~/workspace/blueprints/<project>/plan/<epoch>-respond-pr-<number>.md", <frontmatter + phased findings>)
      ```
      Frontmatter:
      ```yaml
@@ -155,16 +156,16 @@ Triage PR review feedback and recommend actions.
    - Update notes with PR reply drafts
 5. **If already finalized** → Spawn subagent with previous findings
    prepended: "Previous findings:\n<design>\n\nContinue..."
-6. **Blueprints Commit**
+6. **Commit-on-Write**
 
-   If any blueprints files were written or moved during this session,
-   commit them per `@rules/blueprints.md`:
+   Fires after every blueprint write or move per @rules/blueprints.md.
    ```sh
    cd ~/workspace/blueprints && \
      git add -A <project>/ && \
      git commit -m "respond(<project>): <slug>" && \
      git push || (git pull --rebase && git push)
    ```
+   If rebase fails, STOP and alert the user.
 
 7. Report results (see Output Format — Continuation)
 
@@ -294,7 +295,7 @@ then `/respond --continue` to finalize for `/implement`.
 
 **Finalized**: N items to action, N replies drafted
 
-**Plan**: `~/workspace/blueprints/<project>/respond-pr-<N>.md` — review/edit
+**Plan**: `~/workspace/blueprints/<project>/plan/<epoch>-respond-pr-<N>.md` — review/edit
 in `$EDITOR` before `/implement`.
 
 **Next**: `/implement` to create tasks, or edit the plan file first.

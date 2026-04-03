@@ -13,7 +13,7 @@ Convert user feedback into structured tasks.
 
 ## Plan Directory
 
-@rules/blueprints.md — prefix: `fix-`, e.g. `fix-<slug>.md`.
+@rules/blueprints.md — type dir: `plan/`, e.g. `plan/<epoch>-<slug>.md`.
 
 ## Arguments
 
@@ -63,7 +63,8 @@ a. Generate a kebab-case slug from the feedback summary (lowercase,
    strip filler words, replace non-alnum with hyphens, max 50 chars)
 b. Write plan file:
    ```
-   Write("~/workspace/blueprints/<project>/fix-<slug>.md", <frontmatter + findings>)
+   mkdir -p ~/workspace/blueprints/<project>/plan/
+   Write("~/workspace/blueprints/<project>/plan/<epoch>-<slug>.md", <frontmatter + findings>)
    ```
    Frontmatter:
    ```yaml
@@ -74,7 +75,7 @@ b. Write plan file:
    status: draft
    ---
    ```
-c. Store in task: TaskUpdate(taskId, metadata: {design: "<phased-findings>", plan_file: "fix-<slug>.md"})
+c. Store in task: TaskUpdate(taskId, metadata: {design: "<phased-findings>", plan_file: "plan/<epoch>-<slug>.md"})
 
 Design field format:
 ```
@@ -101,16 +102,16 @@ then features). Skip empty phases.
 
 ### 4. Report
 
-#### Blueprints Commit
+#### Commit-on-Write
 
-If any blueprints files were written or moved during this session,
-commit them per `@rules/blueprints.md`:
+Fires after every blueprint write or move per @rules/blueprints.md.
 ```sh
 cd ~/workspace/blueprints && \
   git add -A <project>/ && \
   git commit -m "fix(<project>): <slug>" && \
   git push || (git pull --rebase && git push)
 ```
+If rebase fails, STOP and alert the user.
 
 Output format:
 ```
@@ -118,7 +119,7 @@ Output format:
 
 **Findings**: N items (X bugs, Y tasks, Z features)
 
-**Plan**: `~/workspace/blueprints/<project>/fix-<slug>.md` — review/edit in
+**Plan**: `~/workspace/blueprints/<project>/plan/<epoch>-<slug>.md` — review/edit in
 `$EDITOR` before `/implement`.
 
 **Next**: `/implement` to create tasks, or edit the plan file first.

@@ -3,40 +3,29 @@
 ## Project Derivation
 
 ```sh
-basename $(git rev-parse --show-toplevel 2>/dev/null || pwd)
+basename "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's|/\.git$||; s|/\.bare$||')" 2>/dev/null || basename "$(pwd)"
 ```
 
 ## Directory Layout
 
 ```
-~/workspace/blueprints/<project>/          # active plans
-~/workspace/blueprints/<project>/archive/  # consumed plans
-~/workspace/blueprints/<project>/reviews/          # review blueprints
-~/workspace/blueprints/<project>/reviews/archive/  # consumed reviews
+~/workspace/blueprints/<project>/spec/       # research specs
+~/workspace/blueprints/<project>/plan/       # implementation plans (fix, pr-plan, respond)
+~/workspace/blueprints/<project>/review/     # code review blueprints
+~/workspace/blueprints/<project>/archive/    # consumed blueprints (all types)
 ```
 
-Create on first write:
-- Plans: `mkdir -p ~/workspace/blueprints/<project>/`
-- Reviews: `mkdir -p ~/workspace/blueprints/<project>/reviews/`
+Create on first write: `mkdir -p ~/workspace/blueprints/<project>/<type>/`
 
 ## Naming
 
-`<prefix>-<slug>.md` — prefix is skill-specific.
-Reviews use epoch-prefixed names: `<epoch>-<slug>.md` (epoch = Unix
-seconds, e.g., `1711324800-my-feature.md`).
+All files use `<epoch>-<slug>.md` where epoch is Unix seconds
+(e.g., `1711324800-my-feature.md`). No skill-specific prefixes.
 
-| Skill       | Prefix        |
-|-------------|---------------|
-| research    | (none)        |
-| review      | `<epoch>-` in `reviews/` subdir |
-| fix         | `fix-`        |
-| pr-plan     | `pr-plan-`    |
-| respond     | `respond-pr-` |
-| implement   | (none/consumer) |
+## Commit-on-Write
 
-## Commit-on-Exit
-
-Fires once at skill completion, not per-write:
+Fires after every blueprint file write or move (not just at skill
+completion):
 
 ```sh
 cd ~/workspace/blueprints && \
@@ -45,24 +34,15 @@ cd ~/workspace/blueprints && \
   git push || (git pull --rebase && git push)
 ```
 
+If rebase fails, STOP and alert the user immediately with conflict
+details. Do not continue the skill — blueprint data may be at risk.
+
 ## Archive Protocol
 
 When a blueprint is consumed by a downstream skill:
 
 ```sh
 mkdir -p ~/workspace/blueprints/<project>/archive/
-mv ~/workspace/blueprints/<project>/<plan-file> \
+mv ~/workspace/blueprints/<project>/<type>/<file> \
    ~/workspace/blueprints/<project>/archive/
 ```
-
-### Review Archive
-
-Review blueprints use their own archive path:
-
-```sh
-mkdir -p ~/workspace/blueprints/<project>/reviews/archive/
-mv ~/workspace/blueprints/<project>/reviews/<review-file> \
-   ~/workspace/blueprints/<project>/reviews/archive/
-```
-
-Archive commit is folded into the same exit commit.

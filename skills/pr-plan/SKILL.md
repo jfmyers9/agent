@@ -22,7 +22,7 @@ a phased plan compatible with `/implement`.
 
 ## Plan Directory
 
-@rules/blueprints.md — prefix: `pr-plan-`, e.g. `pr-plan-<number>.md`.
+@rules/blueprints.md — type dir: `plan/`, e.g. `plan/<epoch>-pr-plan-<number>.md`.
 
 ## Workflow
 
@@ -119,7 +119,7 @@ a phased plan compatible with `/implement`.
    TaskCreate(
      subject: "PR Plan: #<PR_NUM>",
      description: "Triage PR comments and research implementation
-       plan. Findings → ~/workspace/blueprints/<project>/pr-plan-<N>.md",
+       plan. Findings → ~/workspace/blueprints/<project>/plan/<epoch>-pr-plan-<N>.md",
      activeForm: "Planning PR #<PR_NUM> feedback",
      metadata: { type: "task", priority: 2 }
    )
@@ -151,23 +151,23 @@ a phased plan compatible with `/implement`.
       TaskUpdate(taskId, metadata: {
         design: "<plan section>",
         notes: "<replies section>",
-        plan_file: "pr-plan-<number>.md"
+        plan_file: "plan/<epoch>-pr-plan-<number>.md"
       })
       ```
 
 7. **Complete task**
    `TaskUpdate(taskId, status: "completed")`
 
-8. **Blueprints Commit**
+8. **Commit-on-Write**
 
-   If any blueprints files were written or moved during this session,
-   commit them per `@rules/blueprints.md`:
+   Fires after every blueprint write or move per @rules/blueprints.md.
    ```sh
    cd ~/workspace/blueprints && \
      git add -A <project>/ && \
      git commit -m "pr-plan(<project>): <slug>" && \
      git push || (git pull --rebase && git push)
    ```
+   If rebase fails, STOP and alert the user.
 
 9. **Report results** (see Output Format)
 
@@ -274,7 +274,7 @@ Each phase independently testable. 3-7 phases max.
 
 **Phases**: <count> implementation phases
 
-**Plan**: `~/workspace/blueprints/<project>/pr-plan-<N>.md`
+**Plan**: `~/workspace/blueprints/<project>/plan/<epoch>-pr-plan-<N>.md`
 Review/edit in `$EDITOR` before `/implement`.
 
 **Replies**: `TaskGet(<id>)` → check `notes` field for draft

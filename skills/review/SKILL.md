@@ -13,7 +13,7 @@ Orchestrate code review via tasks and Task delegation.
 
 ## Plan Directory
 
-@rules/blueprints.md — subdirectory: `reviews/`, epoch-prefixed, e.g. `reviews/<epoch>-<slug>.md` where epoch = Unix seconds.
+@rules/blueprints.md — subdirectory: `review/`, epoch-prefixed, e.g. `review/<epoch>-<slug>.md` where epoch = Unix seconds.
 
 ## Arguments
 
@@ -104,15 +104,12 @@ Orchestrate code review via tasks and Task delegation.
        replace non-alnum with hyphens, strip trailing hyphens).
        Compute `<project>` same as Plan Directory section.
        ```
-       plan_file=$(ls ~/workspace/blueprints/<project>/*<branch-slug>*.md 2>/dev/null | head -1)
+       plan_file=$(ls ~/workspace/blueprints/<project>/spec/*<branch-slug>*.md ~/workspace/blueprints/<project>/plan/*<branch-slug>*.md 2>/dev/null | head -1)
        if [ -z "$plan_file" ]; then
          plan_file=$(ls ~/workspace/blueprints/<project>/archive/*<branch-slug>*.md 2>/dev/null | head -1)
        fi
        if [ -z "$plan_file" ]; then
-         plan_file=$(ls ~/workspace/blueprints/<project>/reviews/*<branch-slug>*.md 2>/dev/null | head -1)
-       fi
-       if [ -z "$plan_file" ]; then
-         plan_file=$(ls ~/workspace/blueprints/<project>/reviews/archive/*<branch-slug>*.md 2>/dev/null | head -1)
+         plan_file=$(ls ~/workspace/blueprints/<project>/review/*<branch-slug>*.md 2>/dev/null | head -1)
        fi
        ```
        If `$plan_file` is found, extract the `## Spec` section
@@ -193,9 +190,9 @@ Orchestrate code review via tasks and Task delegation.
       (lowercase, strip filler words, replace non-alnum
       with hyphens, max 50 chars)
    a2. Compute epoch: `epoch=$(date +%s)`
-   a3. `mkdir -p ~/workspace/blueprints/<project>/reviews/`
+   a3. `mkdir -p ~/workspace/blueprints/<project>/review/`
    b. Write plan file:
-      `Write("~/workspace/blueprints/<project>/reviews/<epoch>-<slug>.md",
+      `Write("~/workspace/blueprints/<project>/review/<epoch>-<slug>.md",
         <frontmatter + findings>)`
       Frontmatter:
       ```yaml
@@ -209,21 +206,21 @@ Orchestrate code review via tasks and Task delegation.
    c. Store in task:
       `TaskUpdate(taskId, metadata: {
         design: "<findings>",
-        plan_file: "reviews/<epoch>-<slug>.md" })`
+        plan_file: "review/<epoch>-<slug>.md" })`
    d. Leave task in_progress
 
 7. **Report results**
 
-   ### Blueprints Commit
+   ### Commit-on-Write
 
-   If any blueprints files were written or moved during this session,
-   commit them per `@rules/blueprints.md`:
+   Fires after every blueprint write or move per @rules/blueprints.md.
    ```sh
    cd ~/workspace/blueprints && \
      git add -A <project>/ && \
      git commit -m "review(<project>): <slug>" && \
      git push || (git pull --rebase && git push)
    ```
+   If rebase fails, STOP and alert the user.
 
    (see Output Format)
 
@@ -262,7 +259,7 @@ Orchestrate code review via tasks and Task delegation.
    `ExitWorktree(action="remove")`.
 8. Update design:
    `TaskUpdate(taskId, metadata: {design: "<updated>"})`
-9. Blueprints Commit (same as New Review step 7)
+9. Commit-on-Write (same as New Review step 7)
 10. Report results
 
 ## Review Scope
@@ -633,7 +630,7 @@ pruned, <L> uncertain `[needs-review]`
 **Consensus Findings** (flagged by multiple perspectives):
 - <count> consensus findings
 
-**Plan**: `~/workspace/blueprints/<project>/reviews/<epoch>-<slug>.md` —
+**Plan**: `~/workspace/blueprints/<project>/review/<epoch>-<slug>.md` —
 review/edit in `$EDITOR` before `/implement`.
 
 **Next**: `/implement` to create tasks, or edit the plan first.

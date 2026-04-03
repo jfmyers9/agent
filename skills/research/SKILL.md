@@ -38,9 +38,9 @@ user approval before proceeding.
 
 ## Plan Directory
 
-@rules/blueprints.md — e.g. `<slug>.md`. Archived plans (consumed
-by `/implement`) live in `archive/` and can be restored via
-`--continue`.
+@rules/blueprints.md — e.g. `spec/<epoch>-<slug>.md`. Archived plans
+(consumed by `/implement`) live in `archive/` and can be restored
+via `--continue`.
 
 ## Slug Generation
 
@@ -77,7 +77,7 @@ depth: <medium|high|max>
    ```
    TaskCreate(
      subject: "Research: <topic>",
-     description: "## Acceptance Criteria\n- Spec and plan written to ~/workspace/blueprints/<project>/<slug>.md\n- Spec: timeless target-state (Problem, Recommendation, Architecture, Risks)\n- Plan: phased Next Steps with file paths and done signals",
+     description: "## Acceptance Criteria\n- Spec and plan written to ~/workspace/blueprints/<project>/spec/<epoch>-<slug>.md\n- Spec: timeless target-state (Problem, Recommendation, Architecture, Risks)\n- Plan: phased Next Steps with file paths and done signals",
      activeForm: "Researching <topic>",
      metadata: { type: "task", priority: 2 }
    )
@@ -171,7 +171,7 @@ depth: <medium|high|max>
 7. **Store spec:**
    - Write plan file with spec content, `status: spec_review`
    - `TaskUpdate(taskId, metadata: { spec: "<spec content>",
-     plan_file: "<slug>.md", depth: "<level>",
+     plan_file: "spec/<epoch>-<slug>.md", depth: "<level>",
      status_detail: "spec_review" })`
 
 8. **Present spec** — `Spec: t<id> — <topic>`, then Problem,
@@ -228,16 +228,16 @@ depth: <medium|high|max>
       `mv ~/workspace/blueprints/<project>/archive/<old>.md ...` (skip if
       none)
 
-    ### Blueprints Commit
+    ### Commit-on-Write
 
-    If any blueprints files were written or moved during this session,
-    commit them per `@rules/blueprints.md`:
+    Fires after every blueprint write or move per @rules/blueprints.md.
     ```sh
     cd ~/workspace/blueprints && \
       git add -A <project>/ && \
       git commit -m "research(<project>): <slug>" && \
       git push || (git pull --rebase && git push)
     ```
+    If rebase fails, STOP and alert the user.
 
     - Report: plan file path, `Next: /implement`
 
@@ -247,8 +247,8 @@ depth: <medium|high|max>
    - If `$ARGUMENTS` matches a task ID -> `TaskGet(taskId)`
    - If `--continue` -> `TaskList()`, find first in_progress
      "Research:" task. If none found, find most recent plan file
-     in `~/workspace/blueprints/<project>/` via
-     `ls -t ~/workspace/blueprints/<project>/*.md | head -1`
+     in `~/workspace/blueprints/<project>/spec/` via
+     `ls -t ~/workspace/blueprints/<project>/spec/*.md | head -1`
    - If no active plan found, check archive:
      `ls -t ~/workspace/blueprints/<project>/archive/*.md | head -1`
      If found, copy it back to active.
@@ -272,24 +272,24 @@ depth: <medium|high|max>
 
 1. Determine `<project>` per @rules/blueprints.md.
 2. If slug provided after `--discard`:
-   - Delete `~/workspace/blueprints/<project>/<slug>.md` (try
+   - Delete `~/workspace/blueprints/<project>/spec/*<slug>*.md` (try
      with/without .md extension, partial glob match)
 3. If no slug -> delete most recent:
-   `ls -t ~/workspace/blueprints/<project>/*.md | head -1`
+   `ls -t ~/workspace/blueprints/<project>/spec/*.md | head -1`
    Then delete it.
 4. Report: "Discarded plan: `<filename>`"
 
 
-### Blueprints Commit
+### Commit-on-Write
 
-If any blueprints files were written or moved during this session,
-commit them per `@rules/blueprints.md`:
+Fires after every blueprint write or move per @rules/blueprints.md.
 ```sh
 cd ~/workspace/blueprints && \
   git add -A <project>/ && \
   git commit -m "research(<project>): <slug>" && \
   git push || (git pull --rebase && git push)
 ```
+If rebase fails, STOP and alert the user.
 
 ## Team Mode
 
@@ -489,7 +489,7 @@ Next: approve to proceed to plan, or give feedback.
 
 <Phased approach — per phase: title, files, approach>
 
-**Plan**: `~/workspace/blueprints/<project>/<slug>.md` — review/edit
+**Plan**: `~/workspace/blueprints/<project>/spec/<epoch>-<slug>.md` — review/edit
 in `$EDITOR` before `/implement`.
 
 **Next**: `/implement` to execute, edit the plan file first,

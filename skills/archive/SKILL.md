@@ -22,29 +22,25 @@ Move a blueprint to `archive/` and commit.
 1. Determine `<project>` per @rules/blueprints.md.
 2. Resolve target file:
    - If slug provided: match against
-     `~/workspace/blueprints/<project>/*<slug>*` and
-     `~/workspace/blueprints/<project>/reviews/*<slug>*`
+     `~/workspace/blueprints/<project>/spec/*<slug>*`,
+     `~/workspace/blueprints/<project>/plan/*<slug>*`, and
+     `~/workspace/blueprints/<project>/review/*<slug>*`
      (try with/without `.md` extension)
    - If no slug: most recent via
-     `{ ls -t ~/workspace/blueprints/<project>/*.md ~/workspace/blueprints/<project>/reviews/*.md; } 2>/dev/null | head -1`
+     `{ ls -t ~/workspace/blueprints/<project>/spec/*.md ~/workspace/blueprints/<project>/plan/*.md ~/workspace/blueprints/<project>/review/*.md; } 2>/dev/null | head -1`
    - If no files found: report "No active blueprints for
      `<project>`" and stop.
-3. Archive — destination depends on source location:
-   - If source is in `reviews/`: archive to `reviews/archive/`
-   - Otherwise: archive to `archive/`
+3. Archive — unified destination for all types:
    ```sh
-   # For top-level files:
    mkdir -p ~/workspace/blueprints/<project>/archive/
    mv <file> ~/workspace/blueprints/<project>/archive/
-   # For reviews/ files:
-   mkdir -p ~/workspace/blueprints/<project>/reviews/archive/
-   mv <file> ~/workspace/blueprints/<project>/reviews/archive/
    ```
-4. Commit per @rules/blueprints.md:
+4. Commit-on-Write per @rules/blueprints.md:
    ```sh
    cd ~/workspace/blueprints && \
      git add -A <project>/ && \
      git commit -m "archive(<project>): <filename>" && \
      git push || (git pull --rebase && git push)
    ```
+   If rebase fails, STOP and alert the user.
 5. Report: "Archived: `<filename>`"

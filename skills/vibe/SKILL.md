@@ -99,7 +99,7 @@ Skill("research", args="<prompt>")
 ```
 
 **Verify**: Plan file exists in `~/workspace/blueprints/<project>/`.
-Check via `{ ls -t ~/workspace/blueprints/<project>/*.md ~/workspace/blueprints/<project>/reviews/*.md; } 2>/dev/null | head -1`.
+Check via `{ ls -t ~/workspace/blueprints/<project>/spec/*.md ~/workspace/blueprints/<project>/plan/*.md ~/workspace/blueprints/<project>/review/*.md; } 2>/dev/null | head -1`.
 **Update**: `TaskUpdate(trackerId, metadata: { vibe_stage: "research" })`
 **Report**: `[2/4] Researched: plan at <path>`
 

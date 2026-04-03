@@ -39,7 +39,7 @@ Bash is for read-only orchestration only (git status, team config reads).
 If Step 1 found no tasks, check for plan files before exiting.
 
 1. Determine project per @rules/blueprints.md.
-2. Scan: `{ ls -t ~/workspace/blueprints/<project>/*.md ~/workspace/blueprints/<project>/reviews/*.md; } 2>/dev/null | head -1`
+2. Scan: `{ ls -t ~/workspace/blueprints/<project>/spec/*.md ~/workspace/blueprints/<project>/plan/*.md ~/workspace/blueprints/<project>/review/*.md; } 2>/dev/null | head -1`
 3. If no plan file → exit, suggest `/research`
 4. Read the plan file. Skip YAML frontmatter (between `---` lines).
 5. Parse phases: find `**Phase N: Description**` or `### Phase N:`
@@ -84,13 +84,14 @@ If Step 1 found no tasks, check for plan files before exiting.
     mkdir -p ~/workspace/blueprints/<project>/archive/
     mv <plan-file> ~/workspace/blueprints/<project>/archive/
     ```
-    Then commit the move:
+    Then commit the move per @rules/blueprints.md Commit-on-Write:
     ```sh
     cd ~/workspace/blueprints && \
       git add -A <project>/ && \
       git commit -m "implement(<project>): <slug>" && \
       git push || (git pull --rebase && git push)
     ```
+    If rebase fails, STOP and alert the user.
 12. `TaskUpdate(epicId, status: "in_progress")`
 13. Proceed to Step 2 with the new epic.
 
