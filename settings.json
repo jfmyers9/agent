@@ -35,5 +35,8 @@
     "mode": "append",
     "verbs": []
   },
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
+  }
 }
