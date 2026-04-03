@@ -2,8 +2,12 @@
 
 ## Project Derivation
 
+**MUST execute via Bash** — never approximate from `pwd` or infer
+from the working directory name. Worktrees and renamed clones
+will produce wrong results otherwise.
+
 ```sh
-basename "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's|/\.git$||; s|/\.bare$||')" 2>/dev/null || basename "$(pwd)"
+basename "$(git remote get-url origin 2>/dev/null | sed 's|\.git$||')" 2>/dev/null || basename "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's|/\.git$||; s|/\.bare$||')" 2>/dev/null || basename "$(pwd)"
 ```
 
 ## Directory Layout
