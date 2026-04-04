@@ -36,17 +36,14 @@ Orchestrate code review via tasks and Task delegation.
    - Empty → current branch (existing behavior)
    Store the resolved branch name in `$REVIEW_BRANCH`.
 
-2. **Enter worktree**
-   Create a shared worktree so the review is isolated from the
-   user's working directory:
+2. **Enter worktree** (only when an explicit branch/PR target was given)
+   Skip this step when reviewing the current branch (no target).
    ```
    EnterWorktree(name="review-<slug>")
    git fetch origin $REVIEW_BRANCH
    git checkout $REVIEW_BRANCH || git checkout -b $REVIEW_BRANCH origin/$REVIEW_BRANCH
    ```
-   When no explicit target was given (reviewing current branch),
-   still enter the worktree for isolation — fetch and checkout
-   the current branch name resolved in step 1.
+   Set `$IN_WORKTREE` = true if entered, false otherwise.
 
 3. **Get branch context**
    - `git branch --show-current` → if main/master AND no
@@ -128,8 +125,9 @@ Orchestrate code review via tasks and Task delegation.
    c. Spawn all core workers in ONE message.
       CRITICAL: All Task calls MUST be in the SAME response.
       Sequential spawning causes slower execution.
-      Workers inherit the lead's worktree cwd (created in
-      step 2). Review is read-only so shared access is safe.
+      Workers inherit the lead's cwd (worktree if entered in
+      step 2, otherwise project dir). Review is read-only so
+      shared access is safe.
       Do NOT set isolation="worktree" on workers.
       ```
       Task(subagent_type="general-purpose",
@@ -177,13 +175,14 @@ Orchestrate code review via tasks and Task delegation.
       If 2+ workers fail → aggregate available results, note
       which perspectives did not return findings, then clean up:
       `SendMessage(type="shutdown_request")` to each worker,
-      `TeamDelete`, `ExitWorktree(action="remove")`.
+      `TeamDelete`, if `$IN_WORKTREE`:
+      `ExitWorktree(action="remove")`.
 
    e. Aggregate findings (see Perspective Aggregation).
 
    f. Cleanup: `SendMessage(type="shutdown_request")` to each
       worker. After all acknowledge → `TeamDelete` →
-      `ExitWorktree(action="remove")`.
+      if `$IN_WORKTREE`: `ExitWorktree(action="remove")`.
 
 6. **Store findings**
    a. Generate a kebab-case slug from the branch name
@@ -235,12 +234,13 @@ Orchestrate code review via tasks and Task delegation.
    - If `metadata.branch` exists → set `$REVIEW_BRANCH` to it
    - If not (legacy tasks) → fall back to current branch:
      `$REVIEW_BRANCH=$(git branch --show-current)`
-3. Enter worktree and checkout branch:
+3. Enter worktree (only if `$REVIEW_BRANCH` differs from current branch):
    ```
    EnterWorktree(name="review-<slug>")
    git fetch origin $REVIEW_BRANCH
    git checkout $REVIEW_BRANCH || git checkout -b $REVIEW_BRANCH origin/$REVIEW_BRANCH
    ```
+   Set `$IN_WORKTREE` = true if entered, false otherwise.
 4. Fetch PR context (same as step 3 of New Review):
    ```
    pr_context=$(gh pr view --json title,body,labels \
@@ -256,7 +256,7 @@ Orchestrate code review via tasks and Task delegation.
    Aggregation)
 7. Cleanup: `SendMessage(type="shutdown_request")` to each
    worker. After all acknowledge → `TeamDelete` →
-   `ExitWorktree(action="remove")`.
+   if `$IN_WORKTREE`: `ExitWorktree(action="remove")`.
 8. Update design:
    `TaskUpdate(taskId, metadata: {design: "<updated>"})`
 9. Commit-on-Write (same as New Review step 7)
