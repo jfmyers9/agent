@@ -81,7 +81,8 @@ fi
 Fetch task, team, and plan state:
 
 - `TaskList()` for in_progress/pending tasks
-- Read `~/.claude/teams/*/config.json` for active teams
+- Read harness team config files for active teams when available
+  (Claude default: `~/.claude/teams/*/config.json`)
 - `blueprint find --type spec,plan,review` for pending plan files
   (run multiple times or check multiple types as needed)
 - `blueprint find --type archive` for archived (previously prepared) plans

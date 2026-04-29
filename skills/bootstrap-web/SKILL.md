@@ -1,5 +1,5 @@
 ---
-name: bootstrap:web
+name: bootstrap-web
 description: "Bootstrap a new web project with the preferred stack. Triggers: 'bootstrap web', 'new webapp', 'scaffold project', 'new web project'."
 argument-hint: "<project-name> [description]"
 user-invocable: true

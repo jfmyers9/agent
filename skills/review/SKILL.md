@@ -121,8 +121,8 @@ with proper frontmatter.
 
    b. Create team:
       `TeamCreate(team_name="review-<branch-slug>")`
-      Read team config:
-      `~/.claude/teams/review-<branch-slug>/config.json`
+      Read team config from the harness team directory if available
+      (Claude default: `~/.claude/teams/review-<branch-slug>/config.json`)
       → extract your `name` field as `<lead-name>`
 
    c. Spawn all core workers in ONE message.
@@ -291,7 +291,8 @@ output phases, shared concern tags, lane boundaries) and a
 `## Prompt` section with the actual prompt in a code fence.
 
 **Loading at spawn time:**
-1. `Glob("~/.claude/skills/review/perspectives/*.md")` to discover
+1. Discover `skills/review/perspectives/*.md` relative to this
+   workflow repo or installed skills directory
 2. `Read` each file, extract the code-fenced prompt from `## Prompt`
 3. Spawn one agent per file (inject context placeholders + Team
    Worker Protocol appendix)

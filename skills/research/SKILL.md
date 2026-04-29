@@ -292,9 +292,9 @@ with the error output.
 When 2+ topics detected or `--team` flag:
 
 1. Create team: `TeamCreate(team_name="research-<slug>")`
-   Read team config:
-   `~/.claude/teams/research-<slug>/config.json`
-   -> extract your `name` field as `<lead-name>`
+   Read team config from the harness team directory (Claude default:
+   `~/.claude/teams/research-<slug>/config.json`) if available,
+   then extract your `name` field as `<lead-name>`
 2. Create per-topic tasks under the main research task.
    Cap at 5 topics; group excess together.
    ```

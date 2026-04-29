@@ -139,7 +139,8 @@ When `--team` is passed but the target is not an epic:
        ```
        Wait for completion, verify task status.
      Skip team cleanup (no team was created)
-4. Read team config: `~/.claude/teams/swarm-<epicId>/config.json`
+4. Read team config from the harness team directory if available
+   (Claude default: `~/.claude/teams/swarm-<epicId>/config.json`)
    → extract the team lead's `name` field for injecting into worker prompts
 
 ### Wave Loop

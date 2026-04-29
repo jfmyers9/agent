@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Notification hook — marks tmux tab name when Claude finishes in a background window.
+# Claude Code notification hook — marks tmux tab name when work finishes in a background window.
 # Also sends macOS notification with branch name and context%.
 
 set -euo pipefail

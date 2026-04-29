@@ -1,36 +1,15 @@
-# Global Instructions
+# Claude Code Instructions
 
-- I use Graphite for branch management
-- Use `/submit` to sync and create PRs
-- Use `/commit` for conventional commits
+This file is a Claude Code compatibility entrypoint. Shared agent
+instructions live in `AGENTS.md`.
 
-## Conciseness
+@AGENTS.md
 
-- Make plans extremely concise. Sacrifice grammar for concision.
-- Prefer bullet points over prose. Omit filler words.
-- In conversation, be direct. Skip preamble and summaries unless
-  asked.
+## Claude Code Task Compatibility
 
-## Efficiency
+When using Claude Code native tasks, mirror portable blueprint state:
 
-- Run parallel operations in single messages when possible
-- Delegate heavy work to subagents; main thread orchestrates
-- Pre-compute summaries for subagent context rather than passing
-  raw content
-
-## Context Budget
-
-- Pipe long command output through `tail`/`head` to limit volume
-- Summarize large file contents rather than reading in full when
-  a summary suffices
-
-## Task Tracking
-
-Use native Claude Code tasks for plans and state.
-
-- **Exploration plans**: task `metadata.design`
-- **Review summaries**: task `metadata.notes`
-- **Task state**: task `status` field
-- **View**: `TaskGet(taskId)`
-
-@RTK.md
+- Exploration plans: task `metadata.design`
+- Review summaries: task `metadata.notes`
+- Task state: task `status` field
+- View: `TaskGet(taskId)`
