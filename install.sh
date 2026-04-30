@@ -44,6 +44,12 @@ install_pi() {
   link_item "$SCRIPT_DIR/rules" "$dir/rules"
   link_item "$SCRIPT_DIR/skills" "$dir/skills"
   link_item "$SCRIPT_DIR/harnesses/pi/settings.json" "$dir/settings.json"
+
+  mkdir -p "$dir/extensions"
+  for extension in "$SCRIPT_DIR/harnesses/pi/extensions/"*; do
+    [ -e "$extension" ] || continue
+    link_item "$extension" "$dir/extensions/$(basename "$extension")"
+  done
 }
 
 case "$HARNESS" in

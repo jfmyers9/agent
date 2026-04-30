@@ -13,9 +13,14 @@ Pi loads:
 - `AGENTS.md` as global context
 - `skills/` via Agent Skills discovery
 - `rules/` as referenced Markdown
+- `harnesses/pi/extensions/` as global Pi extensions
 - `bin/blueprint` as a shared CLI
 
-Skills are available as `/skill:<name>` by default. Add Pi extensions
+Installed extensions:
+
+- `mac-system-theme.ts` — syncs Pi's `dark`/`light` theme with macOS appearance.
+
+Skills are available as `/skill:<name>` by default. Add more Pi extensions
 later if direct aliases like `/commit` or `/submit` are desired.
 
 Long-running workflows use blueprints as the Pi work tracker:

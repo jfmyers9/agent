@@ -42,6 +42,7 @@ harnesses/
     hooks/                 # Claude Code hooks
   pi/
     settings.json          # Pi settings
+    extensions/            # Pi extensions
 ```
 
 ## Shared config
@@ -86,6 +87,7 @@ Installed by `./install.sh pi` into `~/.pi/agent`:
 
 - links `AGENTS.md`, `rules/`, `skills/`
 - links `harnesses/pi/settings.json` as `settings.json`
+- links `harnesses/pi/extensions/*` into `~/.pi/agent/extensions/`
 - installs `blueprint` to `~/.local/bin`
 
 Pi uses `/skill:<name>` commands, for example:
