@@ -18,5 +18,9 @@
       "maxRetryDelayMs": 60000
     }
   },
-  "defaultModel": "gpt-5.5"
+  "defaultModel": "gpt-5.5",
+  "lastChangelogVersion": "0.71.0",
+  "packages": [
+    "npm:pi-lens"
+  ]
 }
