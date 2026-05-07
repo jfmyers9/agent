@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "store": "blueprints",
+  "hud": {
+    "enabled": true,
+    "maxTasks": 6,
+    "minTerminalRows": 24,
+    "toggleShortcut": "alt+t"
+  },
+  "guard": {
+    "enabled": false
+  }
+}

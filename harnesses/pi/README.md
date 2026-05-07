@@ -41,15 +41,18 @@ Installed extensions:
 - `pi-vim/` — replaces the editor with Vim-style modal editing. Remove or move this directory, then reinstall/reload Pi, to disable it.
 - `skill-dollar/` — supports `$skill-name` references with autocomplete/highlighting while keeping `/skill:<name>` commands.
 - `usage-hud/` — replaces Pi's footer with a local, dependency-light context/token/cost HUD. Remove or move this directory, then reinstall/reload Pi, to restore Pi's default footer.
+- `tasks/` — blueprint-linked project task tools, HUD, and `/tasks` board for fine-grained LLM work chunks.
 
 The usage HUD intentionally does not poll provider quota/subscription endpoints by default; quota bars need a separate local opt-in decision because they read auth tokens and use network APIs.
 
 Skills are available as `/skill:<name>` and `$skill-name` references by default.
 
-Long-running workflows use blueprints as the Pi work tracker:
+Long-running workflows use blueprints as the durable tracker and project tasks as the fine-grained execution queue:
 
 - `/skill:research` writes `spec/` blueprints
 - `/skill:implement` consumes `spec/`, `plan/`, or `review/` blueprints
 - `/skill:review` writes `review/` blueprints
 - `/skill:fix` writes `plan/` blueprints
 - `/skill:vibe` tracks pipeline state in a `plan/` blueprint
+- `/tasks blueprint [slug]` imports blueprint steps into project tasks
+- `/tasks` opens the Pi task board
