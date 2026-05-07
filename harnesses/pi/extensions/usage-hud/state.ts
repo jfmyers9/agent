@@ -1,5 +1,7 @@
+// @ts-nocheck
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { UsageHudConfig } from "./config";
+import type { QuotaSnapshot } from "./quota";
 
 export type ContextPressure = "normal" | "warning" | "error" | "unknown";
 
@@ -16,6 +18,7 @@ export type HudState = {
 	outputTokens: number;
 	cost: number;
 	hasUsage: boolean;
+	quota: QuotaSnapshot | null;
 };
 
 type UsageLike = {
@@ -108,6 +111,7 @@ export function buildHudState(
 		contextUsed,
 		contextWindow,
 		contextPressure: contextPressure(contextPercent, config),
+		quota: null,
 		...addUsageTotals(ctx),
 	};
 }

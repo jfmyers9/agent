@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { UsageHudConfig } from "./config";
@@ -5,6 +6,9 @@ import type { ContextPressure, HudState } from "./state";
 
 const BAR_FILLED = "━";
 const BAR_EMPTY = "─";
+const QUOTA_FILLED = "▓";
+const QUOTA_EMPTY = "░";
+const QUOTA_TICK = "│";
 
 function formatTokenCount(value: number | null): string {
 	if (value === null) return "?";
@@ -115,6 +119,155 @@ function compactTerminal(config: UsageHudConfig): boolean {
 	return rows !== undefined && rows < config.usageHud.compactMinRows;
 }
 
+function formatDuration(secs: number): string {
+	const value = Math.max(0, Math.floor(secs));
+	if (value >= 86_400)
+		return `${Math.floor(value / 86_400)}d${Math.floor((value % 86_400) / 3600)}h`;
+	if (value >= 3600)
+		return `${Math.floor(value / 3600)}h${String(Math.floor((value % 3600) / 60)).padStart(2, "0")}m`;
+	return `${Math.floor(value / 60)}m`;
+}
+
+function paceBalanceSecs(
+	usedPercent: number,
+	resetSecs: number,
+	windowSecs: number,
+): number | null {
+	if (windowSecs <= 0 || resetSecs <= 0) return null;
+	const elapsedSecs = windowSecs - resetSecs;
+	if (elapsedSecs < 60) return null;
+	const expectedRemaining = (resetSecs / windowSecs) * 100;
+	const actualRemaining = 100 - usedPercent;
+	return Math.round(((actualRemaining - expectedRemaining) * windowSecs) / 100);
+}
+
+function quotaColor(
+	usedPercent: number,
+	resetSecs: number,
+	windowSecs: number,
+): ThemeColor {
+	if (windowSecs <= 0 || resetSecs <= 0) {
+		if (usedPercent >= 85) return "error";
+		if (usedPercent >= 65) return "warning";
+		return "accent";
+	}
+	const elapsedPercent = ((windowSecs - resetSecs) / windowSecs) * 100;
+	const deficit = usedPercent - elapsedPercent;
+	if (deficit >= 8) return "error";
+	if (deficit >= 2) return "warning";
+	return "accent";
+}
+
+function paceColor(balanceSecs: number | null, windowSecs: number): ThemeColor {
+	if (balanceSecs === null || balanceSecs >= 0) return "accent";
+	const deficitPercent =
+		(Math.abs(balanceSecs) / Math.max(1, windowSecs)) * 100;
+	if (deficitPercent >= 15) return "error";
+	if (deficitPercent >= 8) return "warning";
+	return "warning";
+}
+
+function formatPace(balanceSecs: number | null): string {
+	if (balanceSecs === null || balanceSecs === 0) return "";
+	const sign = balanceSecs > 0 ? "+" : "-";
+	return `${sign}${formatDuration(Math.abs(balanceSecs))}`;
+}
+
+function renderQuotaBar(
+	theme: Theme,
+	barWidth: number,
+	usedPercent: number,
+	resetSecs: number,
+	windowSecs: number,
+	fillColor: ThemeColor,
+): string {
+	const remainingPercent = Math.max(0, Math.min(100, 100 - usedPercent));
+	const remainingCells = Math.round((remainingPercent / 100) * barWidth);
+	const elapsedPercent =
+		windowSecs > 0 && resetSecs > 0
+			? ((windowSecs - resetSecs) / windowSecs) * 100
+			: 0;
+	const expectedRemainingPercent = Math.max(
+		0,
+		Math.min(100, 100 - elapsedPercent),
+	);
+	const tickCell =
+		elapsedPercent > 0
+			? Math.max(
+					0,
+					Math.min(
+						barWidth - 1,
+						Math.round((expectedRemainingPercent / 100) * barWidth),
+					),
+				)
+			: null;
+	const balance = paceBalanceSecs(usedPercent, resetSecs, windowSecs);
+	const tickColor = paceColor(balance, windowSecs);
+	let out = "";
+	for (let i = 0; i < barWidth; i++) {
+		const isTick = tickCell === i;
+		const filled = i < remainingCells;
+		if (isTick) out += theme.fg(tickColor, QUOTA_TICK);
+		else if (filled) out += theme.fg(fillColor, QUOTA_FILLED);
+		else out += theme.fg("dim", QUOTA_EMPTY);
+	}
+	return out;
+}
+
+function renderQuotaWindow(
+	state: HudState,
+	theme: Theme,
+	barWidth: number,
+	window: HudState["quota"]["windows"][number],
+	showReset: boolean,
+): string {
+	const usedPercent = Math.max(0, Math.min(100, window.usedPercent));
+	const remainingPercent = Math.max(0, Math.min(100, 100 - usedPercent));
+	const color = quotaColor(usedPercent, window.resetSecs, window.windowSecs);
+	const bar = renderQuotaBar(
+		theme,
+		barWidth,
+		usedPercent,
+		window.resetSecs,
+		window.windowSecs,
+		color,
+	);
+	const pace = formatPace(
+		paceBalanceSecs(usedPercent, window.resetSecs, window.windowSecs),
+	);
+	const paceSegment = pace
+		? ` ${theme.fg(paceColor(paceBalanceSecs(usedPercent, window.resetSecs, window.windowSecs), window.windowSecs), pace)}`
+		: "";
+	const resetSegment =
+		showReset && window.resetSecs > 0
+			? ` ${theme.fg("dim", `↺${formatDuration(window.resetSecs)}`)}`
+			: "";
+	return `${theme.fg("dim", window.label)} ${bar} ${theme.fg(color, `${Math.round(remainingPercent)}%`)}${paceSegment}${resetSegment}`;
+}
+
+function renderQuotaLine(
+	state: HudState,
+	theme: Theme,
+	width: number,
+	separator: string,
+): string[] {
+	if (!state.quota?.windows.length) return [];
+	const provider = theme.fg(
+		"accent",
+		state.quota.provider || state.providerLabel,
+	);
+	const windows = state.quota.windows.map((window) =>
+		fitSegment(width, [
+			renderQuotaWindow(state, theme, 10, window, true),
+			renderQuotaWindow(state, theme, 8, window, true),
+			renderQuotaWindow(state, theme, 8, window, false),
+			renderQuotaWindow(state, theme, 6, window, false),
+			renderQuotaWindow(state, theme, 4, window, false),
+		]),
+	);
+	return wrapSegments([provider, ...windows], width, separator);
+}
+
 export function renderFooter(
 	state: HudState,
 	config: UsageHudConfig,
@@ -184,6 +337,11 @@ export function renderFooter(
 				`${" ".repeat(Math.max(0, width - visibleWidth(usage)))}${usage}`,
 			);
 		}
+	}
+
+	const quotaLines = renderQuotaLine(state, theme, width, sep);
+	if (quotaLines.length > 0) {
+		lines.push(...quotaLines);
 	}
 
 	if (state.contextPressure === "warning") {

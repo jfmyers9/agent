@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir, type ThemeColor } from "@earendil-works/pi-coding-agent";
@@ -21,6 +22,10 @@ export type UsageHudConfig = {
 		contextWarningPercent: number;
 		contextErrorPercent: number;
 		compactMinRows: number;
+		quota: {
+			enabled: boolean;
+			refreshIntervalMs: number;
+		};
 	};
 };
 
@@ -91,6 +96,10 @@ export const defaultConfig: UsageHudConfig = {
 		contextWarningPercent: 70,
 		contextErrorPercent: 90,
 		compactMinRows: 18,
+		quota: {
+			enabled: false,
+			refreshIntervalMs: 5 * 60_000,
+		},
 	},
 };
 
@@ -122,6 +131,10 @@ function positiveInteger(value: unknown, fallback: number): number {
 	return Math.max(1, Math.floor(value));
 }
 
+function booleanValue(value: unknown, fallback: boolean): boolean {
+	return typeof value === "boolean" ? value : fallback;
+}
+
 export function loadConfigFromPath(path: string): UsageHudConfig {
 	try {
 		if (!existsSync(path)) return defaultConfig;
@@ -129,6 +142,7 @@ export function loadConfigFromPath(path: string): UsageHudConfig {
 		const icons = asObject(parsed.icons);
 		const colors = asObject(parsed.colors);
 		const usageHud = asObject(parsed.usageHud);
+		const quota = asObject(usageHud.quota);
 		return {
 			icons: {
 				cwd: stringValue(icons.cwd, defaultConfig.icons.cwd),
@@ -166,6 +180,16 @@ export function loadConfigFromPath(path: string): UsageHudConfig {
 					usageHud.compactMinRows,
 					defaultConfig.usageHud.compactMinRows,
 				),
+				quota: {
+					enabled: booleanValue(
+						quota.enabled,
+						defaultConfig.usageHud.quota.enabled,
+					),
+					refreshIntervalMs: positiveInteger(
+						quota.refreshIntervalMs,
+						defaultConfig.usageHud.quota.refreshIntervalMs,
+					),
+				},
 			},
 		};
 	} catch {

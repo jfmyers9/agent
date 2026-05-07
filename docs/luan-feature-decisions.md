@@ -4,20 +4,20 @@ Source reviewed: <https://github.com/luan/agents>, focused on Pi and Codex confi
 
 ## Adopted now
 
-| Feature                        | Where                                                           | Notes                                                                             |
-| ------------------------------ | --------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Pi keybindings                 | `harnesses/pi/keybindings.json`                                 | Emacs-style editor/session shortcuts and queueing.                                |
-| Pi TUI icon/colors             | `harnesses/pi/tui.json`                                         | Lightweight status/footer visual preferences.                                     |
-| Pi quiet/model settings        | `harnesses/pi/settings.json`                                    | Quiet startup, terminal noise reduction, explicit Codex GPT model cycle.          |
-| Pi per-model effort            | `harnesses/pi/effort.json`, `harnesses/pi/extensions/effort.ts` | `/effort` persists model-specific thinking level.                                 |
-| Pi local context               | `harnesses/pi/extensions/agents-local.ts`                       | Loads untracked `AGENTS.local.md` / `CLAUDE.local.md`.                            |
-| Pi clear command               | `harnesses/pi/extensions/clear.ts`                              | `/clear` and `ctrl+shift+l` fresh-session flow.                                   |
-| Pi Vim editor                  | `harnesses/pi/extensions/pi-vim/`                               | Adopted for now; remove directory and reinstall/reload Pi to disable.             |
-| Pi `$skill` references         | `harnesses/pi/extensions/skill-dollar/`                         | `$skill-name` injection/autocomplete/highlighting while preserving `/skill:name`. |
-| Pi usage HUD without `ct`      | `harnesses/pi/extensions/usage-hud/`                            | Footer-only context, token, cost, model/thinking, cwd, and branch visibility.     |
-| Pi task extension without `ct` | `harnesses/pi/extensions/tasks/`                                | Project task tools, HUD, board, and blueprint-linked execution queue.             |
-| Codex queue/status ergonomics  | `harnesses/codex/config.toml`                                   | Plan-mode reasoning, `alt-enter` queue, status-line fields.                       |
-| Codex lightweight hooks        | `harnesses/codex/hooks.json`, `harnesses/codex/hooks/`          | Source/Graphite reminders and raw Git footgun blocking without `ct`/mux.          |
+| Feature                        | Where                                                           | Notes                                                                                             |
+| ------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Pi keybindings                 | `harnesses/pi/keybindings.json`                                 | Emacs-style editor/session shortcuts and queueing.                                                |
+| Pi TUI icon/colors             | `harnesses/pi/tui.json`                                         | Lightweight status/footer visual preferences.                                                     |
+| Pi quiet/model settings        | `harnesses/pi/settings.json`                                    | Quiet startup, terminal noise reduction, explicit Codex GPT model cycle.                          |
+| Pi per-model effort            | `harnesses/pi/effort.json`, `harnesses/pi/extensions/effort.ts` | `/effort` persists model-specific thinking level.                                                 |
+| Pi local context               | `harnesses/pi/extensions/agents-local.ts`                       | Loads untracked `AGENTS.local.md` / `CLAUDE.local.md`.                                            |
+| Pi clear command               | `harnesses/pi/extensions/clear.ts`                              | `/clear` and `ctrl+shift+l` fresh-session flow.                                                   |
+| Pi Vim editor                  | `harnesses/pi/extensions/pi-vim/`                               | Adopted for now; remove directory and reinstall/reload Pi to disable.                             |
+| Pi `$skill` references         | `harnesses/pi/extensions/skill-dollar/`                         | `$skill-name` injection/autocomplete/highlighting while preserving `/skill:name`.                 |
+| Pi usage HUD without `ct`      | `harnesses/pi/extensions/usage-hud/`                            | Footer-only context, token, cost, model/thinking, cwd, branch, and OpenAI/Codex quota visibility. |
+| Pi task extension without `ct` | `harnesses/pi/extensions/tasks/`                                | Project task tools, HUD, board, and blueprint-linked execution queue.                             |
+| Codex queue/status ergonomics  | `harnesses/codex/config.toml`                                   | Plan-mode reasoning, `alt-enter` queue, status-line fields.                                       |
+| Codex lightweight hooks        | `harnesses/codex/hooks.json`, `harnesses/codex/hooks/`          | Source/Graphite reminders and raw Git footgun blocking without `ct`/mux.                          |
 
 ## Rejected or deferred
 
@@ -37,7 +37,7 @@ Source reviewed: <https://github.com/luan/agents>, focused on Pi and Codex confi
 | Codex plugins / marketplaces                           | Deferred                     | Requires plugin install/update infrastructure and overlaps current skills.                           | Marketplace trust, local plugin packaging.                                | Should Graphite plugin be packaged, or are existing `gt`/`submit` skills enough? |
 | Pi prompt stash/history                                | Deferred                     | Useful but stores prompts and may collide with shortcuts.                                            | SQLite state, prompt privacy, `ctrl+s` conflict.                          | Design opt-in prompt history with retention/redaction controls?                  |
 | Pi custom TUI/pretty renderers beyond footer HUD       | Deferred                     | Broad transcript/editor overrides remain high-conflict; footer HUD is adopted separately.            | Rendering compatibility, extension composition, and terminal assumptions. | Revisit only after the footer-only HUD proves insufficient.                      |
-| Provider quota/subscription bars in Pi HUD             | Deferred/opt-in only         | Useful budget signal, but reads auth tokens and calls provider endpoints.                            | Endpoint stability, privacy, network/API behavior, per-provider auth.     | Design a local-only opt-in quota module with explicit provider controls?         |
+| Provider quota/subscription bars in Pi HUD             | Adopted for OpenAI/Codex     | Local opt-in HUD polls ChatGPT `backend-api/wham/usage` with Codex auth and renders 5h/week windows. | Endpoint stability, privacy, network/API behavior, per-provider auth.     | Keep other providers opt-in/spec-backed before adding.                           |
 | Pi Context7 package                                    | Deferred                     | Potentially useful but third-party package needs review.                                             | Package trust and external service behavior.                              | Review package source and decide if docs lookup is worth installing.             |
 | Pi Catppuccin/Oh Pi themes                             | Optional/deferred            | Visual preference; current mac theme remains useful.                                                 | Third-party theme package.                                                | Do we want a theme package or local theme JSON?                                  |
 | Pi subagents package                                   | Rejected for shared workflow | Current rules prefer blueprints over native subagent/task stores.                                    | Native subagent orchestration can hide durable state.                     | Revisit only with a blueprint-compatible orchestration design.                   |
@@ -52,5 +52,4 @@ Source reviewed: <https://github.com/luan/agents>, focused on Pi and Codex confi
 - `ct/lens equivalent for this config`
 - `prompt history storage with retention controls`
 - `Codex plugin and MCP adoption`
-- `Pi provider quota bars without ct dependencies`
 - `Web/docs lookup tools package review`
