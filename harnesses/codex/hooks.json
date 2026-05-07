@@ -1,0 +1,41 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ~/.codex/hooks/source-remind.sh",
+            "statusMessage": "Loading workflow guidance",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ~/.codex/hooks/graphite-session-start.sh",
+            "statusMessage": "Checking Graphite workflow",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ~/.codex/hooks/graphite-validate-git.sh",
+            "statusMessage": "Checking Graphite command policy",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

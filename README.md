@@ -46,9 +46,14 @@ harnesses/
     hooks/                 # Claude Code hooks
   pi/
     settings.json          # Pi settings
+    keybindings.json       # Pi TUI keybindings
+    tui.json               # Pi TUI footer/icon colors
+    effort.json            # Pi per-model thinking defaults
     extensions/            # Pi extensions
   codex/
     config.toml            # Codex CLI settings
+    hooks.json             # Codex hook registration
+    hooks/                 # Codex hook scripts
 ```
 
 ## Shared config
@@ -93,6 +98,7 @@ Installed by `./install.sh pi` into `~/.pi/agent`:
 
 - links `AGENTS.md`, `rules/`, `skills/`
 - links `harnesses/pi/settings.json` as `settings.json`
+- links Pi `keybindings.json`, `tui.json`, and `effort.json` when present
 - links `harnesses/pi/extensions/*` into `~/.pi/agent/extensions/`
 - installs `blueprint` to `~/.local/bin`
 
@@ -112,6 +118,7 @@ Direct aliases like `/commit` can be added later with a Pi extension.
 Installed by `./install.sh codex` into `~/.codex` and `~/.agents`:
 
 - links `harnesses/codex/config.toml` as `~/.codex/config.toml`
+- links `harnesses/codex/hooks.json` and `harnesses/codex/hooks/*`
 - links `AGENTS.md` and `rules/` into `~/.codex` as reference files
 - links shared `skills/` as `$HOME/.agents/skills`
 - links shared `rules/` as `$HOME/.agents/rules`

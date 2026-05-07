@@ -5,9 +5,24 @@ approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 web_search = "cached"
 project_doc_fallback_filenames = ["CLAUDE.md"]
+plan_mode_reasoning_effort = "high"
+
+[features]
+codex_hooks = true
 
 [tui]
 notification_condition = "unfocused"
+status_line = [
+  "run-state",
+  "model-with-reasoning",
+  "current-dir",
+  "git-branch",
+  "context-used",
+  "context-window-size",
+]
+
+[tui.keymap.composer]
+queue = "alt-enter"
 
 [tui.model_availability_nux]
 "gpt-5.5" = 1

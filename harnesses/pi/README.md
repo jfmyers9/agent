@@ -13,15 +13,34 @@ Pi loads:
 - `AGENTS.md` as global context
 - `skills/` via Agent Skills discovery
 - `rules/` as referenced Markdown
+- `harnesses/pi/settings.json` for model and TUI defaults
+- `harnesses/pi/keybindings.json` for Emacs-style editor/session shortcuts
+- `harnesses/pi/tui.json` for status/footer icon and color preferences
+- `harnesses/pi/effort.json` for per-model thinking defaults used by `/effort`
 - `harnesses/pi/extensions/` as global Pi extensions
 - `bin/blueprint` as a shared CLI
+
+Adopted Pi settings from Luan's config:
+
+- quiet startup and reduced terminal progress noise
+- explicit Codex GPT model cycle (`gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`)
+- tree navigation on double Escape
+- Emacs-style movement and queueing shortcuts
+- lightweight footer/status icon preferences
+
+Feature decisions from the Luan config review are tracked in
+[`../../docs/luan-feature-decisions.md`](../../docs/luan-feature-decisions.md).
 
 Installed extensions:
 
 - `mac-system-theme.ts` — syncs Pi's `dark`/`light` theme with macOS appearance.
+- `agents-local.ts` — injects untracked `AGENTS.local.md` / `CLAUDE.local.md` context from cwd ancestors; `/agents-local` lists loaded files.
+- `clear.ts` — `/clear` starts a fresh session after the current turn; `ctrl+shift+l` queues it.
+- `effort.ts` — `/effort [level]` persists per-model thinking effort to `effort.json`.
+- `pi-vim/` — replaces the editor with Vim-style modal editing. Remove or move this directory, then reinstall/reload Pi, to disable it.
+- `skill-dollar/` — supports `$skill-name` references with autocomplete/highlighting while keeping `/skill:<name>` commands.
 
-Skills are available as `/skill:<name>` by default. Add more Pi extensions
-later if direct aliases like `/commit` or `/submit` are desired.
+Skills are available as `/skill:<name>` and `$skill-name` references by default.
 
 Long-running workflows use blueprints as the Pi work tracker:
 

@@ -1,10 +1,28 @@
 {
   "defaultProvider": "openai-codex",
   "defaultThinkingLevel": "high",
+  "defaultModel": "gpt-5.5",
+  "enabledModels": [
+    "openai-codex/gpt-5.5",
+    "openai-codex/gpt-5.4",
+    "openai-codex/gpt-5.4-mini"
+  ],
   "skills": [
     "skills"
   ],
   "enableSkillCommands": true,
+  "steeringMode": "all",
+  "autoUpdate": true,
+  "transport": "sse",
+  "doubleEscapeAction": "tree",
+  "treeFilterMode": "default",
+  "quietStartup": true,
+  "hideThinkingBlock": false,
+  "editorPaddingX": 0,
+  "terminal": {
+    "clearOnShrink": false,
+    "showTerminalProgress": false
+  },
   "compaction": {
     "enabled": true,
     "reserveTokens": 16384,
@@ -18,8 +36,7 @@
       "maxRetryDelayMs": 60000
     }
   },
-  "defaultModel": "gpt-5.5",
-  "lastChangelogVersion": "0.71.0",
+  "lastChangelogVersion": "0.73.1",
   "packages": [
     "npm:pi-lens"
   ]
