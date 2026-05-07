@@ -24,5 +24,10 @@
     "tokens": "muted",
     "cost": "success",
     "separator": "borderMuted"
+  },
+  "usageHud": {
+    "contextWarningPercent": 70,
+    "contextErrorPercent": 90,
+    "compactMinRows": 18
   }
 }

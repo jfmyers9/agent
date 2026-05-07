@@ -27,6 +27,7 @@ Adopted Pi settings from Luan's config:
 - tree navigation on double Escape
 - Emacs-style movement and queueing shortcuts
 - lightweight footer/status icon preferences
+- Pi-native usage HUD for context, tokens, cost, model/thinking, cwd, and branch
 
 Feature decisions from the Luan config review are tracked in
 [`../../docs/luan-feature-decisions.md`](../../docs/luan-feature-decisions.md).
@@ -39,6 +40,9 @@ Installed extensions:
 - `effort.ts` — `/effort [level]` persists per-model thinking effort to `effort.json`.
 - `pi-vim/` — replaces the editor with Vim-style modal editing. Remove or move this directory, then reinstall/reload Pi, to disable it.
 - `skill-dollar/` — supports `$skill-name` references with autocomplete/highlighting while keeping `/skill:<name>` commands.
+- `usage-hud/` — replaces Pi's footer with a local, dependency-light context/token/cost HUD. Remove or move this directory, then reinstall/reload Pi, to restore Pi's default footer.
+
+The usage HUD intentionally does not poll provider quota/subscription endpoints by default; quota bars need a separate local opt-in decision because they read auth tokens and use network APIs.
 
 Skills are available as `/skill:<name>` and `$skill-name` references by default.
 
