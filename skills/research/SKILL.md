@@ -23,6 +23,7 @@ as the durable source of truth for implementation.
   blueprint
 - `--depth <medium|high|max>` — thoroughness, default `medium`
 - `--auto` — skip approval gates, used by `/skill:vibe`
+- `--no-tasks` — do not create project tasks after plan approval
 
 ## Blueprint
 
@@ -42,14 +43,19 @@ Expected body:
 ## Spec
 
 ### Problem
+
 ### Recommendation
+
 ### Architecture Context
+
 ### Risks
+
 ### Challenges
 
 ## Plan
 
 **Phase 1: <name>**
+
 - Files: <paths>
 - Approach: <what changes>
 - Steps:
@@ -66,6 +72,10 @@ Use frontmatter status for progress:
 
 Run `blueprint commit spec <slug>` after every blueprint write or
 status change. If it fails, stop and show the error.
+
+When project task tools are available, approved plans may also be
+imported into project tasks. These tasks are an execution queue linked
+by `source_blueprint`; the blueprint remains the durable plan.
 
 ## Workflow
 
@@ -130,11 +140,24 @@ and stop for approval.
 
 ### 5. Approve
 
-When plan is accepted, set status to `approved`, commit the blueprint,
-and report:
+When plan is accepted, set status to `approved`, commit the blueprint.
+
+If `--no-tasks` is absent and `task_import_blueprint` is available:
+
+1. Call `task_import_blueprint(match: <blueprint path or slug>)`.
+2. Call `task_list(source_blueprint: <blueprint slug>, all: false)` to
+   confirm the imported execution queue.
+3. Run `blueprint commit spec <slug>` again so the task store is synced
+   with the approved blueprint if it lives under the blueprints repo.
+
+If task tools are unavailable or import fails, report the blueprint as
+approved and continue; do not block approval on task creation.
+
+Report:
 
 ```text
 Plan: <path>
+Tasks: imported | unavailable | skipped
 Next: /skill:implement
 ```
 
@@ -145,5 +168,6 @@ Keep user-facing output concise:
 ```text
 Spec/Plan: <path>
 Status: <status>
+Tasks: <imported|unavailable|skipped>
 Next: /skill:implement
 ```
