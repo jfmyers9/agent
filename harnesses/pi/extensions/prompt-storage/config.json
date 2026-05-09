@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "shortcuts": {
+    "stash": "alt+s",
+    "pop": "ctrl+alt+s",
+    "history": "ctrl+r"
+  },
+  "history": {
+    "includeSlashCommands": false,
+    "maxResults": 120
+  },
+  "picker": {
+    "maxVisible": 10,
+    "enterAction": "apply"
+  }
+}

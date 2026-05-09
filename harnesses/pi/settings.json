@@ -38,6 +38,7 @@
   },
   "lastChangelogVersion": "0.74.0",
   "packages": [
-    "npm:pi-lens"
+    "npm:pi-lens",
+    "npm:@dreki-gg/pi-context7@0.1.9"
   ]
 }
