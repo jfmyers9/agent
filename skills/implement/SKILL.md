@@ -1,19 +1,20 @@
 ---
 name: implement
 description: >
-  Execute implementation plans from blueprint files. Triggers:
+  Execute approved implementation plans from blueprint files. Triggers:
   'implement', 'build this', 'execute plan', 'start work'.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
-argument-hint: "[blueprint-slug-or-path] [--no-report]"
+argument-hint: "[blueprint-slug-or-path] [--no-report] [--no-tasks]"
 ---
 
 # Implement
 
-Implement the latest approved blueprint. Blueprints remain the durable
-source of truth; project tasks are the preferred fine-grained execution
-queue when `task_*` tools are available.
+Implement an approved blueprint. Blueprints remain the durable source of
+truth; project tasks are the preferred fine-grained execution queue when
+`task_*` tools are available.
 
-@rules/blueprints.md and @rules/harness-compat.md apply.
+@rules/blueprints.md, @rules/plannotator-gates.md, and
+@rules/harness-compat.md apply.
 
 ## Arguments
 
@@ -29,12 +30,23 @@ queue when `task_*` tools are available.
 - Else if an argument remains, run:
   `blueprint find --type plan,spec,review --match <arg>`
 - Else run: `blueprint find --type plan,spec,review`
-- Select the most recent file whose status is not `complete`.
-- If none exists, stop and suggest `/skill:research`.
+- Select the most recent file whose frontmatter status is `approved`.
+- If none exists, stop and suggest `/skill:research` or
+  `/skill:research --continue` for pending `spec_review`/`plan_review`
+  blueprints.
 
-Read the file and skip YAML frontmatter. Prefer an `approved` plan, but
-allow `plan_review` or `draft` when the user explicitly requested the
-file/slug.
+Read the file and skip YAML frontmatter. Do not execute `draft`,
+`spec_review`, `spec_approved`, or `plan_review` content by default.
+
+If the user explicitly requested an unapproved file or slug:
+
+1. Run `plannotator annotate "$file" --gate` before any code changes.
+2. On approval, set status to `approved`, commit the blueprint, then
+   continue.
+3. On feedback, leave status unchanged, report the feedback target, and
+   stop with `/skill:research --continue` or the originating planning
+   skill.
+4. On dismissal, leave status unchanged and stop.
 
 ### 2. Parse Plan
 
@@ -47,9 +59,17 @@ Parse phases from the blueprint body:
 If no phases exist, treat the entire `## Plan`, `## Feedback Analysis`,
 or `## Findings` section as one phase.
 
+Each phase should provide:
+
+- phase title
+- referenced files
+- required changes
+- verification command/check
+
 ### 2.5. Initialize Project Tasks When Available
 
-If `--no-tasks` is absent and project task tools are available:
+Only after the blueprint is approved, and if `--no-tasks` is absent and
+project task tools are available:
 
 1. Import the blueprint into tasks:
    `task_import_blueprint(match: <blueprint path or slug>)`.
@@ -60,13 +80,6 @@ If `--no-tasks` is absent and project task tools are available:
 
 If task tools are unavailable or import fails, continue with the
 phase-only workflow. Do not stop solely because tasks are unavailable.
-
-Each phase should produce:
-
-- phase title
-- referenced files
-- required changes
-- verification command/check
 
 ### 3. Implement Work
 
@@ -87,6 +100,7 @@ If linked project tasks are available, work task-by-task in board order:
 8. If blocked, mark the task `status: "rejected"` or leave it
    `in_progress` with a clear blocker note in the blueprint, then stop.
 9. Append/update an `## Implementation Notes` section in the blueprint:
+
    ```markdown
    ### Task <id>: <title>
 
@@ -95,6 +109,7 @@ If linked project tasks are available, work task-by-task in board order:
    - Verification: <command> — <result>
    - Notes: <deviations or blockers>
    ```
+
 10. Run `blueprint commit <type> <slug>` after the blueprint write.
 
 If project tasks are not available, use the phase fallback. For each
@@ -107,6 +122,7 @@ phase, in order:
 5. If no verification is specified, run the smallest relevant test,
    typecheck, lint, or smoke command available.
 6. Append/update an `## Implementation Notes` section in the blueprint:
+
    ```markdown
    ### Phase N: <title>
 
@@ -115,6 +131,7 @@ phase, in order:
    - Verification: <command> — <result>
    - Notes: <deviations or blockers>
    ```
+
 7. Run `blueprint commit <type> <slug>` after the blueprint write.
 
 If a task or phase is blocked, stop after recording the blocker.
@@ -147,6 +164,9 @@ Show:
 
 ## Rules
 
+- Execute only approved blueprints.
+- Use Plannotator gates before code changes when explicit unapproved
+  blueprints need approval.
 - Use project task tools only as a blueprint-linked execution queue.
 - Do not create harness-native task/team/subagent state.
 - Do not spawn subagents or teams.

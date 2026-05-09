@@ -73,13 +73,14 @@ Pick first match:
 1. CI failing → fix checks with `/skill:debug`
 2. Changes requested/unresolved comments → `/skill:respond` or
    `/skill:pr-plan`
-3. Pending approved plan/spec/review → `/skill:implement`
-4. Dirty working tree with completed work → `/skill:review` or
+3. Pending `spec_review`/`plan_review` blueprint → `/skill:research --continue`
+4. Pending approved plan/spec/review → `/skill:implement`
+5. Dirty working tree with completed work → `/skill:review` or
    `/skill:commit`
-5. Draft PR, all passing → mark ready
-6. Ready PR, approved → merge or submit stack
-7. No PR → `/skill:submit`
-8. All clear → wait for review or start next blueprint
+6. Draft PR, all passing → mark ready
+7. Ready PR, approved → merge or submit stack
+8. No PR → `/skill:submit`
+9. All clear → wait for review or start next blueprint
 
 ## Notes
 

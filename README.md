@@ -65,11 +65,14 @@ Portable across harnesses:
 - `skills/*/SKILL.md` — Agent Skills-compatible workflow packages
 - `bin/blueprint` — file-backed specs, plans, reviews, reports
 
-Blueprints are the portable source of truth for long-lived state:
+Blueprints are the portable source of truth for long-lived state.
+Research-backed proposals live in `spec/` and may include their own
+`## Plan` execution section. Tactical fix/debug/PR plans live in
+`plan/`:
 
 ```sh
 blueprint create spec "topic"
-blueprint create plan "topic"
+blueprint create plan "fix or PR feedback topic"
 blueprint create review "topic"
 blueprint create report "topic"
 blueprint find --type plan,spec,review
