@@ -36,6 +36,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jim/.local/bin/plannotator",
+            "timeout": 345600
+          }
+        ]
+      }
     ]
   }
 }

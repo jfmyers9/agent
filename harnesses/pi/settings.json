@@ -39,6 +39,7 @@
   "lastChangelogVersion": "0.74.0",
   "packages": [
     "npm:pi-lens",
+    "npm:@plannotator/pi-extension",
     "npm:@dreki-gg/pi-context7@0.1.9"
   ]
 }
