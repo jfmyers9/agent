@@ -13,8 +13,16 @@ export const taskStatuses = [
 
 export const taskTypes = ["epic", "feature", "bug", "chore"] as const;
 
+export const taskScopes = [
+	"current",
+	"project",
+	"all_worktrees",
+	"legacy",
+] as const;
+
 export type TaskStatus = (typeof taskStatuses)[number];
 export type TaskType = (typeof taskTypes)[number];
+export type TaskScope = (typeof taskScopes)[number];
 
 export interface TaskRecord {
 	id: string;
@@ -31,6 +39,8 @@ export interface TaskRecord {
 	parent_id?: string | null;
 	blocked_by: string[];
 	source_blueprint?: string | null;
+	worktree_key?: string | null;
+	worktree_label?: string | null;
 	created_at: number;
 	updated_at: number;
 }
@@ -63,6 +73,7 @@ export interface TaskDetails {
 const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz";
 const statusSet = new Set<string>(taskStatuses);
 const typeSet = new Set<string>(taskTypes);
+const scopeSet = new Set<string>(taskScopes);
 
 export function nowMs(): number {
 	return Date.now();
@@ -102,6 +113,20 @@ export function normalizeType(
 	if (!typeSet.has(normalized)) {
 		throw new Error(
 			`invalid task type '${value}'. Expected one of: ${taskTypes.join(", ")}`,
+		);
+	}
+	return normalized;
+}
+
+export function normalizeScope(
+	value: unknown,
+	fallback: TaskScope = "current",
+): TaskScope {
+	if (typeof value !== "string" || value.trim() === "") return fallback;
+	const normalized = value.trim() as TaskScope;
+	if (!scopeSet.has(normalized)) {
+		throw new Error(
+			`invalid task scope '${value}'. Expected one of: ${taskScopes.join(", ")}`,
 		);
 	}
 	return normalized;

@@ -7,6 +7,9 @@ declare const process: {
 
 declare module "node:crypto" {
 	export function randomBytes(size: number): Uint8Array;
+	export function createHash(algorithm: string): {
+		update(data: string): { digest(encoding: string): string };
+	};
 }
 
 declare module "node:child_process" {
@@ -20,6 +23,14 @@ declare module "node:child_process" {
 declare module "node:fs" {
 	export function existsSync(path: string): boolean;
 	export function readFileSync(path: string, encoding: string): string;
+	export function readdirSync(
+		path: string,
+		options: { withFileTypes: true },
+	): { name: string; isDirectory(): boolean }[];
+	export const realpathSync: {
+		(path: string): string;
+		native(path: string): string;
+	};
 }
 
 declare module "node:fs/promises" {

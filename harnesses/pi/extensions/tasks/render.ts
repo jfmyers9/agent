@@ -19,6 +19,8 @@ export interface RenderDisplayContext {
 	currentAssignee?: string;
 	hideKanban?: boolean;
 	maxTasks?: number;
+	worktreeLabel?: string;
+	showWorktree?: boolean;
 }
 
 function byId(tasks: TaskRecord[]): Map<string, TaskRecord> {
@@ -163,6 +165,7 @@ function taskLine(
 	width: number,
 	selected: boolean,
 	currentAssignee?: string,
+	showWorktree = false,
 ): string {
 	const assigned =
 		currentAssignee && task.assigned_to === currentAssignee
@@ -170,9 +173,12 @@ function taskLine(
 			: "";
 	const priority = task.priority ? theme.fg("muted", ` p${task.priority}`) : "";
 	const source = task.source_blueprint ? theme.fg("dim", " ↗") : "";
+	const lane = showWorktree
+		? theme.fg("dim", ` [${task.worktree_label ?? task.worktree_key ?? "project"}]`)
+		: "";
 	const prefix = selected ? theme.fg("accent", "›") : " ";
 	return truncate(
-		`${prefix} ${statusIcon(task, theme)} ${theme.fg("accent", task.id)} ${task.title}${assigned}${priority}${source}`,
+		`${prefix} ${statusIcon(task, theme)} ${theme.fg("accent", task.id)} ${task.title}${lane}${assigned}${priority}${source}`,
 		width,
 	);
 }
@@ -184,6 +190,7 @@ function renderColumn(
 	theme: Theme,
 	selected: number,
 	currentAssignee?: string,
+	showWorktree = false,
 ): string[] {
 	const lines = [
 		theme.fg("mdHeading", `${column.label} (${column.tasks.length})`),
@@ -191,7 +198,14 @@ function renderColumn(
 	const visible = column.tasks.slice(0, Math.max(0, height - 1));
 	for (let i = 0; i < visible.length; i++) {
 		lines.push(
-			taskLine(visible[i], theme, width, i === selected, currentAssignee),
+			taskLine(
+				visible[i],
+				theme,
+				width,
+				i === selected,
+				currentAssignee,
+				showWorktree,
+			),
 		);
 	}
 	while (lines.length < height) lines.push("");
@@ -228,6 +242,10 @@ export function renderTaskDetails(
 		);
 	if (task.source_blueprint)
 		lines.push(`${theme.fg("muted", "Blueprint:")} ${task.source_blueprint}`);
+	if (task.worktree_label || task.worktree_key)
+		lines.push(
+			`${theme.fg("muted", "Worktree:")} ${task.worktree_label ?? task.worktree_key}`,
+		);
 	if (task.labels.length > 0)
 		lines.push(`${theme.fg("muted", "Labels:")} ${task.labels.join(", ")}`);
 	if (deps.length > 0)
@@ -264,6 +282,7 @@ export function renderTaskBoardLines(
 					theme,
 					index === selected.column ? selected.row : -1,
 					display.currentAssignee,
+					display.showWorktree,
 				),
 			)
 		: [[theme.fg("dim", "No tasks")]];
@@ -322,8 +341,11 @@ export function renderHudLines(
 	).length;
 	if (activeCount === 0) return [];
 	const parts = summaryParts(columns);
+	const lane = display.worktreeLabel
+		? theme.fg("dim", ` ${display.worktreeLabel}`)
+		: "";
 	const header = truncate(
-		`${theme.fg("mdHeading", "●")} ${theme.fg("mdHeading", `${activeCount} tasks`)} ${theme.fg("muted", `(${parts.join(", ") || "all clear"})`)}`,
+		`${theme.fg("mdHeading", "●")} ${theme.fg("mdHeading", `${activeCount} tasks`)}${lane} ${theme.fg("muted", `(${parts.join(", ") || "all clear"})`)}`,
 		safeWidth,
 	);
 	if (display.hideKanban) return [header];
@@ -342,7 +364,14 @@ export function renderHudLines(
 		);
 		for (const task of column.tasks.slice(0, maxTasks)) {
 			lines.push(
-				taskLine(task, theme, safeWidth, false, display.currentAssignee),
+				taskLine(
+					task,
+					theme,
+					safeWidth,
+					false,
+					display.currentAssignee,
+					display.showWorktree,
+				),
 			);
 		}
 	}
@@ -352,6 +381,9 @@ export function renderHudLines(
 export function formatTaskList(tasks: TaskRecord[]): string {
 	if (tasks.length === 0) return "No tasks";
 	return tasks
-		.map((task) => `${task.id} [${task.status}] (${task.type}) ${task.title}`)
+		.map((task) => {
+			const lane = task.worktree_label ? ` [${task.worktree_label}]` : "";
+			return `${task.id} [${task.status}] (${task.type})${lane} ${task.title}`;
+		})
 		.join("\n");
 }

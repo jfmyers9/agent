@@ -45,7 +45,7 @@ Installed extensions:
 - `skill-dollar/` — supports `$skill-name` references with autocomplete/highlighting while keeping `/skill:<name>` commands.
 - `prompt-storage/` — local prompt stash/history. Shortcuts: `alt+s` stash current draft, `ctrl+alt+s` pop a stash, `ctrl+r` search previous prompts.
 - `usage-hud/` — replaces Pi's footer with a local, dependency-light context/token/cost HUD plus opt-in OpenAI/Codex quota bars. Remove or move this directory, then reinstall/reload Pi, to restore Pi's default footer.
-- `tasks/` — blueprint-linked project task tools, HUD, and `/tasks` board for fine-grained LLM work chunks.
+- `tasks/` — blueprint-linked project task tools, HUD, and `/tasks` board for fine-grained LLM work chunks. Blueprints stay project-scoped; task queues default to a worktree lane under the project task root to avoid parallel-worktree collisions.
 
 The usage HUD polls OpenAI/Codex quota only when `tui.json` sets `usageHud.quota.enabled: true`. It reads `~/.pi/agent/auth.json` or `~/.codex/auth.json` and calls ChatGPT's `backend-api/wham/usage` endpoint for 5h/week windows.
 
@@ -62,5 +62,9 @@ Long-running workflows use blueprints as the durable tracker and project tasks a
 - `/skill:review` writes `review/` blueprints
 - `/skill:fix` writes `plan/` blueprints
 - `/skill:vibe` tracks pipeline state in a `plan/` blueprint
-- `/tasks blueprint [slug]` imports blueprint steps into project tasks
-- `/tasks` opens the Pi task board
+- `/tasks blueprint [slug]` imports blueprint steps into the current worktree task lane
+- `/tasks` opens the current worktree task board
+- `/tasks all` opens an aggregate board across worktree lanes, with lane labels
+- `task_list`/HUD/guard default to the current worktree lane; use `scope: "all_worktrees"` for explicit aggregate inspection
+
+Task lane smoke check: in two git worktrees for the same project, run `/tasks blueprint <slug>` in each, then confirm `/tasks` only shows that worktree's queue while `/tasks all` shows both lane labels.

@@ -14,6 +14,8 @@ export interface TaskBoardOptions {
 	tasks: TaskRecord[];
 	theme: Theme;
 	currentAssignee?: string;
+	showWorktree?: boolean;
+	worktreeLabel?: string;
 	onClose: () => void;
 	onReload: () => Promise<TaskRecord[]>;
 	onMutate: (
@@ -213,6 +215,8 @@ export class TaskBoardOverlay implements Component {
 			this.selectionState,
 			{
 				currentAssignee: this.options.currentAssignee,
+				showWorktree: this.options.showWorktree,
+				worktreeLabel: this.options.worktreeLabel,
 			},
 		);
 		if (this.confirmingDelete) {

@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { normalizeString, type TaskRecord } from "./schema";
-import type { AddTaskInput } from "./store";
+import type { AddTaskInput, WorktreeIdentity } from "./store";
 
 export interface BlueprintImportResult {
 	blueprintPath: string;
@@ -59,9 +59,14 @@ function cleanStepTitle(text: string): string {
 		.slice(0, 180);
 }
 
+function laneInput(lane?: WorktreeIdentity): Pick<AddTaskInput, "worktree_key" | "worktree_label"> {
+	return lane ? { worktree_key: lane.key, worktree_label: lane.label } : {};
+}
+
 export function parseBlueprintTasks(
 	markdown: string,
 	slug: string,
+	lane?: WorktreeIdentity,
 ): AddTaskInput[] {
 	const body = sectionAfter(stripFrontmatter(markdown), "Plan");
 	const lines = body.split("\n");
@@ -88,6 +93,7 @@ export function parseBlueprintTasks(
 				epic_title: phaseTitle,
 				source_blueprint: slug,
 				labels: ["blueprint"],
+				...laneInput(lane),
 			});
 			continue;
 		}
@@ -106,6 +112,7 @@ export function parseBlueprintTasks(
 			epic_title: phaseTitle,
 			source_blueprint: slug,
 			labels: ["blueprint-step"],
+			...laneInput(lane),
 		});
 	}
 
@@ -127,17 +134,19 @@ export function parseBlueprintTasks(
 		epic_title: "Blueprint",
 		source_blueprint: slug,
 		labels: ["blueprint-step"],
+		...laneInput(lane),
 	}));
 }
 
 export function buildBlueprintImport(
 	cwd: string,
 	match?: string,
+	lane?: WorktreeIdentity,
 ): BlueprintImportResult {
 	const blueprintPath = resolveBlueprint(cwd, match);
 	const slug = slugFromPath(blueprintPath);
 	const markdown = readFileSync(blueprintPath, "utf8");
-	return { blueprintPath, slug, inputs: parseBlueprintTasks(markdown, slug) };
+	return { blueprintPath, slug, inputs: parseBlueprintTasks(markdown, slug, lane) };
 }
 
 export function dedupeBlueprintTask(
@@ -146,17 +155,20 @@ export function dedupeBlueprintTask(
 ): boolean {
 	const source = normalizeString(input.source_blueprint);
 	const title = normalizeString(input.title);
+	const worktreeKey = normalizeString(input.worktree_key);
 	return Boolean(
 		source &&
 			title &&
 			existing.source_blueprint === source &&
-			existing.title === title,
+			existing.title === title &&
+			(!worktreeKey || existing.worktree_key === worktreeKey),
 	);
 }
 
 export function summarizeBlueprintTasks(
 	tasks: TaskRecord[],
 	sourceBlueprint: string,
+	showWorktrees = false,
 ): string {
 	const linked = tasks.filter(
 		(task) => task.source_blueprint === sourceBlueprint,
@@ -171,9 +183,13 @@ export function summarizeBlueprintTasks(
 		`Task summary for ${sourceBlueprint}: ${done}/${linked.length} done, ${active} active, ${canceled} canceled`,
 		"",
 	];
-	for (const task of linked)
+	for (const task of linked) {
+		const lane = showWorktrees
+			? ` [${task.worktree_label ?? task.worktree_key ?? "project"}]`
+			: "";
 		lines.push(
-			`- [${task.status === "done" ? "x" : " "}] ${task.id} ${task.title} (${task.status})`,
+			`- [${task.status === "done" ? "x" : " "}] ${task.id}${lane} ${task.title} (${task.status})`,
 		);
+	}
 	return lines.join("\n");
 }

@@ -17,14 +17,21 @@ import {
 } from "./blueprints";
 import { installTaskGuard, sessionAssignment, sessionLabel } from "./guard";
 import {
+	taskScopes,
 	taskStatuses,
 	taskTypes,
 	type TaskCommand,
 	type TaskDetails,
 	type TaskRecord,
+	type TaskScope,
 } from "./schema";
 import { formatTaskList, renderHudLines } from "./render";
-import { TaskStore, type AddTaskInput, type UpdateTaskInput } from "./store";
+import {
+	TaskStore,
+	worktreeIdentity,
+	type AddTaskInput,
+	type UpdateTaskInput,
+} from "./store";
 
 interface Config {
 	enabled: boolean;
@@ -106,7 +113,16 @@ function textResult(text: string, details: TaskDetails) {
 }
 
 function renderTaskSummary(task: TaskRecord): string {
-	return `${task.id} [${task.status}] (${task.type}) ${task.title}`;
+	const lane = task.worktree_label ? ` [${task.worktree_label}]` : "";
+	return `${task.id} [${task.status}] (${task.type})${lane} ${task.title}`;
+}
+
+function requestScope(params: Record<string, unknown>): TaskScope {
+	if (params.scope === "all_worktrees" || params.all_worktrees === true)
+		return "all_worktrees";
+	if (params.scope === "project") return "project";
+	if (params.scope === "legacy") return "legacy";
+	return "current";
 }
 
 function formatToolResult(details: TaskDetails): string {
@@ -130,6 +146,7 @@ async function refreshHud(
 		currentAssignee: sessionAssignment(ctx),
 		hideKanban: taskHudHidden,
 		maxTasks: config.hud.maxTasks,
+		worktreeLabel: worktreeIdentity(ctx.cwd).label,
 	});
 	ctx.ui.setWidget?.("project-tasks", lines.length > 0 ? lines : undefined, {
 		placement: "aboveEditor",
@@ -175,7 +192,7 @@ async function runAction(
 			return textResult(formatTaskList(tasks), { action, tasks });
 		}
 		case "show": {
-			const task = await taskStore.show(String(params.id ?? ""));
+			const task = await taskStore.show(String(params.id ?? ""), requestScope(params));
 			return textResult(formatToolResult({ action, task }), { action, task });
 		}
 		case "update": {
@@ -192,13 +209,13 @@ async function runAction(
 		}
 		case "delete": {
 			const deleted = await mutateAndRefresh(ctx, config, () =>
-				taskStore.delete(String(params.id ?? "")),
+				taskStore.delete(String(params.id ?? ""), requestScope(params)),
 			);
 			return textResult(`Deleted ${deleted}`, { action, deleted });
 		}
 		case "accept": {
 			const task = await mutateAndRefresh(ctx, config, () =>
-				taskStore.accept(String(params.id ?? "")),
+				taskStore.accept(String(params.id ?? ""), requestScope(params)),
 			);
 			return textResult(`Accepted ${renderTaskSummary(task)}`, {
 				action,
@@ -207,7 +224,11 @@ async function runAction(
 		}
 		case "reject": {
 			const task = await mutateAndRefresh(ctx, config, () =>
-				taskStore.reject(String(params.id ?? ""), String(params.note ?? "")),
+				taskStore.reject(
+					String(params.id ?? ""),
+					String(params.note ?? ""),
+					requestScope(params),
+				),
 			);
 			return textResult(`Rejected ${renderTaskSummary(task)}`, {
 				action,
@@ -218,6 +239,7 @@ async function runAction(
 			const imported = buildBlueprintImport(
 				ctx.cwd,
 				typeof params.match === "string" ? params.match : undefined,
+				worktreeIdentity(ctx.cwd),
 			);
 			const created = await mutateAndRefresh(ctx, config, () =>
 				taskStore.addMany(imported.inputs, dedupeBlueprintTask),
@@ -233,8 +255,12 @@ async function runAction(
 		}
 		case "export_blueprint": {
 			const source = String(params.source_blueprint ?? params.match ?? "");
-			const tasks = await taskStore.list({ all: true });
-			const summary = summarizeBlueprintTasks(tasks, source);
+			const allWorktrees = requestScope(params) === "all_worktrees";
+			const tasks = await taskStore.list({
+				all: true,
+				scope: allWorktrees ? "all_worktrees" : "current",
+			});
+			const summary = summarizeBlueprintTasks(tasks, source, allWorktrees);
 			return textResult(summary, {
 				action,
 				tasks: tasks.filter((task) => task.source_blueprint === source),
@@ -295,6 +321,7 @@ function taskTool(action: TaskCommand, pi: ExtensionAPI, config: Config) {
 
 const StatusParam = Type.Optional(StringEnum(taskStatuses));
 const TypeParam = Type.Optional(StringEnum(taskTypes));
+const ScopeParam = Type.Optional(StringEnum(taskScopes));
 
 export default function tasksExtension(pi: ExtensionAPI) {
 	const config = loadConfig();
@@ -330,6 +357,7 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			"Open project task board; use /tasks blueprint [slug] to import blueprint steps",
 		handler: async (args: string, ctx: ExtensionContext) => {
 			const parts = args.trim().split(/\s+/).filter(Boolean);
+			const boardScope: TaskScope = parts[0] === "all" ? "all_worktrees" : "current";
 			if (parts[0] === "blueprint") {
 				const imported = await runAction(
 					"import_blueprint",
@@ -344,7 +372,10 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			if (parts[0] === "export") {
 				const result = await runAction(
 					"export_blueprint",
-					{ source_blueprint: parts[1] },
+					{
+						source_blueprint: parts[1],
+						scope: parts.includes("all") ? "all_worktrees" : "current",
+					},
 					pi,
 					ctx,
 					config,
@@ -360,25 +391,28 @@ export default function tasksExtension(pi: ExtensionAPI) {
 						tasks: [],
 						theme,
 						currentAssignee: sessionAssignment(ctx),
+						showWorktree: boardScope === "all_worktrees",
+						worktreeLabel: worktreeIdentity(ctx.cwd).label,
 						onClose: () => done(),
-						onReload: () => taskStore.list({ all: true }),
+						onReload: () => taskStore.list({ all: true, scope: boardScope }),
 						onMutate: async (action, params) => {
+							const scoped = { ...params, scope: boardScope };
 							if (action === "delete")
-								await taskStore.delete(String(params.id ?? ""));
+								await taskStore.delete(String(params.id ?? ""), boardScope);
 							else
 								await taskStore.update(
 									normalizeCurrentAssignment(
-										params,
+										scoped,
 										pi,
 										ctx,
 									) as unknown as UpdateTaskInput,
 								);
 							await refreshHud(ctx, config).catch(() => undefined);
-							return taskStore.list({ all: true });
+							return taskStore.list({ all: true, scope: boardScope });
 						},
 						onChange: () => handle?.requestRender?.(),
 					});
-					taskStore.list({ all: true }).then((tasks) => {
+					taskStore.list({ all: true, scope: boardScope }).then((tasks) => {
 						(board as unknown as { tasks: TaskRecord[] }).tasks = tasks;
 						handle?.requestRender?.();
 					});
@@ -445,6 +479,7 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			parent_id: Type.Optional(Type.String()),
 			blocked_by: Type.Optional(Type.Array(Type.String())),
 			source_blueprint: Type.Optional(Type.String()),
+			scope: ScopeParam,
 		}),
 	});
 
@@ -463,6 +498,8 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				Type.String({ description: "Assignee, or 'current'" }),
 			),
 			source_blueprint: Type.Optional(Type.String()),
+			scope: ScopeParam,
+			all_worktrees: Type.Optional(Type.Boolean()),
 			all: Type.Optional(
 				Type.Boolean({ description: "Include done/canceled tasks" }),
 			),
@@ -475,7 +512,11 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		label: "Show Task",
 		description: "Show one persisted project task by ID or unique prefix.",
 		promptSnippet: "Show a persisted project task",
-		parameters: Type.Object({ id: Type.String() }),
+		parameters: Type.Object({
+			id: Type.String(),
+			scope: ScopeParam,
+			all_worktrees: Type.Optional(Type.Boolean()),
+		}),
 	});
 
 	pi.registerTool({
@@ -505,6 +546,8 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			clear_blockers: Type.Optional(Type.Boolean()),
 			source_blueprint: Type.Optional(Type.String()),
 			clear_source_blueprint: Type.Optional(Type.Boolean()),
+			scope: ScopeParam,
+			all_worktrees: Type.Optional(Type.Boolean()),
 		}),
 	});
 
@@ -514,7 +557,11 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		label: "Delete Task",
 		description: "Delete a persisted project task.",
 		promptSnippet: "Delete a persisted project task",
-		parameters: Type.Object({ id: Type.String() }),
+		parameters: Type.Object({
+			id: Type.String(),
+			scope: ScopeParam,
+			all_worktrees: Type.Optional(Type.Boolean()),
+		}),
 	});
 
 	pi.registerTool({
@@ -523,7 +570,11 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		label: "Accept Task",
 		description: "Accept an in-review task and mark it done.",
 		promptSnippet: "Accept an in-review task",
-		parameters: Type.Object({ id: Type.String() }),
+		parameters: Type.Object({
+			id: Type.String(),
+			scope: ScopeParam,
+			all_worktrees: Type.Optional(Type.Boolean()),
+		}),
 	});
 
 	pi.registerTool({
@@ -532,7 +583,12 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		label: "Reject Task",
 		description: "Reject an in-review task with a required note.",
 		promptSnippet: "Reject an in-review task",
-		parameters: Type.Object({ id: Type.String(), note: Type.String() }),
+		parameters: Type.Object({
+			id: Type.String(),
+			note: Type.String(),
+			scope: ScopeParam,
+			all_worktrees: Type.Optional(Type.Boolean()),
+		}),
 	});
 
 	pi.registerTool({
@@ -556,6 +612,8 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		promptSnippet: "Summarize blueprint-linked tasks",
 		parameters: Type.Object({
 			source_blueprint: Type.String({ description: "Blueprint slug" }),
+			scope: ScopeParam,
+			all_worktrees: Type.Optional(Type.Boolean()),
 		}),
 	});
 
