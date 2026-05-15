@@ -1,0 +1,365 @@
+/**
+ * Parse the assembled system prompt into measurable sections.
+ *
+ * The system prompt built by pi follows a predictable structure:
+ *   1. Base prompt (tools, guidelines, pi docs reference)
+ *   2. Optional SYSTEM.md / APPEND_SYSTEM.md content
+ *   3. Project Context (AGENTS.md files, each under `## <path>`)
+ *   4. Skills preamble + <available_skills> block
+ *   5. Environment context metadata
+ */
+
+import { encode } from "gpt-tokenizer/encoding/o200k_base";
+
+import type { AgentsFileEntry, ParsedPrompt, PromptSection, SkillEntry, ToolEntry } from "./types.js";
+
+export type { ParsedPrompt };
+
+/** Token count using BPE tokenization (o200k_base encoding). */
+export function estimateTokens(text: string): number {
+	return encode(text).length;
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers (defined before use to satisfy no-use-before-define)
+// ---------------------------------------------------------------------------
+
+function measure(label: string, text: string): PromptSection {
+	return {
+		label,
+		chars: text.length,
+		tokens: estimateTokens(text),
+		content: text,
+	};
+}
+
+/** Return the smallest positive value, or -1 if none are positive. */
+function firstPositive(...values: number[]): number {
+	let min = -1;
+	for (const v of values) {
+		if (v >= 0 && (min < 0 || v < min)) {
+			min = v;
+		}
+	}
+	return min;
+}
+
+function findSkillsPreamble(prompt: string): number {
+	const idx = prompt.indexOf("The following skills provide specialized instructions");
+	if (idx === -1) return -1;
+	const sectionStart = prompt.lastIndexOf("\n<skills_instructions>", idx);
+	return sectionStart === -1 ? idx : sectionStart + 1;
+}
+
+function findMetadataFooter(prompt: string): number {
+	const environmentContextIdx = prompt.lastIndexOf("\n<environment_context>");
+	if (environmentContextIdx !== -1) return environmentContextIdx;
+	const currentDateTimeIdx = prompt.lastIndexOf("\nCurrent date and time:");
+	if (currentDateTimeIdx !== -1) return currentDateTimeIdx;
+	return prompt.lastIndexOf("\nCurrent date:");
+}
+
+/**
+ * Find where the base system prompt ends.
+ *
+ * The base prompt ends after the pi docs reference block. We look for
+ * "- Always read pi .md files" or "- When working on pi" as the terminal
+ * marker. Falls back to the first major section boundary.
+ */
+function findBasePromptEnd(
+	prompt: string,
+	projectCtxIdx: number,
+	skillsPreambleIdx: number,
+	dateLineIdx: number,
+): number {
+	const piDocsMarker = /^- (?:Always read pi|When working on pi).+$/gm;
+	let lastPiDocsEnd = -1;
+	for (const match of prompt.matchAll(piDocsMarker)) {
+		lastPiDocsEnd = match.index + match[0].length;
+	}
+
+	if (lastPiDocsEnd !== -1) {
+		return lastPiDocsEnd;
+	}
+
+	return firstPositive(projectCtxIdx, skillsPreambleIdx, dateLineIdx);
+}
+
+/** Parse `## /path/to/AGENTS.md` blocks inside the Project Context section. */
+function parseAgentsFiles(contextBlock: string): AgentsFileEntry[] {
+	const files: AgentsFileEntry[] = [];
+	// Match `## ` headings that look like file paths (start with `/`).
+	const headingPattern = /^## (\/.+)$/gm;
+	const matches = [...contextBlock.matchAll(headingPattern)];
+
+	for (let i = 0; i < matches.length; i++) {
+		const [, path] = matches[i];
+		const blockStart = matches[i].index;
+		const blockEnd = i + 1 < matches.length ? matches[i + 1].index : contextBlock.length;
+		const blockText = contextBlock.slice(blockStart, blockEnd);
+		files.push({
+			path,
+			chars: blockText.length,
+			tokens: estimateTokens(blockText),
+		});
+	}
+
+	return files;
+}
+
+/** Parse legacy `<skill>` entries from the `<available_skills>` block. */
+function parseXmlSkillEntries(skillsBlock: string, out: SkillEntry[]): number {
+	const skillPattern = /<skill>([\s\S]*?)<\/skill>/g;
+	const namePattern = /<name>([\s\S]*?)<\/name>/;
+	const descPattern = /<description>([\s\S]*?)<\/description>/;
+	const locPattern = /<location>([\s\S]*?)<\/location>/;
+	let parsedCount = 0;
+
+	for (const match of skillsBlock.matchAll(skillPattern)) {
+		const [fullEntry, inner] = match;
+		const name = inner.match(namePattern)?.[1]?.trim() ?? "unknown";
+		const description = inner.match(descPattern)?.[1]?.trim() ?? "";
+		const location = inner.match(locPattern)?.[1]?.trim() ?? "";
+
+		out.push({
+			name,
+			description,
+			location,
+			chars: fullEntry.length,
+			tokens: estimateTokens(fullEntry),
+		});
+		parsedCount++;
+	}
+
+	return parsedCount;
+}
+
+function splitYamlSkillDescription(value: string): { description: string; location: string } {
+	const trimmed = value.trim();
+	const locationMatch = trimmed.match(/\s+\(([^()\n]*\.md[^()\n]*)\)$/i);
+
+	if (!locationMatch) {
+		return { description: trimmed, location: "" };
+	}
+
+	return {
+		description: trimmed.slice(0, locationMatch.index).trim(),
+		location: locationMatch[1].trim(),
+	};
+}
+
+/** Parse `- name: description (optional/path.md)` entries from the skills block. */
+function parseYamlSkillEntries(skillsBlock: string, out: SkillEntry[]): void {
+	const skillPattern = /^-\s+([^:\n]+):\s*(.*?)\s*$/gm;
+
+	for (const match of skillsBlock.matchAll(skillPattern)) {
+		const [fullEntry, rawName, rawDescription] = match;
+		const name = rawName.trim();
+		if (!name) {
+			continue;
+		}
+
+		const { description, location } = splitYamlSkillDescription(rawDescription);
+
+		out.push({
+			name,
+			description,
+			location,
+			chars: fullEntry.length,
+			tokens: estimateTokens(fullEntry),
+		});
+	}
+}
+
+function parseSkillEntries(skillsBlock: string, out: SkillEntry[]): void {
+	if (parseXmlSkillEntries(skillsBlock, out) > 0) {
+		return;
+	}
+	parseYamlSkillEntries(skillsBlock, out);
+}
+
+/** Compute the skills section end index, avoiding nested ternaries. */
+function findSkillsSectionEnd(availableSkillsEnd: number, dateLineIdx: number, promptLength: number): number {
+	if (availableSkillsEnd !== -1) {
+		return availableSkillsEnd + "</available_skills>".length;
+	}
+	if (dateLineIdx !== -1) {
+		return dateLineIdx;
+	}
+	return promptLength;
+}
+
+// ---------------------------------------------------------------------------
+// Main parser
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a system prompt string into sections with token estimates.
+ *
+ * Uses known structural markers emitted by `buildSystemPrompt()`:
+ *   - `# Project Context` heading
+ *   - `The following skills provide specialized instructions` preamble
+ *   - `<available_skills>` / `</available_skills>` skill list block
+ *   - `<environment_context>` metadata footer
+ */
+export function parseSystemPrompt(prompt: string): ParsedPrompt {
+	const sections: PromptSection[] = [];
+	const skills: SkillEntry[] = [];
+
+	const projectCtxIdx = prompt.indexOf("\n\n# Project Context\n");
+	const skillsPreambleIdx = findSkillsPreamble(prompt);
+	const availableSkillsStart = prompt.indexOf("<available_skills>");
+	const availableSkillsEnd = prompt.indexOf("</available_skills>");
+	const dateLineIdx = findMetadataFooter(prompt);
+
+	// 1. Base system prompt
+	const baseEnd = findBasePromptEnd(prompt, projectCtxIdx, skillsPreambleIdx, dateLineIdx);
+	const baseText = baseEnd >= 0 ? prompt.slice(0, baseEnd) : prompt;
+	sections.push(measure("Base prompt", baseText));
+
+	// 2. Project Context / AGENTS.md files
+	if (projectCtxIdx !== -1) {
+		const contextStart = projectCtxIdx + 2; // skip leading \n\n
+		const contextEnd = firstPositive(skillsPreambleIdx, dateLineIdx);
+		const contextBlock = contextEnd >= 0 ? prompt.slice(contextStart, contextEnd) : prompt.slice(contextStart);
+
+		const agentsFiles = parseAgentsFiles(contextBlock);
+		const children = agentsFiles.map((f) => ({
+			label: f.path,
+			chars: f.chars,
+			tokens: f.tokens,
+		}));
+
+		sections.push({
+			...measure("AGENTS.md files", contextBlock),
+			children,
+		});
+	}
+
+	// 3. Skills section
+	if (skillsPreambleIdx !== -1) {
+		const skillsSectionStart = skillsPreambleIdx + 2;
+		const skillsSectionEnd = findSkillsSectionEnd(availableSkillsEnd, dateLineIdx, prompt.length);
+		const skillsSectionText = prompt.slice(skillsSectionStart, skillsSectionEnd);
+
+		if (availableSkillsStart !== -1 && availableSkillsEnd !== -1) {
+			const skillsBlock = prompt.slice(availableSkillsStart, availableSkillsEnd + "</available_skills>".length);
+			parseSkillEntries(skillsBlock, skills);
+		}
+
+		const children = skills.map((s) => ({
+			label: s.name,
+			chars: s.chars,
+			tokens: s.tokens,
+		}));
+
+		sections.push({
+			...measure(`Skills (${String(skills.length)})`, skillsSectionText),
+			children,
+		});
+	}
+
+	// 4. Metadata footer
+	if (dateLineIdx !== -1) {
+		const metaText = prompt.slice(dateLineIdx + 1);
+		sections.push(measure("Metadata (environment context)", metaText));
+	}
+
+	// 5. Detect SYSTEM.md / APPEND_SYSTEM.md gap
+	const nextSectionStart = projectCtxIdx === -1 ? skillsPreambleIdx : projectCtxIdx;
+
+	if (baseEnd >= 0 && nextSectionStart >= 0 && nextSectionStart > baseEnd) {
+		const gap = prompt.slice(baseEnd, nextSectionStart);
+		const trimmed = gap.trim();
+		if (trimmed.length > 0) {
+			sections.splice(1, 0, measure("SYSTEM.md / APPEND_SYSTEM.md", trimmed));
+		}
+	}
+
+	const totalChars = prompt.length;
+	const totalTokens = estimateTokens(prompt);
+
+	return { sections, totalChars, totalTokens, skills };
+}
+
+// ---------------------------------------------------------------------------
+// Tool definitions section
+// ---------------------------------------------------------------------------
+
+interface ToolDefinitionInput {
+	name: string;
+	description: string;
+	parameters: unknown;
+}
+
+/**
+ * Build a PromptSection for tool definitions (function schemas sent to the LLM).
+ *
+ * Tool definitions are not part of the system prompt text — they're sent via
+ * the function-calling API — but they consume context window tokens. This
+ * builds a section to make that cost visible.
+ *
+ * Returns null if there are no tools.
+ */
+export function buildToolDefinitionsSection(
+	tools: ToolDefinitionInput[],
+	activeToolNames?: string[],
+): PromptSection | null {
+	if (tools.length === 0) {
+		return null;
+	}
+
+	const activeSet = activeToolNames ? new Set(activeToolNames) : null;
+	const countedTools = activeSet ? tools.filter((tool) => activeSet.has(tool.name)) : tools;
+	const inactiveTools = activeSet ? tools.filter((tool) => !activeSet.has(tool.name)) : [];
+
+	function serializeTools(input: ToolDefinitionInput[]): ToolEntry[] {
+		return input.map((tool) => {
+			const serialized = JSON.stringify(tool, null, 2);
+			return {
+				name: tool.name,
+				chars: serialized.length,
+				tokens: estimateTokens(serialized),
+				content: serialized,
+			};
+		});
+	}
+
+	const activeEntries = serializeTools(countedTools);
+	const inactiveEntries = serializeTools(inactiveTools);
+
+	const children: {
+		label: string;
+		chars: number;
+		tokens: number;
+		content?: string;
+	}[] = [];
+	let totalTokens = 0;
+	let totalChars = 0;
+
+	for (const tool of activeEntries) {
+		children.push({
+			label: tool.name,
+			chars: tool.chars,
+			tokens: tool.tokens,
+			content: tool.content,
+		});
+		totalTokens += tool.tokens;
+		totalChars += tool.chars;
+	}
+
+	const label = activeSet
+		? `Tool definitions (${String(countedTools.length)} active, ${String(tools.length)} total)`
+		: `Tool definitions (${String(tools.length)})`;
+
+	return {
+		label,
+		chars: totalChars,
+		tokens: totalTokens,
+		tools: {
+			active: activeEntries,
+			inactive: inactiveEntries,
+		},
+		children,
+	};
+}

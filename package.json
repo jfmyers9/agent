@@ -1,0 +1,44 @@
+{
+  "name": "agent-config",
+  "private": true,
+  "scripts": {
+    "check": "bun run typecheck && bun run test",
+    "typecheck": "tsc --noEmit --pretty false --project tsconfig.typecheck.json",
+    "test": "bun run test:pi-low-risk && bun run test:pi-skillful && bun run test:pi-system && bun run test:pi-tui && bun run test:pi-token && bun run test:pi-spawn && bun run test:pi-vim",
+    "test:pi-low-risk": "bun test harnesses/pi/extensions/agents-local/index.test.ts harnesses/pi/extensions/plannotator-events/index.test.ts harnesses/pi/extensions/git-tool/index.test.ts harnesses/pi/extensions/shared/editor-composition.test.ts harnesses/pi/extensions/shared/ordered-widgets.test.ts harnesses/pi/extensions/shared/lane-placement.test.ts",
+    "test:pi-skillful": "bun test harnesses/pi/extensions/skillful/index.test.ts",
+    "test:pi-system": "bun test harnesses/pi/extensions/system-prompt/index.test.ts",
+    "test:pi-tui": "bun test harnesses/pi/extensions/tui/editor.test.ts harnesses/pi/extensions/tui/footer.test.ts harnesses/pi/extensions/tui/cursor-focus.test.ts harnesses/pi/extensions/tui/git.test.ts",
+    "test:pi-token": "bun test harnesses/pi/extensions/token-burden/parser.test.ts harnesses/pi/extensions/token-burden/tool-toggles.test.ts harnesses/pi/extensions/token-burden/report-view.test.ts harnesses/pi/extensions/token-burden/index.test.ts",
+    "test:pi-spawn": "bun test harnesses/pi/extensions/spawn/index.test.ts",
+    "test:pi-vim": "bun test harnesses/pi/extensions/vim/index.test.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.74.0",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-tui": "^0.74.0",
+    "@mozilla/readability": "^0.5.0",
+    "@shikijs/cli": "^4.0.2",
+    "croner": "^10.0.1",
+    "gpt-tokenizer": "^3.4.0",
+    "highlight.js": "^10.7.3",
+    "linkedom": "^0.16.0",
+    "mustache": "^4.2.0",
+    "nanoid": "^5.0.0",
+    "node-pty": "^1.1.0",
+    "p-limit": "^6.1.0",
+    "partial-json": "^0.1.7",
+    "tree-sitter-bash": "^0.25.1",
+    "turndown": "^7.2.0",
+    "typebox": "^1.1.34",
+    "unpdf": "^1.4.0",
+    "web-tree-sitter": "^0.26.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.13",
+    "@types/mustache": "^4.2.6",
+    "@types/node": "^25.6.0",
+    "typescript": "^5.9.3"
+  }
+}

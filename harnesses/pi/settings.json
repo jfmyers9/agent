@@ -13,7 +13,7 @@
   "enableSkillCommands": true,
   "steeringMode": "all",
   "autoUpdate": true,
-  "transport": "sse",
+  "transport": "auto",
   "doubleEscapeAction": "tree",
   "treeFilterMode": "default",
   "quietStartup": true,
@@ -39,7 +39,25 @@
   "lastChangelogVersion": "0.74.0",
   "packages": [
     "npm:pi-lens",
-    "npm:@plannotator/pi-extension",
+    {
+      "source": "npm:@plannotator/pi-extension",
+      "skills": []
+    },
     "npm:@dreki-gg/pi-context7@0.1.9"
+  ],
+  "extensions": [
+    "extensions/plannotator-events/index.ts",
+    "extensions/agents-local/index.ts",
+    "extensions/clear.ts",
+    "extensions/effort.ts",
+    "extensions/mac-system-theme.ts",
+    "extensions/prompt-storage/index.ts",
+    "extensions/vim/index.ts",
+    "extensions/tasks/index.ts",
+    "extensions/skillful/index.ts",
+    "extensions/system-prompt/index.ts",
+    "extensions/token-burden/index.ts",
+    "extensions/tui/index.ts",
+    "extensions/spawn/index.ts"
   ]
 }

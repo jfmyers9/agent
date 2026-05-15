@@ -25,13 +25,10 @@
     "cost": "success",
     "separator": "borderMuted"
   },
-  "usageHud": {
-    "contextWarningPercent": 70,
-    "contextErrorPercent": 90,
-    "compactMinRows": 18,
-    "quota": {
-      "enabled": true,
-      "refreshIntervalMs": 300000
-    }
+  "compact": {
+    "minTerminalRows": 28
+  },
+  "usageBars": {
+    "visible": false
   }
 }

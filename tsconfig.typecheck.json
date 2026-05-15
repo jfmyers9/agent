@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "harnesses/pi/extensions/*.ts",
+    "harnesses/pi/extensions/agents-local/**/*.ts",
+    "harnesses/pi/extensions/plannotator-events/**/*.ts",
+    "harnesses/pi/extensions/git-tool/**/*.ts",
+    "harnesses/pi/extensions/prompt-storage/**/*.ts",
+    "harnesses/pi/extensions/shared/**/*.ts",
+    "harnesses/pi/extensions/skillful/**/*.ts",
+    "harnesses/pi/extensions/system-prompt/**/*.ts",
+    "harnesses/pi/extensions/tui/**/*.ts",
+    "harnesses/pi/extensions/token-burden/**/*.ts",
+    "harnesses/pi/extensions/spawn/**/*.ts",
+    "harnesses/pi/extensions/vim/**/*.ts",
+    "harnesses/pi/extensions/exec-command/shell/**/*.ts"
+  ],
+  "exclude": ["**/*.test.ts"]
+}

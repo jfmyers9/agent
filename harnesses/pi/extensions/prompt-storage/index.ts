@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -11,15 +10,13 @@ import {
 	DynamicBorder,
 	type ExtensionAPI,
 	type ExtensionContext,
-	type KeybindingsManager,
 	SessionManager,
 	type Theme,
+	type ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
 	Container,
-	type EditorComponent,
-	type EditorTheme,
 	type Focusable,
 	fuzzyMatch,
 	Input,
@@ -30,20 +27,14 @@ import {
 	type TUI,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
+import { type EditorFactory, type EditorUi, installEditorLayer } from "../shared/editor-composition";
+import { setOrderedAboveEditorWidget } from "../shared/ordered-widgets";
 
 type PromptKind = "stash" | "history";
 type PickerAction = "apply" | "pop" | "drop";
 type ShortcutKey = Parameters<ExtensionAPI["registerShortcut"]>[0];
-type EditorFactory = (
-	tui: TUI,
-	theme: EditorTheme,
-	keybindings: KeybindingsManager,
-) => EditorComponent;
 
-type EditorUi = {
-	getEditorComponent?: () => EditorFactory | undefined;
-	setEditorComponent: (factory: EditorFactory | undefined) => void;
-};
+const EDITOR_LAYER_ID = Symbol.for("prompt-storage.editorShortcutLayer");
 
 interface Config {
 	enabled: boolean;
@@ -87,11 +78,7 @@ interface IndexProgress {
 
 const extensionDir = dirname(fileURLToPath(import.meta.url));
 const configPath = join(extensionDir, "config.json");
-const dbPath = join(
-	process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
-	"pi",
-	"prompt-storage.sqlite",
-);
+const dbPath = join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "pi", "prompt-storage.sqlite");
 
 const defaultConfig: Config = {
 	enabled: true,
@@ -113,16 +100,13 @@ const defaultConfig: Config = {
 const stashHudWidgetId = "prompt-storage-stash";
 let db: DatabaseSync | undefined;
 const historyRefreshes = new Map<string, Promise<void>>();
-const wrappedFactory = Symbol.for("prompt-storage.editorFactoryWrapped");
 let stashHud: StashHudWidget | undefined;
 let stashHudLines: string[] = [];
 let restackTimer: ReturnType<typeof setTimeout> | undefined;
 
 function loadConfig(): Config {
 	try {
-		const parsed = JSON.parse(
-			readFileSync(configPath, "utf8"),
-		) as Partial<Config>;
+		const parsed = JSON.parse(readFileSync(configPath, "utf8")) as Partial<Config>;
 		return {
 			...defaultConfig,
 			...parsed,
@@ -174,10 +158,7 @@ function extractText(content: unknown): string {
 	if (typeof content === "string") return content.trim();
 	if (!Array.isArray(content)) return "";
 	return content
-		.filter(
-			(block): block is { type?: unknown; text?: unknown } =>
-				!!block && typeof block === "object",
-		)
+		.filter((block): block is { type?: unknown; text?: unknown } => !!block && typeof block === "object")
 		.filter((block) => block.type === "text" && typeof block.text === "string")
 		.map((block) => String(block.text).trim())
 		.filter(Boolean)
@@ -188,12 +169,7 @@ function extractText(content: unknown): string {
 function hasImages(content: unknown): boolean {
 	return (
 		Array.isArray(content) &&
-		content.some(
-			(block) =>
-				!!block &&
-				typeof block === "object" &&
-				(block as { type?: unknown }).type === "image",
-		)
+		content.some((block) => !!block && typeof block === "object" && (block as { type?: unknown }).type === "image")
 	);
 }
 
@@ -219,12 +195,8 @@ function isSlashCommand(text: string): boolean {
 	return text.trimStart().startsWith("/");
 }
 
-function buildSearchText(
-	text: string,
-	cwd: string,
-	sessionName?: string,
-): string {
-	return `${text}\n${cwd}\n${sessionName ?? ""}`.toLowerCase();
+function buildSearchText(text: string, sessionName?: string): string {
+	return `${text}\n${sessionName ?? ""}`.toLowerCase();
 }
 
 function dateLabel(timestamp: number): string {
@@ -243,9 +215,62 @@ function errorMessage(error: unknown): string {
 function sourceLabel(item: PromptItem): string {
 	if (item.kind === "stash") return preview(item.text, 48);
 	if (item.sessionName?.trim()) return item.sessionName.trim();
-	if (item.sessionPath)
-		return item.sessionPath.split(/[\\/]/).pop() ?? "session";
-	return "session";
+	return "History";
+}
+
+function searchTokens(query: string): string[] {
+	return query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+function fuzzyIndexes(token: string, text: string): number[] | undefined {
+	const textLower = text.toLowerCase();
+	const indexes: number[] = [];
+	let searchFrom = 0;
+	for (;;) {
+		const exactIndex = textLower.indexOf(token, searchFrom);
+		if (exactIndex === -1) break;
+		for (let index = exactIndex; index < exactIndex + token.length; index++) indexes.push(index);
+		searchFrom = exactIndex + Math.max(1, token.length);
+	}
+	if (indexes.length > 0) return indexes;
+
+	let queryIndex = 0;
+	for (let textIndex = 0; textIndex < textLower.length && queryIndex < token.length; textIndex++) {
+		if (textLower[textIndex] === token[queryIndex]) {
+			indexes.push(textIndex);
+			queryIndex++;
+		}
+	}
+	return queryIndex === token.length ? indexes : undefined;
+}
+
+function queryMatchIndexes(text: string, query: string): Set<number> {
+	const indexes = new Set<number>();
+	for (const token of searchTokens(query)) {
+		const tokenIndexes = fuzzyIndexes(token, text);
+		if (!tokenIndexes) continue;
+		for (const index of tokenIndexes) indexes.add(index);
+	}
+	return indexes;
+}
+
+function highlightSearchText(text: string, query: string, theme: Theme, baseColor: ThemeColor): string {
+	const indexes = queryMatchIndexes(text, query);
+	if (indexes.size === 0) return theme.fg(baseColor, text);
+
+	let rendered = "";
+	let runStart = 0;
+	let runHighlighted = indexes.has(0);
+	for (let index = 1; index <= text.length; index++) {
+		const highlighted = index < text.length && indexes.has(index);
+		if (highlighted === runHighlighted && index < text.length) continue;
+
+		const segment = text.slice(runStart, index);
+		rendered += runHighlighted ? theme.fg("warning", theme.bold(segment)) : theme.fg(baseColor, segment);
+		runStart = index;
+		runHighlighted = highlighted;
+	}
+	return rendered;
 }
 
 class StashHudWidget implements Component {
@@ -270,9 +295,7 @@ class StashHudWidget implements Component {
 	render(width: number): string[] {
 		if (this.cachedWidth === width && this.cachedLines) return this.cachedLines;
 		this.cachedWidth = width;
-		this.cachedLines = this.lines.map((line) =>
-			truncateToWidth(this.dim(line), width),
-		);
+		this.cachedLines = this.lines.map((line) => truncateToWidth(this.dim(line), width));
 		return this.cachedLines;
 	}
 
@@ -287,7 +310,28 @@ class StashHudWidget implements Component {
 }
 
 function makeItemSearchText(item: Omit<PromptItem, "searchText">): string {
-	return buildSearchText(item.text, item.cwd, item.sessionName);
+	return buildSearchText(item.text, item.sessionName);
+}
+
+function searchableFields(item: PromptItem): string[] {
+	const fields = [item.text];
+	if (item.sessionName?.trim()) fields.push(item.sessionName.trim());
+	return fields;
+}
+
+function itemMatchScore(item: PromptItem, tokens: string[]): number | undefined {
+	let totalScore = 0;
+	for (const token of tokens) {
+		let bestScore: number | undefined;
+		for (const field of searchableFields(item)) {
+			const match = fuzzyMatch(token, field);
+			if (!match.matches) continue;
+			bestScore = bestScore === undefined ? match.score : Math.min(bestScore, match.score);
+		}
+		if (bestScore === undefined) return undefined;
+		totalScore += bestScore;
+	}
+	return totalScore;
 }
 
 function rowString(row: Record<string, unknown>, key: string): string {
@@ -317,12 +361,8 @@ async function listStashes(cwd?: string): Promise<PromptItem[]> {
 	const database = await openDb();
 	const statement =
 		cwd === undefined
-			? database.prepare(
-					"SELECT id, text, cwd, created_at FROM stashes ORDER BY created_at DESC",
-				)
-			: database.prepare(
-					"SELECT id, text, cwd, created_at FROM stashes WHERE cwd = ? ORDER BY created_at DESC",
-				);
+			? database.prepare("SELECT id, text, cwd, created_at FROM stashes ORDER BY created_at DESC")
+			: database.prepare("SELECT id, text, cwd, created_at FROM stashes WHERE cwd = ? ORDER BY created_at DESC");
 	return statement.all(...(cwd === undefined ? [] : [cwd])).map((row) => {
 		const record = row as Record<string, unknown>;
 		const item: Omit<PromptItem, "searchText"> = {
@@ -362,24 +402,17 @@ function clearStashHud(ctx: ExtensionContext): void {
 	stashHudLines = [];
 	if (!stashHud) return;
 	stashHud = undefined;
-	ctx.ui.setWidget(stashHudWidgetId, undefined);
+	setOrderedAboveEditorWidget(ctx, stashHudWidgetId, undefined);
 }
 
-function currentSessionPrompts(
-	ctx: ExtensionContext,
-	config: Config,
-): PromptItem[] {
+function currentSessionPrompts(ctx: ExtensionContext, config: Config): PromptItem[] {
 	const sessionPath = ctx.sessionManager.getSessionFile();
 	if (!sessionPath) return [];
 	const sessionName = ctx.sessionManager.getSessionName();
 	const records: PromptItem[] = [];
 	for (const entry of ctx.sessionManager.getEntries()) {
 		if (entry.type !== "message") continue;
-		const message = entry.message as {
-			role?: string;
-			content?: unknown;
-			timestamp?: unknown;
-		};
+		const message = entry.message as { role?: string; content?: unknown; timestamp?: unknown };
 		if (message.role !== "user") continue;
 		const text = extractText(message.content);
 		if (!text) continue;
@@ -389,10 +422,7 @@ function currentSessionPrompts(
 			id: entry.id,
 			text,
 			cwd: ctx.cwd,
-			timestamp: timestampMs(
-				message.timestamp,
-				timestampMs(entry.timestamp, Date.now()),
-			),
+			timestamp: timestampMs(message.timestamp, timestampMs(entry.timestamp, Date.now())),
 			sessionPath,
 			sessionName,
 			hasImages: hasImages(message.content),
@@ -425,42 +455,30 @@ async function refreshProjectHistoryIndex(
 		try {
 			const manager = SessionManager.open(session.path);
 			database.exec("BEGIN");
-			database
-				.prepare("DELETE FROM history_prompts WHERE session_path = ?")
-				.run(session.path);
+			database.prepare("DELETE FROM history_prompts WHERE session_path = ?").run(session.path);
 			const insert = database.prepare(
 				"INSERT OR REPLACE INTO history_prompts (session_path, entry_id, text, cwd, session_name, prompt_ts, has_images, search_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 			);
 			for (const entry of manager.getEntries()) {
 				if (entry.type !== "message") continue;
-				const message = entry.message as {
-					role?: string;
-					content?: unknown;
-					timestamp?: unknown;
-				};
+				const message = entry.message as { role?: string; content?: unknown; timestamp?: unknown };
 				if (message.role !== "user") continue;
 				const text = extractText(message.content);
 				if (!text) continue;
-				if (!config.history.includeSlashCommands && isSlashCommand(text))
-					continue;
+				if (!config.history.includeSlashCommands && isSlashCommand(text)) continue;
 				insert.run(
 					session.path,
 					entry.id,
 					text,
 					session.cwd,
 					session.name ?? null,
-					timestampMs(
-						message.timestamp,
-						timestampMs(entry.timestamp, modifiedMs),
-					),
+					timestampMs(message.timestamp, timestampMs(entry.timestamp, modifiedMs)),
 					hasImages(message.content) ? 1 : 0,
-					buildSearchText(text, session.cwd, session.name),
+					buildSearchText(text, session.name),
 				);
 			}
 			database
-				.prepare(
-					"INSERT OR REPLACE INTO session_index (session_path, modified_ms, indexed_at) VALUES (?, ?, ?)",
-				)
+				.prepare("INSERT OR REPLACE INTO session_index (session_path, modified_ms, indexed_at) VALUES (?, ?, ?)")
 				.run(session.path, modifiedMs, Date.now());
 			database.exec("COMMIT");
 		} catch {
@@ -483,10 +501,7 @@ function refreshProjectHistorySoon(cwd: string, config: Config): void {
 	historyRefreshes.set(cwd, refresh);
 }
 
-async function listHistory(
-	ctx: ExtensionContext,
-	config: Config,
-): Promise<PromptItem[]> {
+async function listHistory(ctx: ExtensionContext, config: Config): Promise<PromptItem[]> {
 	const database = await openDb();
 	const indexed: PromptItem[] = database
 		.prepare(
@@ -504,7 +519,7 @@ async function listHistory(
 				sessionPath: rowString(record, "session_path"),
 				sessionName: rowString(record, "session_name") || undefined,
 				hasImages: rowNumber(record, "has_images") === 1,
-				searchText: rowString(record, "search_text"),
+				searchText: buildSearchText(rowString(record, "text"), rowString(record, "session_name") || undefined),
 			};
 		});
 	const merged = new Map<string, PromptItem>();
@@ -512,22 +527,17 @@ async function listHistory(
 		const key = `${item.sessionPath ?? ""}|${item.id}|${item.text}`;
 		merged.set(key, item);
 	}
-	return [...merged.values()]
-		.sort((a, b) => b.timestamp - a.timestamp)
-		.slice(0, config.history.maxResults);
+	return [...merged.values()].sort((a, b) => b.timestamp - a.timestamp).slice(0, config.history.maxResults);
 }
 
-function filterItems(
-	items: PromptItem[],
-	query: string,
-	limit: number,
-): PromptItem[] {
-	const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+function filterItems(items: PromptItem[], query: string, limit: number): PromptItem[] {
+	const tokens = searchTokens(query);
 	if (tokens.length === 0) return items.slice(0, limit);
 	return items
-		.filter((item) =>
-			tokens.every((token) => fuzzyMatch(token, item.searchText).matches),
-		)
+		.map((item) => ({ item, score: itemMatchScore(item, tokens) }))
+		.filter((result): result is { item: PromptItem; score: number } => result.score !== undefined)
+		.sort((a, b) => a.score - b.score || b.item.timestamp - a.item.timestamp)
+		.map((result) => result.item)
 		.slice(0, limit);
 }
 
@@ -548,21 +558,11 @@ class PromptPicker extends Container implements Focusable {
 		private readonly done: (result: PickerResult | null) => void,
 	) {
 		super();
-		this.searchInput.onSubmit = () =>
-			this.choose(this.mode === "stash" ? "pop" : "apply");
+		this.searchInput.onSubmit = () => this.choose(this.mode === "stash" ? "pop" : "apply");
 		this.searchInput.onEscape = () => this.done(null);
 		this.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 		this.addChild(new Text(theme.fg("accent", theme.bold(` ${title} `)), 0, 0));
-		this.addChild(
-			new Text(
-				theme.fg(
-					"dim",
-					"Type to fuzzy-filter prompt text, cwd, or session name",
-				),
-				0,
-				0,
-			),
-		);
+		this.addChild(new Text(theme.fg("dim", "Type to fuzzy-filter prompt text or session name"), 0, 0));
 		this.addChild(new Spacer(1));
 		this.addChild(this.searchInput);
 		this.addChild(new Spacer(1));
@@ -583,17 +583,9 @@ class PromptPicker extends Container implements Focusable {
 	}
 
 	handleInput(data: string): void {
-		if (
-			matchesKey(data, Key.up) ||
-			matchesKey(data, Key.ctrl("p")) ||
-			data === "\u0010"
-		) {
+		if (matchesKey(data, Key.up) || matchesKey(data, Key.ctrl("p")) || data === "\u0010") {
 			this.move(-1);
-		} else if (
-			matchesKey(data, Key.down) ||
-			matchesKey(data, Key.ctrl("n")) ||
-			data === "\u000e"
-		) {
+		} else if (matchesKey(data, Key.down) || matchesKey(data, Key.ctrl("n")) || data === "\u000e") {
 			this.move(1);
 		} else if (matchesKey(data, Key.pageUp)) {
 			this.move(-this.config.picker.maxVisible);
@@ -601,10 +593,7 @@ class PromptPicker extends Container implements Focusable {
 			this.move(this.config.picker.maxVisible);
 		} else if (matchesKey(data, Key.enter)) {
 			this.choose(this.mode === "stash" ? "pop" : "apply");
-		} else if (
-			matchesKey(data, Key.escape) ||
-			matchesKey(data, Key.ctrl("c"))
-		) {
+		} else if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
 			this.done(null);
 		} else if (this.mode === "stash" && matchesKey(data, Key.ctrl("a"))) {
 			this.choose("apply");
@@ -619,21 +608,14 @@ class PromptPicker extends Container implements Focusable {
 	}
 
 	private helpText(): string {
-		const stashHelp =
-			"enter pop • ctrl+a apply • ctrl+x drop • ↑↓/ctrl+n/ctrl+p move • esc cancel";
+		const stashHelp = "enter pop • ctrl+a apply • ctrl+x drop • ↑↓/ctrl+n/ctrl+p move • esc cancel";
 		const historyHelp = "enter apply • ↑↓ move • esc cancel";
-		return this.theme.fg(
-			"dim",
-			this.mode === "stash" ? stashHelp : historyHelp,
-		);
+		return this.theme.fg("dim", this.mode === "stash" ? stashHelp : historyHelp);
 	}
 
 	private move(delta: number): void {
 		if (this.filtered.length === 0) return;
-		this.selected = Math.max(
-			0,
-			Math.min(this.filtered.length - 1, this.selected + delta),
-		);
+		this.selected = Math.max(0, Math.min(this.filtered.length - 1, this.selected + delta));
 		this.rebuildList();
 	}
 
@@ -643,66 +625,37 @@ class PromptPicker extends Container implements Focusable {
 	}
 
 	private applyFilter(): void {
-		this.filtered = filterItems(
-			this.items,
-			this.searchInput.getValue(),
-			this.config.history.maxResults,
-		);
-		this.selected = Math.min(
-			this.selected,
-			Math.max(0, this.filtered.length - 1),
-		);
+		this.filtered = filterItems(this.items, this.searchInput.getValue(), this.config.history.maxResults);
+		this.selected = Math.min(this.selected, Math.max(0, this.filtered.length - 1));
 		this.rebuildList();
 	}
 
 	private rebuildList(): void {
 		this.list.clear();
 		if (this.filtered.length === 0) {
-			this.list.addChild(
-				new Text(this.theme.fg("warning", "No matching prompts"), 0, 0),
-			);
+			this.list.addChild(new Text(this.theme.fg("warning", "No matching prompts"), 0, 0));
 			return;
 		}
 		const visible = this.config.picker.maxVisible;
-		const start = Math.max(
-			0,
-			Math.min(
-				this.selected - Math.floor(visible / 2),
-				this.filtered.length - visible,
-			),
-		);
-		for (
-			let index = start;
-			index < Math.min(start + visible, this.filtered.length);
-			index++
-		) {
-			this.list.addChild(
-				new Text(this.formatLine(this.filtered[index]!, index), 0, 0),
-			);
+		const start = Math.max(0, Math.min(this.selected - Math.floor(visible / 2), this.filtered.length - visible));
+		for (let index = start; index < Math.min(start + visible, this.filtered.length); index++) {
+			this.list.addChild(new Text(this.formatLine(this.filtered[index]!, index), 0, 0));
 		}
 		if (start > 0 || start + visible < this.filtered.length) {
-			this.list.addChild(
-				new Text(
-					this.theme.fg(
-						"muted",
-						`(${this.selected + 1}/${this.filtered.length})`,
-					),
-					0,
-					0,
-				),
-			);
+			this.list.addChild(new Text(this.theme.fg("muted", `(${this.selected + 1}/${this.filtered.length})`), 0, 0));
 		}
 	}
 
 	private formatLine(item: PromptItem, index: number): string {
 		const selected = index === this.selected;
+		const query = this.searchInput.getValue();
 		const pointer = selected ? this.theme.fg("accent", "❯ ") : "  ";
-		const source = selected
-			? this.theme.fg("accent", sourceLabel(item))
-			: this.theme.fg("muted", sourceLabel(item));
-		const text = selected
-			? this.theme.fg("text", preview(item.text, 78))
-			: this.theme.fg("dim", preview(item.text, 78));
+		const sourceColor = selected ? "accent" : "muted";
+		const source =
+			item.kind === "history" && !item.sessionName?.trim()
+				? this.theme.fg(sourceColor, sourceLabel(item))
+				: highlightSearchText(sourceLabel(item), query, this.theme, sourceColor);
+		const text = highlightSearchText(preview(item.text, 78), query, this.theme, selected ? "text" : "dim");
 		const img = item.hasImages ? this.theme.fg("warning", " 🖼") : "";
 		const cwd = this.theme.fg("dim", relative(homedir(), item.cwd) || item.cwd);
 		const prompt = item.kind === "stash" ? "" : ` ${text}`;
@@ -714,31 +667,20 @@ class PromptPicker extends Container implements Focusable {
 	}
 }
 
-async function autoStashCurrentEditor(
-	ctx: ExtensionContext,
-	replacementText: string,
-): Promise<boolean> {
+async function autoStashCurrentEditor(ctx: ExtensionContext, replacementText: string): Promise<boolean> {
 	const current = ctx.ui.getEditorText?.() ?? "";
 	if (!current.trim() || current === replacementText) return false;
 	await insertStash(current, ctx.cwd);
 	return true;
 }
 
-async function applyItem(
-	ctx: ExtensionContext,
-	item: PromptItem,
-	action: "apply" | "pop",
-): Promise<void> {
+async function applyItem(ctx: ExtensionContext, item: PromptItem, action: "apply" | "pop"): Promise<void> {
 	const savedCurrent = await autoStashCurrentEditor(ctx, item.text);
 	ctx.ui.setEditorText?.(item.text);
-	if (action === "pop" && item.kind === "stash" && typeof item.id === "number")
-		await deleteStash(item.id);
+	if (action === "pop" && item.kind === "stash" && typeof item.id === "number") await deleteStash(item.id);
 	await updateStashHud(ctx);
 	const verb = action === "pop" ? "Popped" : "Applied";
-	ctx.ui.notify(
-		`${verb} ${sourceLabel(item)}${savedCurrent ? "; current draft auto-stashed" : ""}`,
-		"info",
-	);
+	ctx.ui.notify(`${verb} ${sourceLabel(item)}${savedCurrent ? "; current draft auto-stashed" : ""}`, "info");
 }
 
 async function stashEditor(ctx: ExtensionContext): Promise<void> {
@@ -761,31 +703,17 @@ async function pick(
 	mode: PromptKind,
 ): Promise<PickerResult | null> {
 	if (items.length === 0) {
-		ctx.ui.notify(
-			mode === "stash" ? "No stashes." : "No prompt history found.",
-			"info",
-		);
+		ctx.ui.notify(mode === "stash" ? "No stashes." : "No prompt history found.", "info");
 		return null;
 	}
-	return await ctx.ui.custom<PickerResult | null>(
-		(tui, theme, _keybindings, done) => {
-			return new PromptPicker(tui, theme, title, items, config, mode, done);
-		},
-	);
+	return await ctx.ui.custom<PickerResult | null>((tui, theme, _keybindings, done) => {
+		return new PromptPicker(tui, theme, title, items, config, mode, done);
+	});
 }
 
-async function openStashPicker(
-	ctx: ExtensionContext,
-	config: Config,
-): Promise<void> {
+async function openStashPicker(ctx: ExtensionContext, config: Config): Promise<void> {
 	while (true) {
-		const result = await pick(
-			ctx,
-			"Prompt Stash",
-			await listStashes(ctx.cwd),
-			config,
-			"stash",
-		);
+		const result = await pick(ctx, "Prompt Stash", await listStashes(ctx.cwd), config, "stash");
 		if (!result) return;
 		if (result.action === "drop") {
 			if (typeof result.item.id === "number") await deleteStash(result.item.id);
@@ -793,11 +721,7 @@ async function openStashPicker(
 			ctx.ui.notify(`Dropped ${sourceLabel(result.item)}`, "info");
 			continue;
 		}
-		await applyItem(
-			ctx,
-			result.item,
-			result.action === "pop" ? "pop" : "apply",
-		);
+		await applyItem(ctx, result.item, result.action === "pop" ? "pop" : "apply");
 		return;
 	}
 }
@@ -815,18 +739,9 @@ async function smartPop(ctx: ExtensionContext, config: Config): Promise<void> {
 	await openStashPicker(ctx, config);
 }
 
-async function openHistoryPicker(
-	ctx: ExtensionContext,
-	config: Config,
-): Promise<void> {
+async function openHistoryPicker(ctx: ExtensionContext, config: Config): Promise<void> {
 	refreshProjectHistorySoon(ctx.cwd, config);
-	const result = await pick(
-		ctx,
-		"Prompt History",
-		await listHistory(ctx, config),
-		config,
-		"history",
-	);
+	const result = await pick(ctx, "Prompt History", await listHistory(ctx, config), config, "history");
 	if (!result) return;
 	await applyItem(ctx, result.item, "apply");
 }
@@ -835,10 +750,7 @@ function shortcutKey(value: string): ShortcutKey {
 	return value as ShortcutKey;
 }
 
-function runEditorAction(
-	ctx: ExtensionContext,
-	action: () => Promise<void>,
-): void {
+function runEditorAction(ctx: ExtensionContext, action: () => Promise<void>): void {
 	void action().catch((error) => {
 		ctx.ui.notify(`Prompt storage failed: ${errorMessage(error)}`, "error");
 	});
@@ -849,7 +761,7 @@ function installStashHud(ctx: ExtensionContext): void {
 		clearStashHud(ctx);
 		return;
 	}
-	ctx.ui.setWidget(stashHudWidgetId, (tui, theme) => {
+	setOrderedAboveEditorWidget(ctx, stashHudWidgetId, (tui, theme) => {
 		stashHud = new StashHudWidget(tui, theme);
 		return stashHud;
 	});
@@ -871,20 +783,9 @@ function restackStashHud(ctx: ExtensionContext): void {
 	}, 0);
 }
 
-function installEditorShortcuts(ctx: ExtensionContext, config: Config): void {
-	const ui = ctx.ui as unknown as EditorUi;
-	if (typeof ui.getEditorComponent !== "function") return;
-	const previous = ui.getEditorComponent();
-	if (
-		previous &&
-		(previous as unknown as Record<symbol, boolean>)[wrappedFactory]
-	)
-		return;
-
+function wrapEditorFactory(previous: EditorFactory | undefined, ctx: ExtensionContext, config: Config): EditorFactory {
 	const wrapped: EditorFactory = (tui, theme, keybindings) => {
-		const editor =
-			previous?.(tui, theme, keybindings) ??
-			new CustomEditor(tui, theme, keybindings);
+		const editor = previous?.(tui, theme, keybindings) ?? new CustomEditor(tui, theme, keybindings);
 		const previousHandleInput = editor.handleInput?.bind(editor);
 		editor.handleInput = (data: string) => {
 			if (matchesKey(data, shortcutKey(config.shortcuts.stash))) {
@@ -903,8 +804,13 @@ function installEditorShortcuts(ctx: ExtensionContext, config: Config): void {
 		};
 		return editor;
 	};
-	(wrapped as unknown as Record<symbol, boolean>)[wrappedFactory] = true;
-	ui.setEditorComponent(wrapped);
+	return wrapped;
+}
+
+function installEditorShortcuts(ctx: ExtensionContext, config: Config): void {
+	installEditorLayer(ctx.ui as unknown as EditorUi, EDITOR_LAYER_ID, (factory) =>
+		wrapEditorFactory(factory, ctx, config),
+	);
 }
 
 export default function promptStorage(pi: ExtensionAPI) {
