@@ -41,6 +41,16 @@ split-commit plans, and pipeline trackers.
 or `plan/`. The directory identifies artifact role; frontmatter status
 identifies whether it is approved for execution.
 
+## Human Review
+
+For non-auto workflows, blueprints are the review artifact. After every
+review-state write, report the path and status, then wait for the user to
+review locally and reply in chat with approval or feedback. Do not infer
+approval from silence or ambiguous replies.
+
+Use explicit approval phrases such as `approve`, `approved`, `lgtm`, or
+`ship it` before advancing a blueprint to an approved status.
+
 ## Naming
 
 All files use `<epoch>-<slug>.md` where epoch is Unix seconds

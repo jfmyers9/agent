@@ -1,6 +1,6 @@
 # Luan Agents Feature Decisions
 
-Source reviewed: <https://github.com/luan/agents> at `0d5b340 feat(plannotator): add planning assistant skills` on 2026-05-14, focused on Pi and Codex config.
+Source reviewed: <https://github.com/luan/agents> at `0d5b340` on 2026-05-14, focused on Pi and Codex config.
 
 ## Adopted now
 
@@ -14,7 +14,6 @@ Source reviewed: <https://github.com/luan/agents> at `0d5b340 feat(plannotator):
 | Pi clear command               | `harnesses/pi/extensions/clear.ts`                              | `/clear` and `ctrl+shift+l` fresh-session flow.                                                                                         |
 | Pi Vim editor                  | `harnesses/pi/extensions/vim/`                                  | Luan's current Vim extension replaces the older local `pi-vim/` copy.                                                                   |
 | Pi skill references            | `harnesses/pi/extensions/skillful/`                             | Replaces `skill-dollar`; supports `$skill-name`, autocomplete/highlighting, caching, and a `skill` tool while preserving `/skill:name`. |
-| Pi Plannotator event guard     | `harnesses/pi/extensions/plannotator-events/`                   | Prevents stale duplicate Plannotator event listeners across reloads.                                                                    |
 | Pi Git workflow hints          | `harnesses/pi/extensions/git-tool/`                             | Adds repo-configured Graphite/Git-Spice/current-branch prompt guidance and skill resource discovery.                                    |
 | Pi prompt stash/history        | `harnesses/pi/extensions/prompt-storage/`                       | Local-only prompt draft stash/history with non-`ctrl+s` shortcuts.                                                                      |
 | Pi custom system prompt        | `harnesses/pi/extensions/system-prompt/`                        | Renders a tested Mustache prompt using current cwd, tools, context files, skills, date, and timezone.                                   |
@@ -31,7 +30,6 @@ Source reviewed: <https://github.com/luan/agents> at `0d5b340 feat(plannotator):
 | Feature                | Decision                     | Adaptation                                                                                                                                                                                         |
 | ---------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Provider usage bars    | Adopted with safe default    | Luan's `tui` command exists, but `usageBars.visible` defaults to `false` so missing `ct` does not break normal Pi startup. Existing no-`ct` quota behavior should be merged separately if desired. |
-| Plannotator package    | Adopted with skills disabled | `@plannotator/pi-extension` is installed as a package object with `skills: []` so shared skills remain repo-controlled.                                                                            |
 | Git workflow extension | Adopted                      | Runtime mode is controlled by `git config agents.git-tool`, with this repo using Graphite guidance locally.                                                                                        |
 | Prompt storage         | Adopted with local shortcuts | Keeps `alt+s`, `ctrl+alt+s`, and `ctrl+r` rather than Luan's `ctrl+s` stash default.                                                                                                               |
 | Spawn helper code      | Adopted narrowly             | Copies only spawn-required tokenizer/lane-placement helpers, not the full `exec-command` replacement tool.                                                                                         |

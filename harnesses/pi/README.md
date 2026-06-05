@@ -42,7 +42,6 @@ Feature decisions from the Luan config review are tracked in
 
 Installed extensions:
 
-- `plannotator-events/` — guards Plannotator request listeners across reloads.
 - `agents-local/` — injects untracked `AGENTS.local.md` / `CLAUDE.local.md` context from cwd ancestors; `/agents-local` lists loaded files.
 - `clear.ts` — `/clear` starts a fresh session after the current turn; `ctrl+shift+l` queues it.
 - `effort.ts` — `/effort [level]` persists per-model thinking effort to `effort.json`.
@@ -68,6 +67,8 @@ Prompt storage is local-only and stores stashes/history in `${XDG_STATE_HOME:-~/
 Context7 is installed as a pinned reviewed Pi package. It registers `context7_resolve_library_id`, `context7_get_library_docs`, and `context7_get_cached_doc_raw`. API key is optional; set `CONTEXT7_API_KEY` for higher limits. Its cache lives under `~/.pi/agent/extensions/context7/cache/`. Pi packages execute extension code with full local privileges, so bump package versions only after review.
 
 Skills are available as `/skill:<name>` and `$skill-name` references by default.
+
+Non-auto review gates use blueprint files plus explicit chat approval. Agents report the blueprint path and status, then wait while the user reviews locally and replies with approval or feedback.
 
 Long-running workflows use blueprints as the durable tracker and project tasks as the fine-grained execution queue:
 

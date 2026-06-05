@@ -13,7 +13,7 @@ Implement an approved blueprint. Blueprints remain the durable source of
 truth; project tasks are the preferred fine-grained execution queue when
 `task_*` tools are available.
 
-@rules/blueprints.md, @rules/plannotator-gates.md, and
+@rules/blueprints.md, @rules/human-approval.md, and
 @rules/harness-compat.md apply.
 
 ## Arguments
@@ -38,15 +38,9 @@ truth; project tasks are the preferred fine-grained execution queue when
 Read the file and skip YAML frontmatter. Do not execute `draft`,
 `spec_review`, `spec_approved`, or `plan_review` content by default.
 
-If the user explicitly requested an unapproved file or slug:
-
-1. Run `plannotator annotate "$file" --gate` before any code changes.
-2. On approval, set status to `approved`, commit the blueprint, then
-   continue.
-3. On feedback, leave status unchanged, report the feedback target, and
-   stop with `/skill:research --continue` or the originating planning
-   skill.
-4. On dismissal, leave status unchanged and stop.
+If the user explicitly requested an unapproved file or slug, do not make
+code changes. Report the blueprint path and status, ask the user to
+review it locally, and wait for explicit chat approval or feedback.
 
 ### 2. Parse Plan
 
@@ -165,8 +159,8 @@ Show:
 ## Rules
 
 - Execute only approved blueprints.
-- Use Plannotator gates before code changes when explicit unapproved
-  blueprints need approval.
+- Use explicit chat approval for unapproved blueprints before code
+  changes.
 - Use project task tools only as a blueprint-linked execution queue.
 - Do not create harness-native task/team/subagent state.
 - Do not spawn subagents or teams.

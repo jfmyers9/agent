@@ -13,6 +13,9 @@ Shared instructions and skills must be portable across harnesses.
 - Do not use harness-native task/team/subagent stores in shared
   skills.
 - Do not keep durable workflow state only in chat history.
+- Chat may carry approval or feedback, but blueprints remain the durable
+  artifact. Record approval history and revisions in the relevant
+  blueprint before continuing.
 
 ## Blueprint Mapping
 

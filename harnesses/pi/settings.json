@@ -37,17 +37,12 @@
       "maxRetryDelayMs": 60000
     }
   },
-  "lastChangelogVersion": "0.74.0",
+  "lastChangelogVersion": "0.78.1",
   "packages": [
     "npm:pi-lens",
-    {
-      "source": "npm:@plannotator/pi-extension",
-      "skills": []
-    },
     "npm:@dreki-gg/pi-context7@0.1.9"
   ],
   "extensions": [
-    "extensions/plannotator-events/index.ts",
     "extensions/agents-local/index.ts",
     "extensions/clear.ts",
     "extensions/effort.ts",

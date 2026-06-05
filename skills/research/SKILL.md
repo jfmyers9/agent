@@ -1,8 +1,8 @@
 ---
 name: research
 description: >
-  Research topics, investigate codebases, and create Plannotator-gated
-  blueprint proposals. Triggers: 'research', 'investigate', 'explore'.
+  Research topics, investigate codebases, and create blueprint proposals for
+  local review. Triggers: 'research', 'investigate', 'explore'.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 argument-hint: "<topic or question> | --continue | --discard [slug] | --depth <medium|high|max> | --auto | --no-tasks"
 ---
@@ -10,9 +10,10 @@ argument-hint: "<topic or question> | --continue | --discard [slug] | --depth <m
 # Research
 
 Research a topic and write one `spec/` blueprint proposal as the durable
-source of truth for implementation.
+source of truth for implementation. The user reviews blueprints locally and
+approves or requests changes in chat.
 
-@rules/blueprints.md, @rules/plannotator-gates.md, and
+@rules/blueprints.md, @rules/human-approval.md, and
 @rules/harness-compat.md apply.
 
 ## Arguments
@@ -22,7 +23,7 @@ source of truth for implementation.
 - `--discard [slug]` — delete the most recent or matching spec
   blueprint
 - `--depth <medium|high|max>` — thoroughness, default `medium`
-- `--auto` — bypass Plannotator gates, used by `/skill:vibe`
+- `--auto` — bypass human approval gates, used by `/skill:vibe`
 - `--no-tasks` — do not create project tasks after final approval
 
 ## Blueprint
@@ -65,15 +66,14 @@ Expected body:
 
 ## Approval History
 
-- <timestamp> — spec approved | plan approved | revised from
-  Plannotator feedback
+- <timestamp> — spec approved | plan approved | revised from user feedback
 ```
 
 Use frontmatter status for progress:
 
-- `spec_review` — spec slice drafted; awaiting Plannotator gate
+- `spec_review` — spec slice drafted; awaiting user review
 - `spec_approved` — spec slice accepted; plan slice may be drafted
-- `plan_review` — plan slice drafted; awaiting Plannotator gate
+- `plan_review` — plan slice drafted; awaiting user review
 - `approved` — proposal ready for `/skill:implement`
 
 Run `blueprint commit spec <slug>` after every blueprint write or
@@ -90,7 +90,8 @@ by `source_blueprint`; the blueprint remains the durable plan.
 - `--discard`: find via `blueprint find --type spec [--match <slug>]`,
   delete it, run `blueprint commit spec <slug>`, report.
 - `--continue`: find the latest spec via `blueprint find --type spec`,
-  read it, and resume from frontmatter `status`.
+  read it, and resume from frontmatter `status` and the latest user
+  response.
 - New topic: parse flags, derive topic text, create a new spec
   blueprint.
 
@@ -130,21 +131,23 @@ Write a timeless target-state spec:
 
 Set status to `spec_review`, write the blueprint, and commit.
 
-If `--auto` is absent, run the Plannotator gate:
+If `--auto` is absent, stop after reporting:
 
-```bash
-plannotator annotate "$file" --gate
+```text
+Spec/Plan: <path>
+Status: spec_review
+Review: open the blueprint locally and reply with approval or feedback
+Next: /skill:research --continue
 ```
 
-- Approved: append/update `## Approval History`, set status to
-  `spec_approved`, commit, and continue to planning.
-- Feedback: revise only the affected blueprint content, append/update
-  `## Approval History`, commit, and rerun the same gate.
-- Dismissed: leave status `spec_review`, commit any revisions already
-  made, and stop with `/skill:research --continue`.
+On explicit chat approval, append/update `## Approval History`, set
+status to `spec_approved`, commit, and continue to planning.
+
+On feedback, revise only the affected blueprint content, append/update
+`## Approval History`, commit, and return to `spec_review`.
 
 If `--auto` is present, set status to `spec_approved`, commit, and
-continue without opening Plannotator.
+continue without waiting for human approval.
 
 ### 4. Write Plan Slice
 
@@ -159,18 +162,20 @@ phase must include:
 
 Set status to `plan_review`, write the blueprint, and commit.
 
-If `--auto` is absent, run the Plannotator gate on the same file:
+If `--auto` is absent, stop after reporting:
 
-```bash
-plannotator annotate "$file" --gate
+```text
+Spec/Plan: <path>
+Status: plan_review
+Review: open the blueprint locally and reply with approval or feedback
+Next: /skill:research --continue
 ```
 
-- Approved: append/update `## Approval History`, set status to
-  `approved`, commit, then import tasks when enabled.
-- Feedback: revise only the affected plan/spec content, append/update
-  `## Approval History`, commit, and rerun the same gate.
-- Dismissed: leave status `plan_review`, commit any revisions already
-  made, and stop with `/skill:research --continue`.
+On explicit chat approval, append/update `## Approval History`, set
+status to `approved`, commit, then import tasks when enabled.
+
+On feedback, revise only the affected plan/spec content, append/update
+`## Approval History`, commit, and return to `plan_review`.
 
 If `--auto` is present, set status to `approved`, commit, then import
 tasks when enabled.
@@ -197,5 +202,5 @@ Keep user-facing output concise:
 Spec/Plan: <path>
 Status: <status>
 Tasks: <imported|unavailable|skipped>
-Next: /skill:implement
+Next: <review instruction or /skill:implement>
 ```
