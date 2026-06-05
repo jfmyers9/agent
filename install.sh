@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HARNESS="${1:-claude}"
+HARNESS="${1:-all}"
 
 link_item() {
 	local src="$1"
