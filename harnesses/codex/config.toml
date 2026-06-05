@@ -8,7 +8,7 @@ project_doc_fallback_filenames = ["CLAUDE.md"]
 plan_mode_reasoning_effort = "high"
 
 [features]
-codex_hooks = true
+hooks = true
 
 [tui]
 notification_condition = "unfocused"
