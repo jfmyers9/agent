@@ -23,12 +23,3 @@ status_line = [
 
 [tui.keymap.composer]
 queue = "alt-enter"
-
-[tui.model_availability_nux]
-"gpt-5.5" = 2
-
-[projects."/Users/jim/workspace/agent"]
-trust_level = "trusted"
-
-[projects."/home/ubuntu/workspace/claude"]
-trust_level = "trusted"

@@ -13,6 +13,18 @@ link_item() {
 	echo "Linked: $dest"
 }
 
+copy_item() {
+	local src="$1"
+	local dest="$2"
+	mkdir -p "$(dirname "$dest")"
+	if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+		backup_existing_file "$dest"
+	fi
+	rm -rf "$dest"
+	cp -p "$src" "$dest"
+	echo "Copied: $dest"
+}
+
 backup_existing_file() {
 	local file="$1"
 	if [ -e "$file" ] && [ ! -L "$file" ]; then
@@ -75,8 +87,7 @@ install_codex() {
 	mkdir -p "$dir"
 	mkdir -p "$agents_dir"
 
-	backup_existing_file "$dir/config.toml"
-	link_item "$SCRIPT_DIR/harnesses/codex/config.toml" "$dir/config.toml"
+	copy_item "$SCRIPT_DIR/harnesses/codex/config.toml" "$dir/config.toml"
 	if [ -f "$SCRIPT_DIR/harnesses/codex/hooks.json" ]; then
 		link_item "$SCRIPT_DIR/harnesses/codex/hooks.json" "$dir/hooks.json"
 	fi

@@ -16,9 +16,9 @@ Codex loads:
 - `$HOME/.agents/skills` for user-level Agent Skills
 - `bin/blueprint` as a shared CLI
 
-The installer links shared files:
+The installer copies the mutable baseline config and links shared files:
 
-- `harnesses/codex/config.toml` to `~/.codex/config.toml`
+- `harnesses/codex/config.toml` to `~/.codex/config.toml` as a baseline copy
 - `harnesses/codex/hooks.json` to `~/.codex/hooks.json`
 - `harnesses/codex/hooks/*` to `~/.codex/hooks/`
 - `AGENTS.md` to `~/.codex/AGENTS.md` as a reference copy
@@ -26,8 +26,10 @@ The installer links shared files:
 - `skills/` to `~/.agents/skills` for Codex discovery
 - `rules/` to `~/.agents/rules` for shared skill references
 
-If `~/.codex/config.toml` already exists as a real file, the installer
-backs it up before linking the managed config.
+If `~/.codex/config.toml` already exists as a real file, the installer backs it
+up before copying the baseline config. Codex may append local runtime state such
+as project trust, hook trust hashes, and UI notices to the installed copy; those
+tables are intentionally not checked into this repo.
 
 Adopted Luan-inspired Codex ergonomics:
 

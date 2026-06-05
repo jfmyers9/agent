@@ -35,7 +35,7 @@ Environment overrides:
 ```text
 AGENTS.md                  # shared global instructions
 CLAUDE.md                  # Claude compatibility entrypoint
-install.sh                 # harness-aware symlink installer
+install.sh                 # harness-aware installer
 bin/blueprint              # portable blueprint state CLI
 rules/                     # shared coding/workflow rules
 skills/                    # Agent Skills packages
@@ -51,7 +51,7 @@ harnesses/
     effort.json            # Pi per-model thinking defaults
     extensions/            # Pi extensions
   codex/
-    config.toml            # Codex CLI settings
+    config.toml            # Codex CLI baseline settings
     hooks.json             # Codex hook registration
     hooks/                 # Codex hook scripts
 ```
@@ -120,7 +120,7 @@ Direct aliases like `/commit` can be added later with a Pi extension.
 
 Installed by `./install.sh codex` into `~/.codex` and `~/.agents`:
 
-- links `harnesses/codex/config.toml` as `~/.codex/config.toml`
+- copies `harnesses/codex/config.toml` as a baseline to `~/.codex/config.toml`
 - links `harnesses/codex/hooks.json` and `harnesses/codex/hooks/*`
 - links `AGENTS.md` and `rules/` into `~/.codex` as reference files
 - links shared `skills/` as `$HOME/.agents/skills`
@@ -128,7 +128,9 @@ Installed by `./install.sh codex` into `~/.codex` and `~/.agents`:
 - installs `blueprint` to `~/.local/bin`
 
 If `~/.codex/config.toml` already exists as a real file, the Codex
-installer backs it up before linking the managed config.
+installer backs it up before copying the baseline config. Codex may append
+local runtime state such as project trust, hook trust hashes, and UI notices to
+the installed copy; those tables are intentionally not checked into this repo.
 
 Codex reads repository `AGENTS.md` files automatically. Shared skills are
 installed through Codex's user skill path and can be invoked with
