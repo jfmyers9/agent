@@ -22,7 +22,7 @@ import {
 } from "./skills";
 import { ensureTranscriptHighlight } from "./transcript";
 
-const DOLLAR_RE = /(?<![\w$])\$([a-zA-Z][\w-]*)/g;
+const DOLLAR_RE = /(?<![\w$])\$([a-z][\w-]*)/g;
 const AUTOCOMPLETE_INSTALLED = Symbol.for("skillful.autocompleteInstalled");
 
 type SkillState = {
@@ -58,6 +58,14 @@ function renderSkillLoad(details: SkillfulLoadDetails | undefined, theme: Skillf
 		0,
 		0,
 	);
+}
+
+function maskMarkdownCode(text: string): string {
+	return text
+		.replace(/(^|\n)[ \t]*(```|~~~)[^\n]*(?:\n[\s\S]*?(?:\n[ \t]*(?:```|~~~)[ \t]*(?=\n|$)|$))/g, (match) =>
+			" ".repeat(match.length),
+		)
+		.replace(/`[^`\n]*`/g, (match) => " ".repeat(match.length));
 }
 
 export default function (pi: ExtensionAPI) {
@@ -154,7 +162,8 @@ export default function (pi: ExtensionAPI) {
 
 		const referenced: string[] = [];
 		const missing: string[] = [];
-		for (const match of event.prompt.matchAll(DOLLAR_RE)) {
+		const promptForSkillScan = maskMarkdownCode(event.prompt);
+		for (const match of promptForSkillScan.matchAll(DOLLAR_RE)) {
 			const name = match[1];
 			if (referenced.includes(name) || missing.includes(name)) continue;
 			if (state.skills.has(name)) referenced.push(name);

@@ -1,5 +1,6 @@
 {
   "defaultProvider": "openai",
+  "theme": "dark",
   "defaultThinkingLevel": "high",
   "defaultModel": "gpt-5.5",
   "enabledModels": [
@@ -50,7 +51,6 @@
     "extensions/agents-local/index.ts",
     "extensions/clear.ts",
     "extensions/effort.ts",
-    "extensions/mac-system-theme.ts",
     "extensions/prompt-storage/index.ts",
     "extensions/vim/index.ts",
     "extensions/tasks/index.ts",

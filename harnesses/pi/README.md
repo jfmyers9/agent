@@ -25,6 +25,7 @@ Pi loads:
 Adopted Pi settings from Luan's config:
 
 - quiet startup and reduced terminal progress noise
+- built-in `dark` theme selected explicitly
 - explicit Codex GPT model cycle (`gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`)
 - tree navigation on double Escape
 - Emacs-style movement and queueing shortcuts
@@ -45,7 +46,6 @@ Installed extensions:
 - `agents-local/` — injects untracked `AGENTS.local.md` / `CLAUDE.local.md` context from cwd ancestors; `/agents-local` lists loaded files.
 - `clear.ts` — `/clear` starts a fresh session after the current turn; `ctrl+shift+l` queues it.
 - `effort.ts` — `/effort [level]` persists per-model thinking effort to `effort.json`.
-- `mac-system-theme.ts` — syncs Pi's `dark`/`light` theme with macOS appearance.
 - `prompt-storage/` — local prompt stash/history. Shortcuts: `alt+s` stash current draft, `ctrl+alt+s` pop a stash, `ctrl+r` search previous prompts.
 - `vim/` — replaces the editor with Vim-style modal editing. Remove it from `settings.json`'s `extensions` list, then reinstall/reload Pi, to disable it.
 - `tasks/` — blueprint-linked project task tools, HUD, and `/tasks` board for fine-grained LLM work chunks. Blueprints stay project-scoped; task queues default to a worktree lane under the project task root to avoid parallel-worktree collisions.
@@ -61,6 +61,7 @@ Retired local extension names:
 - `skill-dollar/` is replaced by `skillful/`.
 - `pi-vim/` is replaced by `vim/`.
 - `usage-hud/` is replaced by `tui/` as the sole footer owner.
+- `mac-system-theme.ts` is replaced by the explicit `theme: "dark"` setting.
 
 Prompt storage is local-only and stores stashes/history in `${XDG_STATE_HOME:-~/.local/state}/pi/prompt-storage.sqlite`. Slash commands are excluded from history by default. Delete that SQLite file to clear prompt-storage data.
 

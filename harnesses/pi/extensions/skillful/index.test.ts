@@ -19,8 +19,8 @@ import {
 describe("skillful highlighting", () => {
 	test("highlights known dollar and slash skill references", () => {
 		const skills = new Set(["tdd", "crit"]);
-		expect(colorize("use $tdd then /skill:crit not $missing", skills)).toBe(
-			"use \x1b[36m$tdd\x1b[39m then \x1b[36m/skill:crit\x1b[39m not $missing",
+		expect(colorize("use $tdd then /skill:crit not $missing or $ARGUMENTS", skills)).toBe(
+			"use \x1b[36m$tdd\x1b[39m then \x1b[36m/skill:crit\x1b[39m not $missing or $ARGUMENTS",
 		);
 	});
 
@@ -324,6 +324,39 @@ describe("skillful extension", () => {
 				display: true,
 			},
 		});
+	});
+
+	test("ignores uppercase placeholders and markdown code when scanning dollar skill references", async () => {
+		const handlers = new Map<
+			string,
+			Array<(event: { prompt: string; systemPrompt: string }, ctx: unknown) => unknown>
+		>();
+		const pi = {
+			getCommands: () => [],
+			on: (event: string, handler: (event: { prompt: string; systemPrompt: string }, ctx: unknown) => unknown) => {
+				handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+			},
+			registerTool() {},
+			registerMessageRenderer() {},
+			events: { emit() {} },
+		};
+
+		extension(pi as never);
+
+		const result = await handlers.get("before_agent_start")?.[0]?.(
+			{
+				prompt: [
+					"Unknown skill: $ARGUMENTS",
+					"Parse `$missing` as literal example text.",
+					"```sh",
+					"echo $missing",
+					"```",
+				].join("\n"),
+				systemPrompt: "base",
+			},
+			{ sessionManager: { getBranch: () => [] } },
+		);
+		expect(result).toBeUndefined();
 	});
 
 	test("registers skill tool with read and cached results", async () => {
