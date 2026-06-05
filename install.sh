@@ -39,6 +39,30 @@ install_shared_bin() {
 	link_item "$SCRIPT_DIR/bin/blueprint" "$HOME/.local/bin/blueprint"
 }
 
+install_node_dependencies() {
+	if [ ! -f "$SCRIPT_DIR/package.json" ]; then
+		return
+	fi
+
+	echo "Installing node dependencies..."
+	if command -v bun >/dev/null 2>&1; then
+		(cd "$SCRIPT_DIR" && bun install)
+	elif command -v npm >/dev/null 2>&1; then
+		(cd "$SCRIPT_DIR" && npm install --no-package-lock)
+	else
+		echo "Error: bun or npm is required to install node dependencies." >&2
+		exit 1
+	fi
+}
+
+ensure_pi_dependencies() {
+	if node -e 'const { createRequire } = require("module"); createRequire(process.argv[1]).resolve("gpt-tokenizer/encoding/o200k_base");' "$SCRIPT_DIR/harnesses/pi/extensions/token-burden/parser.ts" >/dev/null 2>&1; then
+		return
+	fi
+
+	install_node_dependencies
+}
+
 install_claude() {
 	local dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 	mkdir -p "$dir"
@@ -65,6 +89,7 @@ install_pi() {
 	link_item "$SCRIPT_DIR/rules" "$dir/rules"
 	link_item "$SCRIPT_DIR/skills" "$dir/skills"
 	link_item "$SCRIPT_DIR/harnesses/pi/settings.json" "$dir/settings.json"
+	ensure_pi_dependencies
 	if [ -d "$SCRIPT_DIR/node_modules" ]; then
 		link_item "$SCRIPT_DIR/node_modules" "$dir/node_modules"
 	fi
