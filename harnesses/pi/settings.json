@@ -44,6 +44,7 @@
   ],
   "extensions": [
     "extensions/agents-local/index.ts",
+    "extensions/ask/index.ts",
     "extensions/clear.ts",
     "extensions/effort.ts",
     "extensions/prompt-storage/index.ts",

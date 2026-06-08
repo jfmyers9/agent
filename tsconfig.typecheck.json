@@ -3,6 +3,7 @@
   "include": [
     "harnesses/pi/extensions/*.ts",
     "harnesses/pi/extensions/agents-local/**/*.ts",
+    "harnesses/pi/extensions/ask/**/*.ts",
     "harnesses/pi/extensions/git-tool/**/*.ts",
     "harnesses/pi/extensions/prompt-storage/**/*.ts",
     "harnesses/pi/extensions/shared/**/*.ts",
