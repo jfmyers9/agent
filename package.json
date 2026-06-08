@@ -33,7 +33,8 @@
     "turndown": "^7.2.0",
     "typebox": "^1.1.34",
     "unpdf": "^1.4.0",
-    "web-tree-sitter": "^0.26.7"
+    "web-tree-sitter": "^0.26.7",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.13",

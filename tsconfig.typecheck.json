@@ -5,8 +5,11 @@
     "harnesses/pi/extensions/agents-local/**/*.ts",
     "harnesses/pi/extensions/apply-patch/**/*.ts",
     "harnesses/pi/extensions/ask/**/*.ts",
+    "harnesses/pi/extensions/context-guard/**/*.ts",
+    "harnesses/pi/extensions/exec-command/**/*.ts",
     "harnesses/pi/extensions/fileops/**/*.ts",
     "harnesses/pi/extensions/git-tool/**/*.ts",
+    "harnesses/pi/extensions/pretty/**/*.ts",
     "harnesses/pi/extensions/prompt-storage/**/*.ts",
     "harnesses/pi/extensions/shared/**/*.ts",
     "harnesses/pi/extensions/skillful/**/*.ts",
@@ -14,8 +17,8 @@
     "harnesses/pi/extensions/tui/**/*.ts",
     "harnesses/pi/extensions/token-burden/**/*.ts",
     "harnesses/pi/extensions/spawn/**/*.ts",
-    "harnesses/pi/extensions/vim/**/*.ts",
-    "harnesses/pi/extensions/exec-command/shell/**/*.ts"
+    "harnesses/pi/extensions/vcc/**/*.ts",
+    "harnesses/pi/extensions/vim/**/*.ts"
   ],
   "exclude": ["**/*.test.ts"]
 }
