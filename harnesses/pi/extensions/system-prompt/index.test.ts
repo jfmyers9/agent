@@ -60,17 +60,44 @@ describe("system-prompt Skillful skill rendering", () => {
 		expect(prompt).toContain("<timezone>Etc/UTC</timezone>");
 	});
 
-	test("search guidance prefers line-safe rg without exposing implicit RTK rewrites", () => {
+	test("tool guidance adapts to active file and shell tools", () => {
 		const prompt = buildSystemPrompt("base", {
 			...baseOptions,
-			selectedTools: ["exec_command"],
+			selectedTools: ["read", "search", "find", "exec_command"],
 		});
 
-		expect(prompt).toContain("avoid `grep`, `grep -R`, and `find`");
+		expect(prompt).toContain("Use `read` for known file paths.");
+		expect(prompt).toContain("Use `search` for file-content matching");
+		expect(prompt).toContain("Use `find` for file discovery by glob or path.");
+		expect(prompt).toContain("Use `exec_command` for shell-only workflows");
 		expect(prompt).toContain("rg -n -M 400 --max-columns-preview");
-		expect(prompt).toContain("`head` limits line count, not line length");
+		expect(prompt).toContain("avoid `head` for line-length control");
+		expect(prompt).not.toContain("Use `bash` for shell-only workflows");
 		expect(prompt).not.toContain("RTK");
 		expect(prompt).not.toContain("rtk grep");
+	});
+
+	test("bash guidance remains available without exec_command", () => {
+		const prompt = buildSystemPrompt("base", {
+			...baseOptions,
+			selectedTools: ["bash", "grep"],
+		});
+
+		expect(prompt).toContain("Use `bash` for shell-only workflows");
+		expect(prompt).toContain("Use `grep` for file-content matching when `search` is not active.");
+		expect(prompt).toContain("rg -n -M 400 --max-columns-preview");
+		expect(prompt).not.toContain("Use `exec_command` for shell-only workflows");
+	});
+
+	test("editing guidance uses active edit tool instead of hard-coded apply_patch", () => {
+		const prompt = buildSystemPrompt("base", {
+			...baseOptions,
+			selectedTools: [],
+		});
+
+		expect(prompt).toContain("Use the active edit tool for manual code edits.");
+		expect(prompt).toContain("active edit tool is enough");
+		expect(prompt).not.toContain("Use `apply_patch` for manual code edits");
 	});
 
 	test("skill tool active lists skills by name and description only", () => {

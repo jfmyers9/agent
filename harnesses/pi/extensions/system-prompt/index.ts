@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { BuildSystemPromptOptions, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import Mustache, { type TemplateSpans } from "mustache";
 
 const SYSTEM_PROMPT_TEMPLATE = readFileSync(new URL("./SYSTEM_PROMPT.md.mustache", import.meta.url), "utf8").trimEnd();
@@ -32,16 +32,51 @@ type EnvironmentContextView = {
 	timezone: string | null;
 };
 
-type SystemPromptBuildOptions = BuildSystemPromptOptions & {
+type SystemPromptSkill = {
+	name: string;
+	description: string;
+	filePath?: string;
+	disableModelInvocation?: boolean;
+};
+
+type SystemPromptContextFile = {
+	path: string;
+	content: string;
+};
+
+type SystemPromptBuildOptions = {
+	customPrompt?: string | null;
+	selectedTools?: string[];
+	promptGuidelines?: string[];
+	appendSystemPrompt?: string | null;
+	cwd: string;
+	contextFiles?: SystemPromptContextFile[];
+	skills?: SystemPromptSkill[];
 	environmentContext?: EnvironmentContextOptions;
 	now?: Date;
 };
 
+type ToolFlags = {
+	hasBash: boolean;
+	hasExecCommand: boolean;
+	hasFind: boolean;
+	hasGrep: boolean;
+	hasRead: boolean;
+	hasSearch: boolean;
+	hasShellTool: boolean;
+};
+
+type BeforeAgentStartPromptEvent = {
+	systemPrompt: string;
+	systemPromptOptions: Partial<SystemPromptBuildOptions> & { cwd?: string };
+};
+
 export default async function systemPromptExtension(pi: ExtensionAPI) {
 	pi.on("before_agent_start", (event, ctx) => {
+		const promptEvent = event as BeforeAgentStartPromptEvent;
 		return {
-			systemPrompt: buildSystemPrompt(event.systemPrompt, {
-				...event.systemPromptOptions,
+			systemPrompt: buildSystemPrompt(promptEvent.systemPrompt, {
+				...promptEvent.systemPromptOptions,
 				cwd: ctx.cwd,
 			}),
 		};
@@ -65,24 +100,20 @@ export function buildSystemPrompt(original: string, options: SystemPromptBuildOp
 
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
-	const tools = selectedTools || ["read", "bash", "edit", "write"];
+	const tools = selectedTools ?? ["read", "bash", "edit", "write"];
 
-	const hasBash = tools.includes("bash");
-	const hasGrep = tools.includes("grep");
-	const hasFind = tools.includes("find");
-	const hasLs = tools.includes("ls");
-	const hasRead = tools.includes("read");
+	const toolFlags = buildToolFlags(tools);
 	const hasSkillTool = tools.includes("skill");
 
-	const readmePath = original.match(/- Main documentation: (.+)/)?.[1] || null;
-	const docsPath = original.match(/- Additional docs: (.+)/)?.[1] || null;
-	const examplesPath = original.match(/- Examples: (.+)/)?.[1] || null;
+	const readmePath = original.match(/- Main documentation: (.+)/)?.[1] ?? null;
+	const docsPath = original.match(/- Additional docs: (.+)/)?.[1] ?? null;
+	const examplesPath = original.match(/- Examples: (.+)/)?.[1] ?? null;
 	const visibleSkills = skills.filter((skill) => !skill.disableModelInvocation);
 
 	return renderTemplate("SYSTEM_PROMPT.md.mustache", SYSTEM_PROMPT_TEMPLATE, {
-		appendSystemPrompt: appendSystemPrompt || null,
+		appendSystemPrompt: appendSystemPrompt ?? null,
 		contextFiles,
-		customPrompt: customPrompt || null,
+		customPrompt: customPrompt ?? null,
 		docsPath: docsPath ?? "null",
 		environmentContext: buildEnvironmentContextView({
 			currentDate: date,
@@ -96,16 +127,31 @@ export function buildSystemPrompt(original: string, options: SystemPromptBuildOp
 			],
 		}),
 		examplesPath: examplesPath ?? "null",
+		...toolFlags,
 		hasContextFiles: contextFiles.length > 0,
-		includeSkills: (hasSkillTool || hasRead) && visibleSkills.length > 0,
-		preferDedicatedFileToolsGuideline: hasBash && (hasGrep || hasFind || hasLs),
+		includeSkills: (hasSkillTool || toolFlags.hasRead) && visibleSkills.length > 0,
 		promptGuidelines: uniqueNonEmptyLines(promptGuidelines ?? []),
 		readmePath: readmePath ?? "null",
-		readSkillFallback: !hasSkillTool && hasRead,
+		readSkillFallback: !hasSkillTool && toolFlags.hasRead,
 		skills: visibleSkills,
 		skillToolActive: hasSkillTool,
-		useBashFileOpsGuideline: hasBash && !hasGrep && !hasFind && !hasLs,
 	});
+}
+
+function buildToolFlags(tools: string[]): ToolFlags {
+	const hasBash = tools.includes("bash");
+	const hasExecCommand = tools.includes("exec_command");
+	const hasSearch = tools.includes("search");
+
+	return {
+		hasBash,
+		hasExecCommand,
+		hasFind: tools.includes("find"),
+		hasGrep: tools.includes("grep") && !hasSearch,
+		hasRead: tools.includes("read"),
+		hasSearch,
+		hasShellTool: hasBash || hasExecCommand,
+	};
 }
 
 function formatDate(date: Date): string {
