@@ -1,0 +1,13 @@
+start: file_replace+
+file_replace: file_header replacement+
+file_header: "*** File: " filename LF
+
+replacement: old_block new_block all_flag?
+old_block: "*** Old" LF text_line+
+new_block: "*** New" LF text_line*
+all_flag: "*** All" LF
+
+text_line: "|" /(.*)/ LF
+filename: /(.+)/
+
+%import common.LF

@@ -1,0 +1,15 @@
+{
+  "maxDiffLines": 30,
+  "resumeMaxDiffLines": 0,
+  "collapsedPreview": "digest",
+  "digestMaxItems": 4,
+  "syntaxHighlight": false,
+  "richRender": true,
+  "renderDiff": true,
+  "enforce": true,
+  "validateBeforeApply": false,
+  "recordUsageEntry": false,
+  "registerTool": true,
+  "activeByDefault": true,
+  "allowEditTool": true
+}

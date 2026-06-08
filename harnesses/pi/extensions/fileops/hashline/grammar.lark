@@ -1,0 +1,22 @@
+start: begin_patch file_patch+ end_patch
+begin_patch: "*** Begin Patch" LF
+end_patch:   "*** End Patch" LF?
+
+file_patch: file_header hunk+
+file_header: "¶" filename ("#" file_hash)? LF
+file_hash: /[0-9A-F]{3}/
+filename: /[^\s#]+/
+
+hunk: hunk_header op*
+hunk_header: anchor LF
+op: emit_op | repeat_op
+emit_op:   "+" /(.*)/ LF
+repeat_op: "&" body_range LF
+
+anchor: header_range | "DELETE" WS LID WS LID | "BEFORE" WS LID | "AFTER" WS LID | "BOF" | "EOF"
+header_range: LID WS LID
+body_range: LID (".." LID)?
+LID: /[1-9]\d*/
+WS: /[ \t]+/
+
+%import common.LF

@@ -1,0 +1,15 @@
+start: file_patch+
+file_patch: file_header patch_entry+
+file_header: "*** File: " filename LF
+
+patch_entry: create_entry | update_entry | delete_entry | rename_entry
+create_entry: "*** Create" LF create_line+
+update_entry: "*** Update" LF diff_line+
+delete_entry: "*** Delete" LF
+rename_entry: "*** Rename to: " filename LF
+
+create_line: "+" /(.*)/ LF
+diff_line: ("@@" | "+" | "-" | " ") /(.*)/ LF
+filename: /(.+)/
+
+%import common.LF
