@@ -45,7 +45,6 @@
   "extensions": [
     "extensions/agents-local/index.ts",
     "extensions/fileops/index.ts",
-    "extensions/apply-patch/index.ts",
     "extensions/vcc/index.ts",
     "extensions/pretty/index.ts",
     "extensions/context-guard/index.ts",
