@@ -3,7 +3,7 @@ import type { z } from "zod";
 import { createHashlineEditAnchor } from "../../fileops/hashline/anchors.js";
 import { textComponent } from "../../shared/tui";
 import type { PiToolResponse } from "./core.js";
-import { invokeCore } from "./core.js";
+import { buildCoreCheckText, invokeCore } from "./core.js";
 import { getPiConfigDir } from "./index.js";
 import { getProjectDir, getSessionDbPath, getSessionDir, getStorePath } from "./tool-paths.js";
 import { createPiToolSpecs } from "./tool-specs.js";
@@ -289,7 +289,12 @@ server.registerTool("cg_status", toolSpecs.status, async () =>
 	),
 );
 
-server.registerTool("cg_check", toolSpecs.check, async () => trackResponse("cg_check", await invokeCore("check")));
+server.registerTool("cg_check", toolSpecs.check, async () =>
+	trackResponse("cg_check", {
+		content: [{ type: "text", text: buildCoreCheckText() }],
+		isError: false,
+	}),
+);
 
 server.registerTool("cg_purge", toolSpecs.purge, async ({ confirm, sessionId, scope }) =>
 	trackResponse(

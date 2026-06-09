@@ -1,4 +1,4 @@
-import { invokeCoreSync, parseCoreJson } from "../pi/core.js";
+import { buildCoreCheckText, invokeCoreSync, parseCoreJson, resolveCoreBin } from "../pi/core.js";
 
 export interface HookInput {
 	tool_name: string;
@@ -129,6 +129,7 @@ export function sessionBuildPiCheck(opts: {
 	pluginRoot: string;
 	projectDir: string;
 }): string {
+	if (!resolveCoreBin()) return buildCoreCheckText();
 	return (
 		callSession<string>({
 			action: "build_pi_check",

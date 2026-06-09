@@ -9,7 +9,7 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works
 import type { BundledLanguage, BundledTheme } from "shiki";
 import { Type } from "typebox";
 import { getConfiguredEditMode, getEditFreeformToolConfig } from "../fileops/index.ts";
-import { runCommand as runExternalCommand } from "../shared/command-runner.ts";
+import { runLocalApplyPatch } from "../shared/apply-patch-backend.ts";
 import { nf, title } from "../shared/ct-render.ts";
 import { resolveInlineLanguageForPath, resolveShikiLanguageForPath } from "../shared/path-language";
 import {
@@ -1529,17 +1529,20 @@ function markFilesSemantic(files: ApplyPatchProgressFile[], semantic: boolean): 
 	return semantic ? files.map((file) => ({ ...file, semantic: file.semantic ?? true })) : files;
 }
 
-function parsePreviewResponse(stdout: string): ApplyPatchPreviewResponse | undefined {
-	const line = stdout
-		.trim()
-		.split("\n")
-		.find((candidate) => candidate.trim().startsWith("{"));
-	if (!line) return undefined;
-	try {
-		return JSON.parse(line) as ApplyPatchPreviewResponse;
-	} catch {
-		return undefined;
-	}
+
+function localPreviewResponse(result: Awaited<ReturnType<typeof runLocalApplyPatch>>): ApplyPatchPreviewResponse {
+	return {
+		status: result.changes.length === 0 ? "empty" : "valid",
+		complete: true,
+		diff: result.diff,
+		changes: result.changes.map((change) => ({
+			path: change.path,
+			type: change.type,
+			additions: change.additions,
+			deletions: change.deletions,
+			move_path: change.move_path ?? null,
+		})),
+	};
 }
 
 async function runApplyPatchPreview(
@@ -1548,13 +1551,16 @@ async function runApplyPatchPreview(
 	signal?: AbortSignal,
 	partial = false,
 ): Promise<ApplyPatchPreviewResponse | undefined> {
-	const args = ["apply-patch", "preview", "--cwd", cwd];
-	if (partial) args.push("--partial");
-	const { stdout } = await runExternalCommand("ct", args, cwd, {
-		signal,
-		input,
-	});
-	return parsePreviewResponse(stdout);
+	void partial;
+	try {
+		return localPreviewResponse(await runLocalApplyPatch(cwd, input, { dryRun: true, signal }));
+	} catch (error) {
+		return {
+			status: "invalid",
+			complete: true,
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
 }
 
 function parseApplyPatchSummary(stdout: string): number {
@@ -1591,9 +1597,7 @@ function makeResult(
 }
 
 function runApplyPatch(cwd: string, input: string, dryRun: boolean, signal?: AbortSignal) {
-	const args = ["apply-patch", "--cwd", cwd];
-	if (dryRun) args.push("--dry-run");
-	return runExternalCommand("ct", args, cwd, { signal, input });
+	return runLocalApplyPatch(cwd, input, { dryRun, signal });
 }
 
 function enforceToolPolicy(pi: ExtensionAPI, config: ApplyPatchConfig): void {
@@ -2052,7 +2056,7 @@ export default function applyPatchExtension(pi: ExtensionAPI) {
 					}
 				}
 
-				return makeResult("ct apply-patch", ctx.cwd, applied.stdout, applied.stderr, {
+				return makeResult("apply_patch", ctx.cwd, applied.stdout, applied.stderr, {
 					filesChanged,
 					operations: progress.totalOperations,
 					semantic: semanticInput,

@@ -1,7 +1,6 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { runCommand } from "../shared/ct-runner";
 import { terminalRows } from "../shared/terminal";
 import { ensureConfigExists, loadConfig, type PolishedTuiConfig, saveConfig } from "./config";
 import { installFocusCursor } from "./cursor-focus";
@@ -81,24 +80,6 @@ function formatProviderLabel(provider: string | undefined): string {
 	return known[provider] ?? provider.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function providerColor(providerLabel: string): string | undefined {
-	switch (providerLabel) {
-		case "Anthropic":
-			return "d87b4a";
-		case "OpenAI":
-			return "74c7ec";
-		case "Copilot":
-			return "cba6f7";
-		case "Google":
-			return "a6e3a1";
-		case "MiniMax":
-		case "MiniMax CN":
-			return "fab387";
-		default:
-			return undefined;
-	}
-}
-
 function getUsageTotals(ctx: ExtensionContext): UsageTotals {
 	let input = 0;
 	let output = 0;
@@ -117,6 +98,25 @@ function truncateUsageLine(line: string, width: number): string {
 	return line ? truncateToWidth(line, Math.max(1, width), "") : "";
 }
 
+function formatReset(seconds: number): string {
+	if (!Number.isFinite(seconds) || seconds <= 0) return "now";
+	if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
+	if (seconds < 86400) return `${Math.ceil(seconds / 3600)}h`;
+	return `${Math.ceil(seconds / 86400)}d`;
+}
+
+function renderUsageBarLine(providerLabel: string, windows: UsageSnapshot["windows"], width: number): string {
+	const window = windows.reduce((max, current) => (current.usedPercent > max.usedPercent ? current : max), windows[0]);
+	if (!window) return "";
+	const percent = Math.max(0, Math.min(100, Math.round(window.usedPercent)));
+	const label = `${providerLabel} ${window.label}`.trim();
+	const suffix = ` ${percent}% reset ${formatReset(window.resetSecs)}`;
+	const available = Math.max(4, width - visibleWidth(label) - visibleWidth(suffix) - 3);
+	const filled = Math.max(0, Math.min(available, Math.round((available * percent) / 100)));
+	const bar = `[${"#".repeat(filled)}${"-".repeat(available - filled)}]`;
+	return truncateUsageLine(`${label} ${bar}${suffix}`, width);
+}
+
 export default function (pi: ExtensionAPI) {
 	const state: FooterRenderState = emptyFooterState();
 	const usageCache = new Map<string, UsageSnapshot>();
@@ -129,7 +129,6 @@ export default function (pi: ExtensionAPI) {
 	let activeProvider: string | null = null;
 	let refreshTimer: ReturnType<typeof setInterval> | null = null;
 	let usageBarCache: UsageBarCache | null = null;
-	let usageBarPendingKey: string | null = null;
 	let usageBarsVisible = currentConfig.usageBars.visible;
 	let contextPulseTimer: ReturnType<typeof setInterval> | null = null;
 	let workingAnimationTimer: ReturnType<typeof setInterval> | null = null;
@@ -221,47 +220,12 @@ export default function (pi: ExtensionAPI) {
 		if (!state.usage?.windows.length) {
 			state.usageLines = undefined;
 			usageBarCache = null;
-			usageBarPendingKey = null;
 			return;
 		}
 
-		if (usageBarPendingKey === key) return;
-		usageBarPendingKey = key;
-
-		const request = {
-			provider_label: state.providerLabel,
-			provider_color: providerColor(state.providerLabel),
-			windows: state.usage.windows.map((w) => ({
-				label: w.label,
-				used_percent: w.usedPercent,
-				window_secs: w.windowSecs,
-				reset_secs: w.resetSecs,
-			})),
-			width,
-		};
-
-		void runCommand(
-			"ct",
-			["tui", "usage-bar", "--width", String(width)],
-			process.cwd(),
-			undefined,
-			JSON.stringify(request),
-		)
-			.then((result) => {
-				if (usageBarPendingKey !== key) return;
-				usageBarPendingKey = null;
-				const lines = result.stdout.split(/\r?\n/).filter(Boolean);
-				usageBarCache = { key, lines };
-				state.usageLines = lines;
-				refresh();
-			})
-			.catch(() => {
-				if (usageBarPendingKey !== key) return;
-				usageBarPendingKey = null;
-				usageBarCache = null;
-				state.usageLines = undefined;
-				refresh();
-			});
+		const lines = [renderUsageBarLine(state.providerLabel, state.usage.windows, width)].filter(Boolean);
+		usageBarCache = { key, lines };
+		state.usageLines = lines;
 	};
 
 	const renderEditorTopChrome = (
@@ -411,7 +375,6 @@ export default function (pi: ExtensionAPI) {
 		state.usage = snapshot;
 		state.usageLines = undefined;
 		usageBarCache = null;
-		usageBarPendingKey = null;
 		refresh();
 	};
 
@@ -422,7 +385,6 @@ export default function (pi: ExtensionAPI) {
 			state.usage = null;
 			state.usageLines = undefined;
 			usageBarCache = null;
-			usageBarPendingKey = null;
 			stopRefreshTimer();
 			refresh();
 			return;
@@ -434,13 +396,11 @@ export default function (pi: ExtensionAPI) {
 			state.usage = cached;
 			state.usageLines = undefined;
 			usageBarCache = null;
-			usageBarPendingKey = null;
 			refresh();
 		} else {
 			state.usage = null;
 			state.usageLines = undefined;
 			usageBarCache = null;
-			usageBarPendingKey = null;
 			refresh();
 		}
 

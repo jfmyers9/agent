@@ -16,6 +16,7 @@ import {
 import { Box, type Text } from "@earendil-works/pi-tui";
 import { createTwoFilesPatch } from "diff";
 import { Type } from "typebox";
+import { runLocalApplyPatch } from "../shared/apply-patch-backend.ts";
 import { runCommand as runExternalCommand } from "../shared/command-runner.ts";
 import { EmptyComponent, runningFrame, shineText, textComponent } from "../shared/tui";
 import { columnCountForWidth, renderColumns } from "./columns.ts";
@@ -1082,7 +1083,7 @@ function parsePatchInput(input: string): EditInput {
 			continue;
 		}
 		if (line.startsWith("*** Rename to: ")) {
-			if (!current || current.op !== "update") {
+			if (current?.op !== "update") {
 				flush();
 				current = { op: "update", diff: "" };
 			}
@@ -1152,10 +1153,10 @@ function parseReplaceInput(input: string): EditInput {
 }
 
 async function runApplyPatch(cwd: string, input: string, signal?: AbortSignal) {
-	const result = await runExternalCommand("ct", ["apply-patch", "--cwd", cwd], cwd, { signal, input });
+	const result = await runLocalApplyPatch(cwd, input, { signal });
 	return {
 		content: [{ type: "text", text: result.stdout || result.stderr || "edit applied" }],
-		details: { diff: "", patch: "" },
+		details: { diff: result.diff, patch: input },
 	};
 }
 

@@ -43,14 +43,37 @@ export function resolveCoreBin(): string | null {
 	return null;
 }
 
+export function buildCoreCheckText(): string {
+	const envBin = process.env.CONTEXT_GUARD_BIN?.trim();
+	const resolved = resolveCoreBin();
+	const lines = ["context-guard check"];
+	lines.push("");
+	if (resolved) {
+		lines.push(`[OK] Core binary: ${resolved}`);
+		if (envBin) lines.push("[OK] CONTEXT_GUARD_BIN is set");
+		return lines.join("\n");
+	}
+	lines.push("[FAIL] Core binary: not found");
+	lines.push(`[${envBin ? "FAIL" : "WARN"}] CONTEXT_GUARD_BIN: ${envBin || "not set"}`);
+	lines.push("[WARN] Local Rust workspace: this repo does not include crates/context-guard");
+	lines.push("");
+	lines.push("Context Guard tools are registered but unavailable until a context-guard binary is installed.");
+	lines.push(
+		"Install/build the core separately and set CONTEXT_GUARD_BIN=/path/to/context-guard, or remove extensions/context-guard/index.ts from Pi settings.",
+	);
+	return lines.join("\n");
+}
+
+export function missingCoreMessage(): string {
+	return buildCoreCheckText();
+}
+
 function missingCoreResponse(): CoreResponse {
 	return {
 		content: [
 			{
 				type: "text",
-				text:
-					"Context Guard core binary not found. Build `cargo build -p context-guard` in the agents workspace " +
-					"or set CONTEXT_GUARD_BIN=/path/to/context-guard.",
+				text: missingCoreMessage(),
 			},
 		],
 		isError: true,

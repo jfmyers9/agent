@@ -51,7 +51,7 @@ Installed extensions:
 - `skillful/` — supports `$skill-name` references with autocomplete/highlighting/caching and registers a `skill` tool while keeping `/skill:<name>` commands available.
 - `system-prompt/` — renders a tested Mustache system prompt from active tools, context files, skills, cwd, date, and timezone.
 - `token-burden/` — reports prompt/session token categories, tool burden, and skill burden.
-- `tui/` — owns Pi footer/editor chrome for cwd, git, model/thinking, context, tokens, and cost. `/usage-bars [on|off|toggle]` exists, but `tui.json` defaults usage bars off because Luan's bar renderer can call `ct`.
+- `tui/` — owns Pi footer/editor chrome for cwd, git, model/thinking, context, tokens, cost, and local `/usage-bars [on|off|toggle]` rendering.
 - `spawn/` — provides `/spawn`, `spawn_lane`, `spawn_list`, and `spawn_map` for bounded Pi/shell/command lanes. Prefer project tasks for durable execution queues and spawn lanes for parallel or isolated context slices.
 - `git-tool/` — repo-configured Git workflow prompt guidance and skill resources. Set with `git config agents.git-tool graphite`, `git-spice`, `main`, or `none`.
 
@@ -67,6 +67,50 @@ Prompt storage is local-only and stores stashes/history in `${XDG_STATE_HOME:-~/
 Context7 is installed as a pinned reviewed Pi package. It registers `context7_resolve_library_id`, `context7_get_library_docs`, and `context7_get_cached_doc_raw`. API key is optional; set `CONTEXT7_API_KEY` for higher limits. Its cache lives under `~/.pi/agent/extensions/context7/cache/`. Pi packages execute extension code with full local privileges, so bump package versions only after review.
 
 Skills are available as `/skill:<name>` and `$skill-name` references by default.
+
+## Optional Context Guard core
+
+The `context-guard` Pi extension is registered by default, but its indexing,
+search, fetch, `cg_process_file`, and `exec_command(mode: "batch")` features
+need a separate Rust binary named `context-guard`. This repo does not vendor
+Luan's Rust workspace, so install the binary separately and expose it to Pi.
+
+Reviewed source used for the original port: `luan/agents` at `ec62ad5`.
+
+```sh
+mkdir -p ~/.local/src ~/.local/bin
+git clone https://github.com/luan/agents ~/.local/src/luan-agents
+cd ~/.local/src/luan-agents
+git checkout ec62ad5
+cargo build --release -p context-guard
+ln -sf "$PWD/target/release/context-guard" ~/.local/bin/context-guard
+```
+
+Pi finds the core in this order:
+
+1. `CONTEXT_GUARD_BIN=/absolute/path/to/context-guard`
+2. `target/debug/context-guard` or `target/release/context-guard` under this repo
+3. `context-guard` on `PATH`
+
+If `~/.local/bin` is not on the environment used to launch Pi, set an explicit
+binary path before starting Pi:
+
+```sh
+export CONTEXT_GUARD_BIN="$HOME/.local/src/luan-agents/target/release/context-guard"
+```
+
+Verify after restarting Pi:
+
+```text
+/cg-check
+```
+
+Expected installed output includes `[OK] Core binary: ...`. Without the binary,
+`cg_check` and `/cg-check` still work and report a clear missing-core diagnostic;
+core-backed tools remain unavailable until the binary is installed.
+
+`ct` is different: it is Luan's broader Rust CLI. This config no longer requires
+`ct` for `apply_patch`, `edit`, or TUI usage bars.
 
 Non-auto review gates use blueprint files plus explicit chat approval. Agents report the blueprint path and status, then wait while the user reviews locally and replies with approval or feedback.
 
