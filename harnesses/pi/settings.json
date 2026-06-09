@@ -37,7 +37,7 @@
       "maxRetryDelayMs": 60000
     }
   },
-  "lastChangelogVersion": "0.78.1",
+  "lastChangelogVersion": "0.79.0",
   "packages": [
     "npm:pi-lens",
     "npm:@dreki-gg/pi-context7@0.1.9"
