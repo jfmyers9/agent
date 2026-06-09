@@ -56,7 +56,28 @@ install_node_dependencies() {
 }
 
 ensure_pi_dependencies() {
-	if node -e 'const { createRequire } = require("module"); createRequire(process.argv[1]).resolve("gpt-tokenizer/encoding/o200k_base");' "$SCRIPT_DIR/harnesses/pi/extensions/token-burden/parser.ts" >/dev/null 2>&1; then
+	if node -e '
+const { readFileSync } = require("fs");
+const { createRequire } = require("module");
+const pkg = JSON.parse(readFileSync(process.argv[1], "utf8"));
+const requireFromPi = createRequire(process.argv[2]);
+const missing = [];
+
+for (const moduleName of Object.keys(pkg.dependencies ?? {})) {
+	try {
+		requireFromPi.resolve(moduleName);
+	} catch (error) {
+		if (error && error.code === "MODULE_NOT_FOUND") {
+			missing.push(moduleName);
+		}
+	}
+}
+
+if (missing.length > 0) {
+	console.error(`Missing node dependencies: ${missing.join(", ")}`);
+	process.exit(1);
+}
+' "$SCRIPT_DIR/package.json" "$SCRIPT_DIR/harnesses/pi/extensions/apply-patch/index.ts" >/dev/null 2>&1; then
 		return
 	fi
 
