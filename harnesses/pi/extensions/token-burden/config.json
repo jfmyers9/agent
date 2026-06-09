@@ -3,7 +3,6 @@
     "ls",
     "grab",
     "find",
-    "read",
     "codex_apps_github_check_repo_initialized",
     "codex_apps_github_compare_commits",
     "codex_apps_github_download_user_content",

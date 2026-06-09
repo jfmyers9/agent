@@ -67,11 +67,13 @@ describe("system-prompt Skillful skill rendering", () => {
 		});
 
 		expect(prompt).toContain("Use `read` for known file paths.");
+		expect(prompt).toContain("Prefer `read` ranges/limits over shell `sed`, `cat`, `head`, or `tail`");
 		expect(prompt).toContain("Use `search` for file-content matching");
 		expect(prompt).toContain("Use `find` for file discovery by glob or path.");
 		expect(prompt).toContain("Use `exec_command` for shell-only workflows");
 		expect(prompt).toContain("rg -n -M 400 --max-columns-preview");
 		expect(prompt).toContain("avoid `head` for line-length control");
+		expect(prompt).toContain("Do not use shell commands for routine file reads, writes, or edits");
 		expect(prompt).not.toContain("Use `bash` for shell-only workflows");
 		expect(prompt).not.toContain("RTK");
 		expect(prompt).not.toContain("rtk grep");

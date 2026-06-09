@@ -4,7 +4,10 @@ Context window is finite. Treat it like memory — never waste it.
 
 ## Rules
 
-- Pipe verbose commands through `| tail -20` or `| head -50` —
+- For known file paths, use the active file read tool with ranges or
+  limits when available; do not use `sed`, `cat`, `head`, or `tail`
+  for file reads just to save tokens
+- Pipe verbose command output through `| tail -20` or `| head -50` —
   never dump full logs
 - Use `--quiet`, `--summary`, or `-s` flags when available
 - Grep for relevant lines instead of reading full output
