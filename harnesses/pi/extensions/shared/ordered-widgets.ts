@@ -21,7 +21,7 @@ interface OrderedWidgetState {
 	applying: boolean;
 }
 
-const orderedAboveEditorKeys = ["project-tasks", "background-terminals", "prompt-storage-stash"];
+const orderedAboveEditorKeys = ["background-terminals", "prompt-storage-stash"];
 const states = new WeakMap<object, OrderedWidgetState>();
 
 export function setOrderedAboveEditorWidget(target: OrderedWidgetTarget, key: string, content: WidgetContent): void {

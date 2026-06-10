@@ -47,12 +47,11 @@ Installed extensions:
 - `effort.ts` — `/effort [level]` persists per-model thinking effort to `effort.json`.
 - `prompt-storage/` — local prompt stash/history. Shortcuts: `alt+s` stash current draft, `ctrl+alt+s` pop a stash, `ctrl+r` search previous prompts.
 - `vim/` — replaces the editor with Vim-style modal editing. Remove it from `settings.json`'s `extensions` list, then reinstall/reload Pi, to disable it.
-- `tasks/` — blueprint-linked project task tools, HUD, and `/tasks` board for fine-grained LLM work chunks. Blueprints stay project-scoped; task queues default to a worktree lane under the project task root to avoid parallel-worktree collisions.
 - `skillful/` — supports `$skill-name` references with autocomplete/highlighting/caching and registers a `skill` tool while keeping `/skill:<name>` commands available.
 - `system-prompt/` — renders a tested Mustache system prompt from active tools, context files, skills, cwd, date, and timezone.
 - `token-burden/` — reports prompt/session token categories, tool burden, and skill burden.
 - `tui/` — owns Pi footer/editor chrome for cwd, git, model/thinking, context, tokens, cost, and local `/usage-bars [on|off|toggle]` rendering.
-- `spawn/` — provides `/spawn`, `spawn_lane`, `spawn_list`, and `spawn_map` for bounded Pi/shell/command lanes. Prefer project tasks for durable execution queues and spawn lanes for parallel or isolated context slices.
+- `spawn/` — provides `/spawn`, `spawn_lane`, `spawn_list`, and `spawn_map` for bounded Pi/shell/command lanes.
 - `git-tool/` — repo-configured Git workflow prompt guidance and skill resources. Set with `git config agents.git-tool graphite`, `git-spice`, `main`, or `none`.
 
 Retired local extension names:
@@ -114,19 +113,13 @@ core-backed tools remain unavailable until the binary is installed.
 
 Non-auto review gates use blueprint files plus explicit chat approval. Agents report the blueprint path and status, then wait while the user reviews locally and replies with approval or feedback.
 
-Long-running workflows use blueprints as the durable tracker and project tasks as the fine-grained execution queue:
+Long-running workflows use blueprints as the durable tracker and execution plan:
 
 - `/skill:research` writes `spec/` blueprints
 - `/skill:implement` consumes `spec/`, `plan/`, or `review/` blueprints
 - `/skill:review` writes `review/` blueprints
 - `/skill:fix` writes `plan/` blueprints
 - `/skill:vibe` tracks pipeline state in a `plan/` blueprint
-- `/tasks blueprint [slug]` imports blueprint steps into the current worktree task lane
-- `/tasks` opens the current worktree task board
-- `/tasks all` opens an aggregate board across worktree lanes, with lane labels
-- `task_list`/HUD/guard default to the current worktree lane; use `scope: "all_worktrees"` for explicit aggregate inspection
-
-Task lane smoke check: in two git worktrees for the same project, run `/tasks blueprint <slug>` in each, then confirm `/tasks` only shows that worktree's queue while `/tasks all` shows both lane labels.
 
 Validation:
 

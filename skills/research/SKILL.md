@@ -4,7 +4,7 @@ description: >
   Research topics, investigate codebases, and create blueprint proposals for
   local review. Triggers: 'research', 'investigate', 'explore'.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
-argument-hint: "<topic or question> | --continue | --discard [slug] | --depth <medium|high|max> | --auto | --no-tasks"
+argument-hint: "<topic or question> | --continue | --discard [slug] | --depth <medium|high|max> | --auto"
 ---
 
 # Research
@@ -24,7 +24,6 @@ approves or requests changes in chat.
   blueprint
 - `--depth <medium|high|max>` — thoroughness, default `medium`
 - `--auto` — bypass human approval gates, used by `/skill:vibe`
-- `--no-tasks` — do not create project tasks after final approval
 
 ## Blueprint
 
@@ -78,10 +77,6 @@ Use frontmatter status for progress:
 
 Run `blueprint commit spec <slug>` after every blueprint write or
 status change. If it fails, stop and show the error.
-
-When project task tools are available, approved proposals may also be
-imported into project tasks. These tasks are an execution queue linked
-by `source_blueprint`; the blueprint remains the durable plan.
 
 ## Workflow
 
@@ -172,27 +167,12 @@ Next: /skill:research --continue
 ```
 
 On explicit chat approval, append/update `## Approval History`, set
-status to `approved`, commit, then import tasks when enabled.
+status to `approved`, and commit.
 
 On feedback, revise only the affected plan/spec content, append/update
 `## Approval History`, commit, and return to `plan_review`.
 
-If `--auto` is present, set status to `approved`, commit, then import
-tasks when enabled.
-
-### 5. Import Tasks
-
-Only after status is `approved`, and only if `--no-tasks` is absent and
-project task tools are available:
-
-1. Call `task_import_blueprint(match: <blueprint path or slug>)`.
-2. Call `task_list(source_blueprint: <blueprint slug>, all: false)` to
-   confirm the imported execution queue.
-3. Run `blueprint commit spec <slug>` again so the task store is synced
-   with the approved blueprint if it lives under the blueprints repo.
-
-If task tools are unavailable or import fails, report the blueprint as
-approved and continue; do not block approval on task creation.
+If `--auto` is present, set status to `approved` and commit.
 
 ## Output
 
@@ -201,6 +181,5 @@ Keep user-facing output concise:
 ```text
 Spec/Plan: <path>
 Status: <status>
-Tasks: <imported|unavailable|skipped>
 Next: <review instruction or /skill:implement>
 ```

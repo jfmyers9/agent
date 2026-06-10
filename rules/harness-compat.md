@@ -5,11 +5,7 @@ Shared instructions and skills must be portable across harnesses.
 ## Portable State
 
 - Blueprints are the source of truth for specs, plans, reviews,
-  fixes, pipeline trackers, and reports.
-- Project tasks may be used as an optional execution queue when the
-  repo-provided task tools are available. They must link back to a
-  blueprint via `source_blueprint` and must not replace blueprint
-  specs/reports.
+  fixes, pipeline trackers, execution tracking, and reports.
 - Do not use harness-native task/team/subagent stores in shared
   skills.
 - Do not keep durable workflow state only in chat history.
@@ -27,7 +23,7 @@ Shared instructions and skills must be portable across harnesses.
 | resume                    | `blueprint find --type ... [--match ...]`                                    |
 | dependency order          | ordered phases in blueprint body                                             |
 | review/fix/report links   | `blueprint link <file> <source-slug>`                                        |
-| sub-work                  | project tasks when available; otherwise sequential phases in current session |
+| sub-work                  | sequential phases in the current session                                     |
 | invoking another skill    | read `skills/<name>/SKILL.md` and follow it inline                           |
 
 ## Tool Names
@@ -41,9 +37,7 @@ Use portable file/shell tools in shared skills:
 - `Glob` / `Grep` where available
 
 Do not list or depend on native task/team/subagent tools in shared
-skill frontmatter. Repo-provided `task_*` project tools may be used
-opportunistically in skill bodies, but skills must describe a
-blueprint-only fallback for harnesses where those tools are absent.
+skill frontmatter or skill bodies. Keep workflow state in blueprints.
 
 ## Paths
 

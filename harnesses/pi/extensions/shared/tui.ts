@@ -52,7 +52,7 @@ const ANSI_SGR_PATTERN = /\x1b\[([0-9;]*)m/g;
 const OSC_SEQUENCE_PATTERN = /\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
 const RUNNING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const RGB_FALLBACK: Rgb = [0xff, 0xff, 0xff];
-const orderedAboveEditorKeys = ["project-tasks", "background-terminals", "prompt-storage-stash"];
+const orderedAboveEditorKeys = ["background-terminals", "prompt-storage-stash"];
 const orderedWidgetStates = new WeakMap<
 	object,
 	{ entries: Map<string, { content: Exclude<WidgetContent, undefined>; options: WidgetOptions }>; applying: boolean }

@@ -41,7 +41,6 @@
     "extensions/effort.ts",
     "extensions/prompt-storage/index.ts",
     "extensions/vim/index.ts",
-    "extensions/tasks/index.ts",
     "extensions/skillful/index.ts",
     "extensions/system-prompt/index.ts",
     "extensions/token-burden/index.ts",

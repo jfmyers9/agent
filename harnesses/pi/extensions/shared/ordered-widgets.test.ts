@@ -11,18 +11,11 @@ test("orders known above-editor widgets deterministically", () => {
 
 	setOrderedAboveEditorWidget(ui, "prompt-storage-stash", ["stash"]);
 	setOrderedAboveEditorWidget(ui, "background-terminals", ["terminal"]);
-	setOrderedAboveEditorWidget(ui, "project-tasks", ["tasks"]);
 
 	expect(calls).toEqual([
 		{ key: "prompt-storage-stash", content: ["stash"], placement: "aboveEditor" },
 		{ key: "background-terminals", content: undefined, placement: undefined },
 		{ key: "prompt-storage-stash", content: undefined, placement: undefined },
-		{ key: "background-terminals", content: ["terminal"], placement: "aboveEditor" },
-		{ key: "prompt-storage-stash", content: ["stash"], placement: "aboveEditor" },
-		{ key: "project-tasks", content: undefined, placement: undefined },
-		{ key: "background-terminals", content: undefined, placement: undefined },
-		{ key: "prompt-storage-stash", content: undefined, placement: undefined },
-		{ key: "project-tasks", content: ["tasks"], placement: "aboveEditor" },
 		{ key: "background-terminals", content: ["terminal"], placement: "aboveEditor" },
 		{ key: "prompt-storage-stash", content: ["stash"], placement: "aboveEditor" },
 	]);
@@ -36,11 +29,11 @@ test("clears only the requested ordered widget", () => {
 		},
 	};
 
-	setOrderedAboveEditorWidget(ui, "project-tasks", ["tasks"]);
-	setOrderedAboveEditorWidget(ui, "project-tasks", undefined);
+	setOrderedAboveEditorWidget(ui, "background-terminals", ["terminal"]);
+	setOrderedAboveEditorWidget(ui, "background-terminals", undefined);
 
 	expect(calls).toEqual([
-		{ key: "project-tasks", content: ["tasks"], placement: "aboveEditor" },
-		{ key: "project-tasks", content: undefined, placement: undefined },
+		{ key: "background-terminals", content: ["terminal"], placement: "aboveEditor" },
+		{ key: "background-terminals", content: undefined, placement: undefined },
 	]);
 });
