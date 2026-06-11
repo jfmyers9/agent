@@ -77,7 +77,7 @@ if (missing.length > 0) {
 	console.error(`Missing node dependencies: ${missing.join(", ")}`);
 	process.exit(1);
 }
-' "$SCRIPT_DIR/package.json" "$SCRIPT_DIR/harnesses/pi/extensions/apply-patch/index.ts" >/dev/null 2>&1; then
+' "$SCRIPT_DIR/package.json" "$SCRIPT_DIR/harnesses/pi/extensions/fileops/index.ts" >/dev/null 2>&1; then
 		return
 	fi
 
@@ -121,6 +121,7 @@ install_pi() {
 	done
 
 	mkdir -p "$dir/extensions"
+	rm -rf "$dir/extensions/apply-patch"
 	for extension in "$SCRIPT_DIR/harnesses/pi/extensions/"*; do
 		[ -e "$extension" ] || continue
 		link_item "$extension" "$dir/extensions/$(basename "$extension")"

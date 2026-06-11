@@ -16,7 +16,6 @@ import {
 import { Box, type Text } from "@earendil-works/pi-tui";
 import { createTwoFilesPatch } from "diff";
 import { Type } from "typebox";
-import { runLocalApplyPatch } from "../shared/apply-patch-backend.ts";
 import { runCommand as runExternalCommand } from "../shared/command-runner.ts";
 import { EmptyComponent, runningFrame, shineText, textComponent } from "../shared/tui";
 import { columnCountForWidth, renderColumns } from "./columns.ts";
@@ -51,7 +50,7 @@ const FILEOPS_TOOL_SEARCH_PATHS = [
 	"/bin",
 ];
 
-type EditMode = "apply_patch" | "patch" | "hashline" | "replace";
+type EditMode = "hashline" | "replace";
 const EDIT_FRAME_MS = 120;
 const EDIT_LABEL = "Editing";
 const CONTEXT_PROTECTION_READ_BYTES = 50_000;
@@ -74,16 +73,10 @@ type ReplaceEntry = {
 	all?: boolean;
 };
 
-type PatchEntry = {
-	op: "create" | "delete" | "update";
-	diff?: string;
-	rename?: string;
-};
-
 type EditInput = {
 	input?: string;
 	path?: string;
-	edits?: Array<ReplaceEntry | PatchEntry> | string;
+	edits?: ReplaceEntry[] | string;
 	oldText?: string;
 	newText?: string;
 	old_text?: string;
@@ -146,9 +139,9 @@ type HighlightedSection = {
 	rows: string[];
 };
 
-const EDIT_MODES: EditMode[] = ["apply_patch", "patch", "hashline", "replace"];
+const EDIT_MODES: EditMode[] = ["hashline", "replace"];
 const DEFAULT_CONFIG: EditConfig = {
-	mode: "apply_patch",
+	mode: "hashline",
 	fuzzyMatch: true,
 	fuzzyThreshold: 0.95,
 	allowReplaceAll: true,
@@ -171,8 +164,7 @@ const searchToolSchema = Type.Object({
 	pattern: Type.String({ description: "Search pattern (regex or literal string)" }),
 	path: Type.Optional(
 		Type.String({
-			description:
-				"Directory or file to search (default: current directory). Single-file paths support :LINE ranges.",
+			description: "Directory or file to search (default: current directory). Single-file paths support :LINE ranges.",
 		}),
 	),
 	glob: Type.Optional(Type.String({ description: "Filter files by glob pattern, e.g. '*.ts'" })),
@@ -200,8 +192,6 @@ const findToolSchema = Type.Object({
 });
 
 export const HASHLINE_GRAMMAR = readFileSync(join(EXTENSION_DIR, "hashline", "grammar.lark"), "utf-8");
-export const APPLY_PATCH_MODE_GRAMMAR = readFileSync(join(EXTENSION_DIR, "modes", "apply-patch.lark"), "utf-8");
-export const PATCH_GRAMMAR = readFileSync(join(EXTENSION_DIR, "modes", "patch.lark"), "utf-8");
 export const REPLACE_GRAMMAR = readFileSync(join(EXTENSION_DIR, "modes", "replace.lark"), "utf-8");
 
 export function getConfiguredEditMode(): EditMode {
@@ -263,10 +253,6 @@ function modeParameters() {
 
 function modeGrammar(mode: EditMode): string {
 	switch (mode) {
-		case "apply_patch":
-			return APPLY_PATCH_MODE_GRAMMAR;
-		case "patch":
-			return PATCH_GRAMMAR;
 		case "hashline":
 			return HASHLINE_GRAMMAR;
 		case "replace":
@@ -276,10 +262,6 @@ function modeGrammar(mode: EditMode): string {
 
 function modeDescription(config: EditConfig): string {
 	switch (config.mode) {
-		case "apply_patch":
-			return "Edit files using the apply_patch envelope format. For Codex this is exposed as a FREEFORM grammar-constrained custom tool.";
-		case "patch":
-			return "Edit one file using the patch-mode freeform grammar: *** File, then create, update diff hunks, delete, or rename entries.";
 		case "hashline":
 			return "Edit files using oh-my-pi hashline-style patches: ¶PATH#TAG sections, bare A B replacements, DELETE A B explicit deletes, BEFORE N/AFTER N/BOF/EOF insertion anchors, +TEXT literal rows, and &A..B repeat rows.";
 		case "replace":
@@ -698,14 +680,7 @@ function renderSearchResult(
 		? (result.details.highlightedSections as HighlightedSection[])
 		: [];
 	return new BlockTextView((width) => {
-		const body = renderSearchSections(
-			sections,
-			highlightedSections,
-			theme,
-			options.expanded ?? false,
-			pattern,
-			width,
-		);
+		const body = renderSearchSections(sections, highlightedSections, theme, options.expanded ?? false, pattern, width);
 		return `${header}${body ? `\n${body}` : ""}`;
 	}, theme);
 }
@@ -725,8 +700,7 @@ function renderFindResult(
 ): Text | BlockTextView {
 	if (options.isPartial) return renderText(theme.fg("warning", "Finding files..."));
 	const output = firstTextContent(result).trim();
-	if (/not found on PATH|failed|error/i.test(output.split("\n")[0] ?? ""))
-		return renderText(theme.fg("error", output));
+	if (/not found on PATH|failed|error/i.test(output.split("\n")[0] ?? "")) return renderText(theme.fg("error", output));
 	const files = toolTextLines(output).filter((line) => line && !line.startsWith("No files"));
 	const target = Array.isArray(args?.paths) ? args.paths.join(", ") : String(args?.pattern ?? "");
 	const where = Array.isArray(args?.paths) ? dirname(args.paths[0] ?? ".") : String(args?.path ?? ".");
@@ -1018,91 +992,6 @@ async function executeReplace(
 	});
 }
 
-function patchModeToApplyPatch(input: EditInput): string {
-	if (!input.path) throw new Error("edit patch mode requires path.");
-	if (!Array.isArray(input.edits) || input.edits.length === 0) throw new Error("edit patch mode requires edits[].");
-	const lines = ["*** Begin Patch"];
-	for (const edit of input.edits as PatchEntry[]) {
-		if (edit.op === "create") {
-			lines.push(`*** Add File: ${input.path}`);
-			lines.push(
-				...(edit.diff ?? "")
-					.replace(/\r\n?/g, "\n")
-					.split("\n")
-					.map((line) => `+${line}`),
-			);
-			continue;
-		}
-		if (edit.op === "delete") {
-			lines.push(`*** Delete File: ${input.path}`);
-			continue;
-		}
-		if (edit.op === "update") {
-			lines.push(`*** Update File: ${input.path}`);
-			if (edit.rename) lines.push(`*** Move to: ${edit.rename}`);
-			lines.push((edit.diff ?? "").replace(/\r\n?/g, "\n").trimEnd());
-			continue;
-		}
-		throw new Error(`Unsupported edit patch op: ${(edit as { op?: unknown }).op}`);
-	}
-	lines.push("*** End Patch");
-	return `${lines.filter((line) => line.length > 0).join("\n")}\n`;
-}
-
-function parsePatchInput(input: string): EditInput {
-	const edits: PatchEntry[] = [];
-	let path: string | undefined;
-	let current: PatchEntry | undefined;
-	const flush = () => {
-		if (current) edits.push(current);
-		current = undefined;
-	};
-	const lines = normalizeToLf(input).split("\n");
-	if (lines.at(-1) === "") lines.pop();
-
-	for (const line of lines) {
-		if (line.trim() === "" && !current) continue;
-		if (line.startsWith("*** File: ")) {
-			flush();
-			path = line.slice("*** File: ".length).trim();
-			continue;
-		}
-		if (line === "*** Create") {
-			flush();
-			current = { op: "create", diff: "" };
-			continue;
-		}
-		if (line === "*** Update") {
-			flush();
-			current = { op: "update", diff: "" };
-			continue;
-		}
-		if (line === "*** Delete") {
-			flush();
-			current = { op: "delete" };
-			continue;
-		}
-		if (line.startsWith("*** Rename to: ")) {
-			if (current?.op !== "update") {
-				flush();
-				current = { op: "update", diff: "" };
-			}
-			current.rename = line.slice("*** Rename to: ".length).trim();
-			continue;
-		}
-		if (!current || current.op === "delete") throw new Error(`patch mode line outside entry: ${line}`);
-		if (current.op === "create") {
-			if (!line.startsWith("+")) throw new Error(`create lines must start with '+': ${line}`);
-			current.diff = `${current.diff ?? ""}${line.slice(1)}\n`;
-		} else {
-			current.diff = `${current.diff ?? ""}${line}\n`;
-		}
-	}
-	flush();
-	if (!path) throw new Error("patch mode requires a *** File: header.");
-	return { path, edits };
-}
-
 function parseReplaceInput(input: string): EditInput {
 	const edits: ReplaceEntry[] = [];
 	let path: string | undefined;
@@ -1150,14 +1039,6 @@ function parseReplaceInput(input: string): EditInput {
 		if (edit.new_text?.endsWith("\n")) edit.new_text = edit.new_text.slice(0, -1);
 	}
 	return { path, edits };
-}
-
-async function runApplyPatch(cwd: string, input: string, signal?: AbortSignal) {
-	const result = await runLocalApplyPatch(cwd, input, { signal });
-	return {
-		content: [{ type: "text", text: result.stdout || result.stderr || "edit applied" }],
-		details: { diff: result.diff, patch: input },
-	};
 }
 
 class CwdHashlineFilesystem extends Filesystem {
@@ -1260,19 +1141,6 @@ async function executeHashline(cwd: string, input: string) {
 
 async function executeByMode(cwd: string, params: EditInput, config: EditConfig, signal?: AbortSignal) {
 	switch (config.mode) {
-		case "apply_patch":
-			if (typeof params.input !== "string") throw new Error("edit apply_patch mode requires input.");
-			return runApplyPatch(cwd, params.input, signal);
-		case "patch":
-			return runApplyPatch(
-				cwd,
-				patchModeToApplyPatch(
-					typeof params.input === "string"
-						? parsePatchInput(params.input)
-						: (prepareEditArguments(params) as EditInput),
-				),
-				signal,
-			);
 		case "hashline":
 			if (typeof params.input !== "string") throw new Error("edit hashline mode requires input.");
 			return executeHashline(cwd, params.input);
@@ -1446,9 +1314,7 @@ function registerHashlineWorkflowTools(pi: ExtensionAPI, getConfig: () => EditCo
 			const highlightedSections: HighlightedSection[] = [];
 			let emittedRows = 0;
 			let truncatedSearch = false;
-			for (const [absolute, sparse] of [...byFile.entries()].sort((left, right) =>
-				left[0].localeCompare(right[0]),
-			)) {
+			for (const [absolute, sparse] of [...byFile.entries()].sort((left, right) => left[0].localeCompare(right[0]))) {
 				const ordered = [...sparse.entries()].sort((left, right) => left[0] - right[0]);
 				const cappedOrdered = ordered.slice(0, Math.max(0, resultLimit - emittedRows));
 				emittedRows += cappedOrdered.length;
@@ -1472,9 +1338,7 @@ function registerHashlineWorkflowTools(pi: ExtensionAPI, getConfig: () => EditCo
 				sections.push(
 					[
 						formatHashlineHeader(display, tag),
-						...cappedOrdered.map(
-							([lineNumber, entry]) => `${entry.isMatch ? "*" : " "}${lineNumber}:${entry.text}`,
-						),
+						...cappedOrdered.map(([lineNumber, entry]) => `${entry.isMatch ? "*" : " "}${lineNumber}:${entry.text}`),
 					].join("\n"),
 				);
 			}
@@ -1633,7 +1497,7 @@ export default function fileopsExtension(pi: ExtensionAPI) {
 	registerHashlineWorkflowTools(pi, () => config);
 
 	pi.registerCommand("edit-config", {
-		description: "Configure edit mode: apply_patch, patch, hashline, or replace",
+		description: "Configure edit mode: hashline or replace",
 		getArgumentCompletions: (prefix: string) => {
 			const normalizedPrefix = prefix.trimStart();
 			const items = EDIT_MODES.filter((mode) => mode.startsWith(normalizedPrefix)).map((mode) => ({

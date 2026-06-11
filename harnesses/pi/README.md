@@ -45,6 +45,7 @@ Installed extensions:
 - `agents-local/` — injects untracked `AGENTS.local.md` / `CLAUDE.local.md` context from cwd ancestors; `/agents-local` lists loaded files.
 - `clear.ts` — `/clear` starts a fresh session after the current turn; `ctrl+shift+l` queues it.
 - `effort.ts` — `/effort [level]` persists per-model thinking effort to `effort.json`.
+- `fileops/` — replaces the built-in local file workflow with `read`, `search`, `find`, `write`, and a configurable `edit` tool. Default edit mode is hashline.
 - `prompt-storage/` — local prompt stash/history. Shortcuts: `alt+s` stash current draft, `ctrl+alt+s` pop a stash, `ctrl+r` search previous prompts.
 - `vim/` — replaces the editor with Vim-style modal editing. Remove it from `settings.json`'s `extensions` list, then reinstall/reload Pi, to disable it.
 - `skillful/` — supports `$skill-name` references with autocomplete/highlighting/caching and registers a `skill` tool while keeping `/skill:<name>` commands available.
@@ -57,6 +58,7 @@ Installed extensions:
 Retired local extension names:
 
 - `skill-dollar/` is replaced by `skillful/`.
+- `apply-patch/` is replaced by `fileops/` hashline edit mode.
 - `pi-vim/` is replaced by `vim/`.
 - `usage-hud/` is replaced by `tui/` as the sole footer owner.
 - `mac-system-theme.ts` is replaced by the explicit `theme: "dark"` setting.
@@ -109,7 +111,7 @@ Expected installed output includes `[OK] Core binary: ...`. Without the binary,
 core-backed tools remain unavailable until the binary is installed.
 
 `ct` is different: it is Luan's broader Rust CLI. This config no longer requires
-`ct` for `apply_patch`, `edit`, or TUI usage bars.
+`ct` for `edit` or TUI usage bars.
 
 Non-auto review gates use blueprint files plus explicit chat approval. Agents report the blueprint path and status, then wait while the user reviews locally and replies with approval or feedback.
 
