@@ -2,8 +2,8 @@
 name: debug
 description: >
   Systematically diagnose and fix bugs, CI failures, and test
-  failures. Triggers: /debug, debugging issues, test failures, CI
-  errors.
+  failures. Use `diagnose` first for read-only root-cause reports.
+  Triggers: /debug, debugging issues, test failures, CI errors.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write
 argument-hint: "[blueprint-slug|error-description]"
 ---
@@ -13,20 +13,29 @@ argument-hint: "[blueprint-slug|error-description]"
 Diagnose and fix a bug using a `plan/` blueprint as the durable work
 record.
 
-@rules/blueprints.md and @rules/harness-compat.md apply.
+@rules/blueprints.md, @rules/harness-compat.md, and
+@rules/artifact-readability.md apply.
 
 ## Arguments
 
-- `<blueprint-slug>` — continue a matching debug/fix plan
+- `<blueprint-slug>` — continue a matching debug/fix plan or use a
+  completed diagnosis report as root-cause input
 - `<error-description>` — problem to debug
 - no args — inspect current branch/tests for failures
 
 ## Workflow
+Use `/skill:diagnose` when the user asks only to understand an issue, produce
+a root-cause report, or avoid code changes. Use this skill when fixes are in
+scope.
+
 
 ### 1. Resolve or Create Plan
 
 - If a slug matches `blueprint find --type plan --match <slug>`, read
   and continue it.
+- Else if a slug matches a completed diagnosis `report/` blueprint, read it
+  and use its root-cause hypotheses, evidence, and recommended actions as
+  input to the debug plan.
 - Else gather problem context from args, failing tests, CI output, or
   recent logs.
 - Create a plan blueprint:
@@ -46,19 +55,35 @@ git diff --stat
 
 Trace:
 
-- reproduction steps
+- reproduction steps and whether they were execution verified
 - expected vs actual behavior
 - suspected files/functions
-- root cause evidence
+- root cause evidence, confidence labels, and any remaining alternative
+  mechanisms from an input diagnosis
 
 Write/update the blueprint:
 
 ```markdown
 ## Problem
 
+## Human-Readable Map
+
+### System Map
+
+<Mermaid flowchart or `Diagram omitted: <reason>`>
+
+### Request / Data Flow
+
+<Mermaid sequence diagram or `Diagram omitted: <reason>`>
+
 ## Reproduction
 
 ## Root Cause
+
+## Evidence Summary
+
+| Claim | Evidence | Verification | Confidence |
+| ----- | -------- | ------------ | ---------- |
 
 ## Fix Plan
 

@@ -12,8 +12,8 @@ argument-hint: "[blueprint-slug-or-path] [--no-report]"
 Implement an approved blueprint. The blueprint is the durable source of
 truth and the execution plan.
 
-@rules/blueprints.md, @rules/human-approval.md, and
-@rules/harness-compat.md apply.
+@rules/blueprints.md, @rules/human-approval.md,
+@rules/harness-compat.md, and @rules/artifact-readability.md apply.
 
 ## Arguments
 
@@ -58,6 +58,15 @@ Each phase should provide:
 - required changes
 - verification command/check
 
+For multi-phase plans, derive an execution map before editing:
+
+| Phase / Task | Files | True blockers | Can run independently? | Verify |
+| ------------ | ----- | ------------- | ---------------------- | ------ |
+
+True blockers exist only when a later task needs files, APIs, schemas,
+types, behavior, or verification output from an earlier task. Phase numbers
+alone do not make a dependency.
+
 ### 3. Implement Work
 
 For each phase, in order:
@@ -71,6 +80,13 @@ For each phase, in order:
 6. Append/update an `## Implementation Notes` section in the blueprint:
 
    ```markdown
+   ## Implementation Notes
+
+   ### Execution Map
+
+   | Phase / Task | Files | True blockers | Can run independently? | Verify |
+   | ------------ | ----- | ------------- | ---------------------- | ------ |
+
    ### Phase N: <title>
 
    - Status: complete | blocked

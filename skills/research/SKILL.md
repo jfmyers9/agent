@@ -13,8 +13,8 @@ Research a topic and write one `spec/` blueprint proposal as the durable
 source of truth for implementation. The user reviews blueprints locally and
 approves or requests changes in chat.
 
-@rules/blueprints.md, @rules/human-approval.md, and
-@rules/harness-compat.md apply.
+@rules/blueprints.md, @rules/human-approval.md,
+@rules/harness-compat.md, and @rules/artifact-readability.md apply.
 
 ## Arguments
 
@@ -67,6 +67,21 @@ At `spec_review`, write only the spec slice:
 
 ### Constraints
 
+## Human-Readable Map
+
+### System Map
+
+<Mermaid flowchart or `Diagram omitted: <reason>`>
+
+### Request / Data Flow
+
+<Mermaid sequence diagram or `Diagram omitted: <reason>`>
+
+### Flow Trace
+
+| Step | Code / Config | Responsibility | Evidence |
+| ---- | ------------- | -------------- | -------- |
+
 ## Proposed Target State
 
 ### Behavior
@@ -99,10 +114,19 @@ At `spec_review`, write only the spec slice:
 
 ## Evidence Appendix
 
-### Source-Backed Claims
+### Evidence Summary
 
-| Claim | Evidence |
-| ----- | -------- |
+| Claim | Evidence | Verification | Confidence |
+| ----- | -------- | ------------ | ---------- |
+
+Use confidence labels from `@rules/artifact-readability.md`.
+
+### Investigation Log
+
+- Commands run:
+- Tests/probes:
+- External docs/tools:
+- Gaps:
 
 ### Research Notes
 
@@ -173,10 +197,17 @@ Research must identify:
 - Candidate implementation approach
 - Verification commands or checks
 - Alternatives considered when there is a meaningful choice
+- Human-readable maps for non-trivial architecture, request flow, data flow,
+  state transitions, or dependency graphs
 
 Spot-check at least three architectural claims against source before
 writing the spec. Prefer repo-relative paths in blueprint prose. Put dense
 path/line references in `## Evidence Appendix` instead of inline prose.
+
+For non-trivial systems, include a Mermaid system map, request/data-flow
+diagram, or an explicit `Diagram omitted: <reason>`. Back diagrams with a
+flow trace or evidence table. Label major claims using the confidence labels
+from `@rules/artifact-readability.md`.
 
 ### 3. Write Spec Slice
 
@@ -201,11 +232,14 @@ Spec section guidance:
   recommendation, rationale, scope, and what approval unlocks.
 - **Current State** - observed behavior, relevant code, patterns, and
   constraints. Use tables for code/path summaries.
+- **Human-Readable Map** - diagrams and flow traces for architecture,
+  request/data flow, state, or dependencies. Omit only with a reason.
 - **Proposed Target State** - desired behavior, architecture,
   interfaces/data/config, non-goals, and acceptance criteria.
 - **Tradeoffs** - alternatives, risks with mitigations, and open questions.
-- **Evidence Appendix** - source-backed claims and brief research notes.
-  Avoid turning this into a raw dump.
+- **Evidence Appendix** - confidence-labeled evidence summary,
+  investigation log, and brief research notes. Avoid turning this into a
+  raw dump.
 - **Approval History** - append status changes or feedback revisions.
 
 Set status to `spec_review`, write the blueprint, and commit. Do not write

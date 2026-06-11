@@ -1,7 +1,8 @@
 ---
 name: refine
 description: >
-  Simplify code + improve comments in uncommitted changes.
+  Simplify code + improve comments in uncommitted changes. Use `simplify`
+  for read-only blueprint/design simplification reports.
   Triggers: 'refine', 'clean up code', 'simplify changes'.
 allowed-tools: Bash, Read, Edit, Glob, Grep
 argument-hint: "[file-pattern]"
@@ -10,6 +11,9 @@ argument-hint: "[file-pattern]"
 # Refine
 
 Polish uncommitted changes: simplify code, improve comments.
+
+For design documents, blueprints, or plans that should not be edited, use
+`/skill:simplify` instead. This skill edits only uncommitted code changes.
 
 ## Arguments
 
@@ -67,3 +71,4 @@ Do NOT:
 - Add comments to unchanged code
 - Touch code outside the diff
 - Refactor beyond uncommitted changes
+- Produce design/blueprint simplification reports; use `simplify` for that

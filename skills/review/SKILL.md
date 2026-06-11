@@ -12,7 +12,8 @@ argument-hint: "[--local] [file-pattern] [<branch|PR>] | --continue [slug]"
 Review introduced code and write findings to a `review/` blueprint.
 Blueprints are the only review tracker.
 
-@rules/blueprints.md and @rules/harness-compat.md apply.
+@rules/blueprints.md, @rules/harness-compat.md, and
+@rules/artifact-readability.md apply.
 
 ## Arguments
 
@@ -78,6 +79,11 @@ the focus.
 Large diffs: for files with >200 diff lines, keep first 50 and last 50
 lines in prompt context, then read full files only when needed.
 
+Keep reviews biased toward smaller, safer PRs. Defer speculative additions,
+future-proofing, or broad refactors unless they fix a concrete issue
+introduced by this change.
+
+
 ### 3. Detect Context
 
 Language reviewer:
@@ -122,44 +128,71 @@ For every potential finding, verify against source before keeping it:
 4. For async/concurrent/state-machine findings, trace the full path.
 
 Remove false positives aggressively. Keep uncertain items only with
-`[needs-review]`.
+`[needs-review]`. Classify valid but non-blocking simplifications or future
+work as deferred instead of actionable findings.
 
 ### 5. Aggregate Findings
 
 Build one unified findings document:
 
 ```markdown
+## Summary
+
+- Assessment: Sound | Minor Concerns | Significant Concerns | Alternative Recommended
+- Perspectives: <list>
+- Findings: <actionable count>
+- Deferred: <deferred count>
+- Verification: verified <N>, pruned <M> false positives, downgraded <K>
+
 ## Reviewer Summaries
+
 - Architect: ...
 - Code Quality: ...
 - Devil's Advocate: ...
 - Operations: ...
 - Test Quality: ...
 
-## Approach Assessment
-Sound | Minor Concerns | Significant Concerns | Alternative Recommended
+## Findings
 
-## Verification Summary
-Verified N findings: K confirmed, M false positives pruned, J
-pre-existing removed/downgraded, L uncertain.
+### <short title>
 
-## Consensus Findings
-<findings raised by 2+ perspectives>
+- Severity: critical | medium | low
+- File: `<path:line>` or `cross-file`
+- Confidence: source reading | execution verified | production/tool data | inferred
+- Verification: <what was checked>
+- Perspectives: <which lenses found it>
 
-## Phase 1: Critical Issues
-<confirmed critical findings>
+<why this is an introduced, actionable issue and what should change>
 
-## Phase 2: Design Improvements
-<confirmed design/code/ops improvements>
+## Deferred Findings
 
-## Phase 3: Testing Gaps
-<missing tests, each with concrete setup/action/assertion>
+### [defer] <short title>
+
+- Severity: low | medium
+- File: `<path:line>` or `cross-file`
+- Confidence: <label>
+- Verification: <what was checked>
+
+<valid observation that should not block this PR>
+
+## What I verified
+
+- <source checks, caller/callee checks, tests, or commands reviewed>
+
+## Considered and dismissed
+
+- <false positive or pre-existing issue and why it was removed>
 
 ## Reply Notes
+
 <optional notes for PR responses>
 ```
 
-Skip empty sections. Group duplicate findings by root cause.
+Skip empty sections. Group duplicate findings by root cause. Put consensus or
+critical actionable findings first within `## Findings`. `Deferred Findings`
+are body-only recommendations, not fix requirements.
+
+
 
 ### 6. Store Review Blueprint
 
@@ -191,8 +224,8 @@ If commit fails, stop and show the error.
 ```text
 Review: <path>
 Assessment: <rating>
-Findings: <critical/improvement/testing counts>
-Next: /skill:fix for actionable findings, or /skill:commit if clean
+Findings: <actionable/deferred counts>
+Next: /skill:fix for actionable findings, /skill:simplify for deferred design cleanup, or /skill:commit if clean
 ```
 
 ## Rules

@@ -13,7 +13,8 @@ argument-hint: "<scope> [--depth quick|medium|high|max] [--for general|research|
 
 Create a durable codebase-context blueprint report.
 
-@rules/blueprints.md and @rules/harness-compat.md apply.
+@rules/blueprints.md, @rules/harness-compat.md, and
+@rules/artifact-readability.md apply.
 
 ## Arguments
 
@@ -77,7 +78,9 @@ Collect concise evidence for:
 - tests and verification commands
 - external interfaces such as CLI, API, UI, events, files, network, or DB
 
-Use source line references for claims that future work may rely on.
+Use source line references for claims that future work may rely on. For
+medium, high, and max depth reports, include Mermaid diagrams for
+non-trivial architecture or flow paths, or write `Diagram omitted: <reason>`.
 
 ### 4. Trace Important Flows
 
@@ -90,8 +93,10 @@ For each major behavior in scope, identify:
 5. output or boundary crossing
 6. related tests or verification command
 
+Back each diagram with a trace table that cites code, config, or commands.
 Verify at least three architecture claims against source before writing the
-report. Cite each verified claim with file paths and line references.
+report. Cite each verified claim with file paths, line references, and a
+confidence label from `@rules/artifact-readability.md`.
 
 ### 5. Write The Context Report
 
@@ -116,6 +121,10 @@ Write or update the report body with these sections:
 
 ## Architecture Map
 
+### System Map
+
+<Mermaid flowchart or `Diagram omitted: <reason>`>
+
 ### Main Modules
 
 - `<path>` — role, ownership, key exports/classes/functions
@@ -128,6 +137,15 @@ Write or update the report body with these sections:
 4. <side effects>
 5. <output>
 
+### Request / Data Flow
+
+<Mermaid sequence diagram or `Diagram omitted: <reason>`>
+
+### Flow Trace
+
+| Step | Code / Config | Responsibility | Evidence |
+| ---- | ------------- | -------------- | -------- |
+
 ### Data Model / State
 
 - <important types, schemas, stores, caches, config>
@@ -136,9 +154,21 @@ Write or update the report body with these sections:
 
 - <CLI/API/UI/events/files/network/db/etc.>
 
+## Evidence Summary
+
+| Claim | Evidence | Verification | Confidence |
+| ----- | -------- | ------------ | ---------- |
+
 ## Important Code Paths
 
 - `<path:line>` — why it matters
+
+## Investigation Log
+
+- Commands run:
+- Tests/probes:
+- External docs/tools:
+- Gaps:
 
 ## Patterns To Preserve
 

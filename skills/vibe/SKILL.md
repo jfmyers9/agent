@@ -13,7 +13,8 @@ argument-hint: "<prompt> [--continue] [--dry-run]"
 Run the full development pipeline using blueprints as the only durable
 state.
 
-@rules/blueprints.md and @rules/harness-compat.md apply.
+@rules/blueprints.md, @rules/harness-compat.md, and
+@rules/artifact-readability.md apply.
 
 ## Arguments
 
@@ -53,6 +54,9 @@ Body:
 - prompt: <full prompt>
 - stage: started
 - spec:
+- context:
+- diagnosis:
+- simplification:
 - implementation:
 - review:
 - fix_plan:
@@ -60,6 +64,7 @@ Body:
 - report:
 - commit:
 - submit:
+- skipped:
 
 ## Stage Log
 
@@ -68,7 +73,9 @@ Body:
 ```
 
 After each stage, update `stage`, fill artifact paths/results, append a
-Stage Log entry, and run `blueprint commit plan <tracker-slug>`.
+Stage Log entry, and run `blueprint commit plan <tracker-slug>`. If a stage
+is skipped, record `skipped: <stage> - <reason>` and a Stage Log entry; do
+not leave silent gaps.
 
 ## Workflow
 
@@ -90,8 +97,9 @@ Read `skills/research/SKILL.md` and execute with:
 ```
 
 Verify a spec blueprint exists via `blueprint find --type spec` and
-store its path in tracker `spec`. If `--dry-run`, stop here and report
-`Next: /skill:implement`.
+store its path in tracker `spec`. If research created context, diagnosis,
+or simplification artifacts, store those paths too. If `--dry-run`, stop
+here and report `Next: /skill:implement`.
 
 ### 3. Implement
 
@@ -105,14 +113,16 @@ Store result in tracker `implementation`.
 
 Read `skills/review/SKILL.md` and execute on the current branch.
 
-Verify a review blueprint exists. Store path in tracker `review`.
-Review failure is non-blocking only if implementation produced changes;
-log the failure and continue to report/commit.
+Verify a review blueprint exists and contains either `## Findings`,
+`## Deferred Findings`, or a clear no-findings summary. Store path in
+tracker `review`. Review failure is non-blocking only if implementation
+produced changes; log the failure and continue to report/commit.
 
 ### 5. Fix Review Findings
 
-Read the review blueprint. If it has no actionable findings, log
-`fix skipped`.
+Read the review blueprint. If it has no actionable findings under
+`## Findings`, log `fix skipped: no actionable findings`. Deferred-only
+items do not require a fix pass unless the user explicitly asks.
 
 If actionable findings exist:
 
@@ -129,7 +139,8 @@ useful; log the blocker clearly.
 ### 6. Report
 
 Read `skills/report/SKILL.md` and execute it. Store report path in the
-tracker. Report failure is non-blocking.
+tracker. If report generation fails after useful implementation work, log
+`report skipped: <reason>`; otherwise treat the failure as blocking.
 
 ### 7. Commit
 
@@ -144,6 +155,9 @@ Read `skills/submit/SKILL.md` and execute it. Store PR/submit result in
 tracker `submit`. Submit failure is non-blocking after commit.
 
 ### 9. Complete
+
+Before completion, verify every pipeline stage has either an artifact/result
+or an explicit skip reason in `## Pipeline State` and `## Stage Log`.
 
 When done:
 
