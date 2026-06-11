@@ -4,8 +4,9 @@
   "scripts": {
     "check": "bun run typecheck && bun run test",
     "typecheck": "tsc --noEmit --pretty false --project tsconfig.typecheck.json",
-    "test": "bun run test:pi-low-risk && bun run test:pi-skillful && bun run test:pi-system && bun run test:pi-tui && bun run test:pi-token && bun run test:pi-spawn && bun run test:pi-vim",
+    "test": "bun run test:pi-low-risk && bun run test:pi-fileops && bun run test:pi-skillful && bun run test:pi-system && bun run test:pi-tui && bun run test:pi-token && bun run test:pi-spawn && bun run test:pi-vim",
     "test:pi-low-risk": "bun test harnesses/pi/extensions/agents-local/index.test.ts harnesses/pi/extensions/git-tool/index.test.ts harnesses/pi/extensions/shared/editor-composition.test.ts harnesses/pi/extensions/shared/ordered-widgets.test.ts harnesses/pi/extensions/shared/lane-placement.test.ts",
+    "test:pi-fileops": "bun test harnesses/pi/extensions/fileops/**/*.test.ts",
     "test:pi-skillful": "bun test harnesses/pi/extensions/skillful/index.test.ts",
     "test:pi-system": "bun test harnesses/pi/extensions/system-prompt/index.test.ts",
     "test:pi-tui": "bun test harnesses/pi/extensions/tui/editor.test.ts harnesses/pi/extensions/tui/footer.test.ts harnesses/pi/extensions/tui/cursor-focus.test.ts harnesses/pi/extensions/tui/git.test.ts",

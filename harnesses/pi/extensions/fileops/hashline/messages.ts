@@ -84,3 +84,11 @@ export const RECOVERY_SESSION_CHAIN_WARNING =
  */
 export const RECOVERY_SESSION_REPLAY_WARNING =
 	"Recovered by replaying your edits onto the current file content — your previous edit in this session changed line(s) you re-targeted with a stale hash. Verify the diff matches your intent before continuing.";
+
+/**
+ * Warning text emitted when BOF/EOF-only inserts carry a stale but recognized
+ * snapshot tag. Those positions are content-independent, so the edit can land
+ * safely on current content while still surfacing drift to the model.
+ */
+export const HEADTAIL_DRIFT_WARNING =
+	"Applied a `BOF`/`EOF` insert onto the current file content even though the snapshot tag was stale (the file changed since your read). File-boundary positions are content-independent, so the insert was not rejected — re-read if the drift was unexpected.";

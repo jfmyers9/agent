@@ -27,6 +27,7 @@ import { formatHashlineHeader, HL_FILE_HASH_SEP, HL_FILE_PREFIX } from "./format
 import type { Filesystem, WriteResult } from "./fs";
 import { isNotFound } from "./fs";
 import type { Patch, PatchSection } from "./input";
+import { HEADTAIL_DRIFT_WARNING } from "./messages";
 import { MismatchError } from "./mismatch";
 import { detectLineEnding, type LineEnding, normalizeToLF, restoreLineEndings, stripBom } from "./normalize";
 import { Recovery, type RecoveryResult } from "./recovery";
@@ -203,7 +204,6 @@ export class Patcher {
 		// Single-section fast path.
 		if (patch.sections.length === 1) {
 			const prepared = await this.prepare(patch.sections[0]);
-			this.#validatePrepared([prepared]);
 			return { sections: [await this.commit(prepared)] };
 		}
 
@@ -358,6 +358,10 @@ export class Patcher {
 		const snapshot = this.snapshots.byHash(canonicalPath, expected);
 		if (snapshot && snapshotProvesUnchanged(snapshot, normalized, section)) {
 			return applyEdits(normalized, [...edits]);
+		}
+		if (snapshot && !hasAnchorScopedEdit(edits)) {
+			const result = applyEdits(normalized, [...edits]);
+			return { ...result, warnings: [HEADTAIL_DRIFT_WARNING, ...(result.warnings ?? [])] };
 		}
 		if (snapshot) {
 			const recovered = this.recovery.tryRecover({

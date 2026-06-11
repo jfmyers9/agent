@@ -1206,6 +1206,15 @@ async function withHashlineMutationQueues<T>(paths: readonly string[], fn: () =>
 	return run(0);
 }
 
+function noChangeDiagnostic(path: string): string {
+	return (
+		`Edits to ${path} parsed and applied cleanly, but produced no change: ` +
+		`your body row(s) are byte-identical to the file at the targeted lines. ` +
+		`The bug is somewhere else — re-read the file before issuing another edit. ` +
+		`Do NOT widen the payload or add lines; verify the anchor first.`
+	);
+}
+
 async function executeHashline(cwd: string, input: string) {
 	const patch = Patch.parse(input, { cwd });
 	if (patch.sections.length === 0) throw new Error("hashline mode requires at least one ¶PATH section.");
@@ -1228,7 +1237,11 @@ async function executeHashline(cwd: string, input: string) {
 				type: "text",
 				text: [
 					`Applied hashline edit to ${applied.sections.length} section${applied.sections.length === 1 ? "" : "s"}.`,
-					...applied.sections.map((section) => `${section.op}: ${section.header}`),
+					...applied.sections.flatMap((section) =>
+						section.op === "noop"
+							? [`${section.op}: ${section.header}`, noChangeDiagnostic(section.path)]
+							: [`${section.op}: ${section.header}`],
+					),
 					...(noops.length > 0 ? [`No-op sections: ${noops.map((section) => section.path).join(", ")}`] : []),
 					...(warnings.length > 0 ? ["", "Warnings:", ...warnings.map((warning) => `- ${warning}`)] : []),
 				].join("\n"),

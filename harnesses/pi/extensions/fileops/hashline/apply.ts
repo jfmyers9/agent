@@ -132,6 +132,321 @@ function bucketAnchorEditsByLine(edits: IndexedEdit[]): Map<number, IndexedEdit[
 	return byLine;
 }
 
+// Replacement-boundary repair.
+// Models routinely restate unchanged range edges in replacement payloads. The
+// repair below only trims exact boundary echoes or structural delimiter lines
+// that explain an otherwise unbalanced replacement.
+const STRUCTURAL_CLOSER_RE = /^\s*[)\]}]+[;,]?\s*$/;
+
+interface DelimiterBalance {
+	paren: number;
+	bracket: number;
+	brace: number;
+}
+
+function computeDelimiterBalance(lines: readonly string[]): DelimiterBalance {
+	const balance: DelimiterBalance = { paren: 0, bracket: 0, brace: 0 };
+	let inBlockComment = false;
+	let quote = "";
+	for (const line of lines) {
+		for (let i = 0; i < line.length; i++) {
+			const ch = line[i];
+			if (inBlockComment) {
+				if (ch === "*" && line[i + 1] === "/") {
+					inBlockComment = false;
+					i++;
+				}
+				continue;
+			}
+			if (quote) {
+				if (ch === "\\") i++;
+				else if (ch === quote) quote = "";
+				continue;
+			}
+			if (ch === '"' || ch === "'" || ch === "`") {
+				quote = ch;
+				continue;
+			}
+			if (ch === "/" && line[i + 1] === "/") break;
+			if (ch === "/" && line[i + 1] === "*") {
+				inBlockComment = true;
+				i++;
+				continue;
+			}
+			switch (ch) {
+				case "(":
+					balance.paren++;
+					break;
+				case ")":
+					balance.paren--;
+					break;
+				case "[":
+					balance.bracket++;
+					break;
+				case "]":
+					balance.bracket--;
+					break;
+				case "{":
+					balance.brace++;
+					break;
+				case "}":
+					balance.brace--;
+					break;
+			}
+		}
+		if (quote === '"' || quote === "'") quote = "";
+	}
+	return balance;
+}
+
+function balanceDelta(a: DelimiterBalance, b: DelimiterBalance): DelimiterBalance {
+	return { paren: a.paren - b.paren, bracket: a.bracket - b.bracket, brace: a.brace - b.brace };
+}
+
+function balanceNegate(a: DelimiterBalance): DelimiterBalance {
+	return { paren: -a.paren, bracket: -a.bracket, brace: -a.brace };
+}
+
+function balanceEqual(a: DelimiterBalance, b: DelimiterBalance): boolean {
+	return a.paren === b.paren && a.bracket === b.bracket && a.brace === b.brace;
+}
+
+function balanceIsZero(a: DelimiterBalance): boolean {
+	return a.paren === 0 && a.bracket === 0 && a.brace === 0;
+}
+
+interface ReplacementGroup {
+	insertIndices: number[];
+	deleteIndices: number[];
+	payload: string[];
+	startLine: number;
+	endLine: number;
+}
+
+function findReplacementGroup(edits: readonly AppliedEdit[], start: number): ReplacementGroup | undefined {
+	const first = edits[start];
+	if (first?.kind !== "insert" || first.mode !== "replacement" || first.cursor.kind !== "before_anchor") {
+		return undefined;
+	}
+	const { lineNum } = first;
+	const anchorLine = first.cursor.anchor.line;
+	const insertIndices: number[] = [];
+	const payload: string[] = [];
+	let i = start;
+	for (; i < edits.length; i++) {
+		const edit = edits[i];
+		if (edit.kind !== "insert" || edit.mode !== "replacement" || edit.lineNum !== lineNum) break;
+		if (edit.cursor.kind !== "before_anchor" || edit.cursor.anchor.line !== anchorLine) break;
+		insertIndices.push(i);
+		payload.push(edit.text);
+	}
+	const deleteIndices: number[] = [];
+	let expectedLine = anchorLine;
+	for (; i < edits.length; i++) {
+		const edit = edits[i];
+		if (edit.kind !== "delete" || edit.lineNum !== lineNum || edit.anchor.line !== expectedLine) break;
+		deleteIndices.push(i);
+		expectedLine++;
+	}
+	if (deleteIndices.length === 0) return undefined;
+	return { insertIndices, deleteIndices, payload, startLine: anchorLine, endLine: anchorLine + deleteIndices.length - 1 };
+}
+
+function findDuplicateSuffix(group: ReplacementGroup, fileLines: readonly string[], delta: DelimiterBalance): number {
+	if (balanceIsZero(delta)) return 0;
+	const { payload, endLine } = group;
+	const maxK = Math.min(payload.length, fileLines.length - endLine);
+	for (let k = maxK; k >= 1; k--) {
+		let matches = true;
+		for (let t = 0; t < k; t++) {
+			if (payload[payload.length - k + t] !== fileLines[endLine + t]) {
+				matches = false;
+				break;
+			}
+		}
+		if (matches && balanceEqual(computeDelimiterBalance(payload.slice(payload.length - k)), delta)) return k;
+	}
+	return 0;
+}
+
+function findDuplicatePrefix(group: ReplacementGroup, fileLines: readonly string[], delta: DelimiterBalance): number {
+	if (balanceIsZero(delta)) return 0;
+	const { payload, startLine } = group;
+	const maxJ = Math.min(payload.length, startLine - 1);
+	for (let j = maxJ; j >= 1; j--) {
+		let matches = true;
+		for (let t = 0; t < j; t++) {
+			if (payload[t] !== fileLines[startLine - 1 - j + t]) {
+				matches = false;
+				break;
+			}
+		}
+		if (matches && balanceEqual(computeDelimiterBalance(payload.slice(0, j)), delta)) return j;
+	}
+	return 0;
+}
+
+function findDroppedSuffixClosers(
+	group: ReplacementGroup,
+	fileLines: readonly string[],
+	delta: DelimiterBalance,
+): number {
+	const wanted = balanceNegate(delta);
+	const maxM = group.deleteIndices.length;
+	for (let m = 1; m <= maxM; m++) {
+		if (!STRUCTURAL_CLOSER_RE.test(fileLines[group.endLine - m] ?? "")) break;
+		if (balanceEqual(computeDelimiterBalance(fileLines.slice(group.endLine - m, group.endLine)), wanted)) return m;
+	}
+	return 0;
+}
+
+interface BoundaryEcho {
+	leading: number;
+	trailing: number;
+}
+
+function hasNonWhitespace(text: string): boolean {
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i);
+		if (code !== 9 && code !== 10 && code !== 11 && code !== 12 && code !== 13 && code !== 32) return true;
+	}
+	return false;
+}
+
+function countDuplicateLeadingBoundaryLines(group: ReplacementGroup, fileLines: readonly string[]): number {
+	const { payload, startLine } = group;
+	const max = Math.min(payload.length, startLine - 1);
+	for (let count = max; count >= 1; count--) {
+		let matches = true;
+		let hasContent = false;
+		for (let offset = 0; offset < count; offset++) {
+			const line = payload[offset];
+			if (line !== fileLines[startLine - 1 - count + offset]) {
+				matches = false;
+				break;
+			}
+			hasContent ||= hasNonWhitespace(line);
+		}
+		if (matches && hasContent) return count;
+	}
+	return 0;
+}
+
+function countDuplicateTrailingBoundaryLines(group: ReplacementGroup, fileLines: readonly string[]): number {
+	const { payload, endLine } = group;
+	const max = Math.min(payload.length, fileLines.length - endLine);
+	for (let count = max; count >= 1; count--) {
+		let matches = true;
+		let hasContent = false;
+		for (let offset = 0; offset < count; offset++) {
+			const line = payload[payload.length - count + offset];
+			if (line !== fileLines[endLine + offset]) {
+				matches = false;
+				break;
+			}
+			hasContent ||= hasNonWhitespace(line);
+		}
+		if (matches && hasContent) return count;
+	}
+	return 0;
+}
+
+function findBoundaryEcho(group: ReplacementGroup, fileLines: readonly string[]): BoundaryEcho | undefined {
+	const leadingMax = countDuplicateLeadingBoundaryLines(group, fileLines);
+	if (leadingMax === 0) return undefined;
+	const trailingMax = countDuplicateTrailingBoundaryLines(group, fileLines);
+	if (trailingMax === 0) return undefined;
+	if (leadingMax + trailingMax >= group.payload.length) return undefined;
+	return { leading: leadingMax, trailing: trailingMax };
+}
+
+function describeBoundaryEchoRepair(group: ReplacementGroup, echo: BoundaryEcho): string {
+	return (
+		`Auto-repaired a replacement boundary echo at line ${group.startLine}: ` +
+		`dropped ${echo.leading} leading and ${echo.trailing} trailing payload line(s) already present outside the range. ` +
+		`Issue the payload as the final desired content for the selected range only — never restate unchanged lines bordering the range.`
+	);
+}
+
+function describeBoundaryRepair(group: ReplacementGroup, action: string): string {
+	return (
+		`Auto-repaired a delimiter-balance mismatch in the replacement at line ${group.startLine}: ${action}. ` +
+		`Issue the payload as the final desired content only — never restate or omit a closing bracket bordering the range.`
+	);
+}
+
+function repairReplacementBoundaries(
+	edits: readonly AppliedEdit[],
+	fileLines: readonly string[],
+): { edits: AppliedEdit[]; warnings: string[] } {
+	const out: AppliedEdit[] = [];
+	const warnings: string[] = [];
+	let i = 0;
+	while (i < edits.length) {
+		const group = findReplacementGroup(edits, i);
+		if (!group) {
+			out.push(edits[i]);
+			i++;
+			continue;
+		}
+		const inserts = group.insertIndices.map((idx) => edits[idx]);
+		const deletes = group.deleteIndices.map((idx) => edits[idx]);
+		i = group.deleteIndices[group.deleteIndices.length - 1] + 1;
+
+		const boundaryEcho = findBoundaryEcho(group, fileLines);
+		if (boundaryEcho) {
+			warnings.push(describeBoundaryEchoRepair(group, boundaryEcho));
+			out.push(...inserts.slice(boundaryEcho.leading, inserts.length - boundaryEcho.trailing), ...deletes);
+			continue;
+		}
+
+		const delta = balanceDelta(
+			computeDelimiterBalance(group.payload),
+			computeDelimiterBalance(fileLines.slice(group.startLine - 1, group.endLine)),
+		);
+		if (balanceIsZero(delta)) {
+			out.push(...inserts, ...deletes);
+			continue;
+		}
+
+		const dupSuffix = findDuplicateSuffix(group, fileLines, delta);
+		if (dupSuffix > 0) {
+			warnings.push(
+				describeBoundaryRepair(
+					group,
+					`dropped ${dupSuffix} duplicated trailing payload line(s) already present below the range`,
+				),
+			);
+			out.push(...inserts.slice(0, inserts.length - dupSuffix), ...deletes);
+			continue;
+		}
+		const dupPrefix = findDuplicatePrefix(group, fileLines, delta);
+		if (dupPrefix > 0) {
+			warnings.push(
+				describeBoundaryRepair(
+					group,
+					`dropped ${dupPrefix} duplicated leading payload line(s) already present above the range`,
+				),
+			);
+			out.push(...inserts.slice(dupPrefix), ...deletes);
+			continue;
+		}
+		const droppedClosers = findDroppedSuffixClosers(group, fileLines, delta);
+		if (droppedClosers > 0) {
+			warnings.push(
+				describeBoundaryRepair(
+					group,
+					`kept ${droppedClosers} structural closing line(s) the range deleted without restating`,
+				),
+			);
+			out.push(...inserts, ...deletes.slice(0, deletes.length - droppedClosers));
+			continue;
+		}
+		out.push(...inserts, ...deletes);
+	}
+	return { edits: out, warnings };
+}
+
 /**
  * Apply a parsed list of edits to a text body. Pure function — no I/O.
  *
@@ -151,12 +466,13 @@ export function applyEdits(text: string, edits: Edit[]): ApplyResult {
 
 	const targetEdits = expandRepeatEdits(edits, fileLines);
 	validateLineBounds(targetEdits, fileLines);
+	const { edits: repairedEdits, warnings } = repairReplacementBoundaries(targetEdits, fileLines);
 
 	// Partition edits into BOF, EOF, and anchor-targeted buckets.
 	const bofLines: string[] = [];
 	const eofLines: string[] = [];
 	const anchorEdits: IndexedEdit[] = [];
-	targetEdits.forEach((edit, idx) => {
+	repairedEdits.forEach((edit, idx) => {
 		if (edit.kind === "insert" && edit.cursor.kind === "bof") {
 			bofLines.push(edit.text);
 		} else if (edit.kind === "insert" && edit.cursor.kind === "eof") {
@@ -217,5 +533,6 @@ export function applyEdits(text: string, edits: Edit[]): ApplyResult {
 	return {
 		text: fileLines.join("\n"),
 		firstChangedLine,
+		...(warnings.length > 0 ? { warnings } : {}),
 	};
 }

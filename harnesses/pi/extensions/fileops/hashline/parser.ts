@@ -142,6 +142,31 @@ function detectApplyPatchContamination(text: string, _hasPending: boolean): stri
 			"hashline hunks are bare `A B` lines (or `BOF` / `EOF`)."
 		);
 	}
+	if (/^DELETE\s+[1-9]\d*(?:\s*(?:\.\.|-|…|\s)\s*[1-9]\d*)?\s*:/.test(trimmed)) {
+		return "`DELETE A B` has no colon and no body. Remove the colon and payload rows, or use an `A B` replacement hunk with `+TEXT` body rows.";
+	}
+	const lowerDelete = /^delete\s+([1-9]\d*)(?:\s*(?:\.\.|-|…|\s)\s*([1-9]\d*))?\s*:?/i.exec(trimmed);
+	if (lowerDelete !== null) {
+		const start = lowerDelete[1];
+		const end = lowerDelete[2] ?? start;
+		return `verb-style ${JSON.stringify(trimmed)} is not valid in local hashline. Use \`DELETE ${start} ${end}\` with no colon/body to delete lines.`;
+	}
+	const replaceVerb = /^replace\s+([1-9]\d*)\s*(?:\.\.|-|…|\s)\s*([1-9]\d*)\s*:/i.exec(trimmed);
+	if (replaceVerb !== null) {
+		return `verb-style ${JSON.stringify(trimmed)} is not valid in local hashline. Use bare hunk header \`${replaceVerb[1]} ${replaceVerb[2]}\` followed by \`+TEXT\` body rows.`;
+	}
+	const insertVerb = /^insert\s+(before|after|head|tail)(?:\s+([1-9]\d*))?\s*:/i.exec(trimmed);
+	if (insertVerb !== null) {
+		const position = insertVerb[1].toLowerCase();
+		const line = insertVerb[2];
+		const local =
+			position === "head"
+				? "BOF"
+				: position === "tail"
+					? "EOF"
+					: `${position.toUpperCase()} ${line ?? "N"}`;
+		return `verb-style ${JSON.stringify(trimmed)} is not valid in local hashline. Use \`${local}\` followed by \`+TEXT\` body rows.`;
+	}
 	return null;
 }
 
