@@ -39,6 +39,25 @@ install_shared_bin() {
 	link_item "$SCRIPT_DIR/bin/blueprint" "$HOME/.local/bin/blueprint"
 }
 
+install_context_guard_core() {
+	local crate="$SCRIPT_DIR/crates/context-guard/Cargo.toml"
+	local binary="$SCRIPT_DIR/target/release/context-guard"
+
+	if [ ! -f "$crate" ]; then
+		echo "Error: missing vendored Context Guard crate at $crate" >&2
+		exit 1
+	fi
+	if ! command -v cargo >/dev/null 2>&1; then
+		echo "Error: cargo is required to build Context Guard for Pi." >&2
+		exit 1
+	fi
+
+	echo "Building Context Guard core..."
+	(cd "$SCRIPT_DIR" && cargo build --release -p context-guard)
+	mkdir -p "$HOME/.local/bin"
+	link_item "$binary" "$HOME/.local/bin/context-guard"
+}
+
 install_node_dependencies() {
 	if [ ! -f "$SCRIPT_DIR/package.json" ]; then
 		return
@@ -126,6 +145,7 @@ install_pi() {
 		[ -e "$extension" ] || continue
 		link_item "$extension" "$dir/extensions/$(basename "$extension")"
 	done
+	install_context_guard_core
 }
 
 install_codex() {

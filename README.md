@@ -29,6 +29,7 @@ Environment overrides:
 - Python 3 for Claude statusline only
 - macOS Keychain only for Claude quota statusline enrichment
 - Codex CLI (`codex`) for the Codex adapter
+- Rust/Cargo for the Pi Context Guard core
 
 ## Layout
 
@@ -37,6 +38,8 @@ AGENTS.md                  # shared global instructions
 CLAUDE.md                  # Claude compatibility entrypoint
 install.sh                 # harness-aware installer
 bin/blueprint              # portable blueprint state CLI
+Cargo.toml                  # Rust workspace for vendored helper binaries
+crates/context-guard/       # Pi Context Guard Rust core
 rules/                     # shared coding/workflow rules
 skills/                    # Agent Skills packages
 harnesses/
@@ -104,6 +107,7 @@ Installed by `./install.sh pi` into `~/.pi/agent`:
 - links Pi `keybindings.json`, `tui.json`, and `effort.json` when present
 - links `harnesses/pi/extensions/*` into `~/.pi/agent/extensions/`
 - installs `blueprint` to `~/.local/bin`
+- builds `crates/context-guard` and links `context-guard` to `~/.local/bin`
 
 Pi uses `/skill:<name>` commands, for example:
 

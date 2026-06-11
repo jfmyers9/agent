@@ -25,7 +25,7 @@ export function resolveCoreBin(): string | null {
 
 	if (process.env.CONTEXT_GUARD_SKIP_LOCAL_BIN !== "1") {
 		for (const name of executableNames("context-guard")) {
-			for (const rel of [`../../../../../target/debug/${name}`, `../../../../../target/release/${name}`]) {
+			for (const rel of [`../../../../../target/release/${name}`, `../../../../../target/debug/${name}`]) {
 				const candidate = resolve(__pkg_dir, rel);
 				if (existsSync(candidate)) return candidate;
 			}

@@ -69,20 +69,18 @@ Context7 is installed as a pinned reviewed Pi package. It registers `context7_re
 
 Skills are available as `/skill:<name>` and `$skill-name` references by default.
 
-## Optional Context Guard core
+## Context Guard core
 
-The `context-guard` Pi extension is registered by default, but its indexing,
+The `context-guard` Pi extension is registered by default. Its indexing,
 search, fetch, `cg_process_file`, and `exec_command(mode: "batch")` features
-need a separate Rust binary named `context-guard`. This repo does not vendor
-Luan's Rust workspace, so install the binary separately and expose it to Pi.
+are backed by the vendored Rust core in `../../crates/context-guard`.
 
-Reviewed source used for the original port: `luan/agents` at `ec62ad5`.
+Reviewed upstream source: `luan/agents` at `ec62ad5`.
+
+`./install.sh pi` builds the release binary and links it to
+`~/.local/bin/context-guard`:
 
 ```sh
-mkdir -p ~/.local/src ~/.local/bin
-git clone https://github.com/luan/agents ~/.local/src/luan-agents
-cd ~/.local/src/luan-agents
-git checkout ec62ad5
 cargo build --release -p context-guard
 ln -sf "$PWD/target/release/context-guard" ~/.local/bin/context-guard
 ```
@@ -90,24 +88,23 @@ ln -sf "$PWD/target/release/context-guard" ~/.local/bin/context-guard
 Pi finds the core in this order:
 
 1. `CONTEXT_GUARD_BIN=/absolute/path/to/context-guard`
-2. `target/debug/context-guard` or `target/release/context-guard` under this repo
+2. `target/release/context-guard` or `target/debug/context-guard` under this repo
 3. `context-guard` on `PATH`
 
 If `~/.local/bin` is not on the environment used to launch Pi, set an explicit
 binary path before starting Pi:
 
 ```sh
-export CONTEXT_GUARD_BIN="$HOME/.local/src/luan-agents/target/release/context-guard"
+export CONTEXT_GUARD_BIN="/path/to/agent-config/target/release/context-guard"
 ```
-
 Verify after restarting Pi:
 
 ```text
 /cg-check
 ```
 
-Expected installed output includes `[OK] Core binary: ...`. Without the binary,
-`cg_check` and `/cg-check` still work and report a clear missing-core diagnostic;
+Expected installed output includes `[OK] Core binary: ...`. If the binary is
+missing, `cg_check` and `/cg-check` still work and report a clear diagnostic;
 core-backed tools remain unavailable until the binary is installed.
 
 `ct` is different: it is Luan's broader Rust CLI. This config no longer requires
