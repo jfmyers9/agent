@@ -18,12 +18,12 @@ approves or requests changes in chat.
 
 ## Arguments
 
-- `<topic>` — new research topic
-- `--continue` — resume the most recent spec blueprint
-- `--discard [slug]` — delete the most recent or matching spec
+- `<topic>` - new research topic
+- `--continue` - resume the most recent spec blueprint
+- `--discard [slug]` - delete the most recent or matching spec
   blueprint
-- `--depth <medium|high|max>` — thoroughness, default `medium`
-- `--auto` — bypass human approval gates, used by `/skill:vibe`
+- `--depth <medium|high|max>` - thoroughness, default `medium`
+- `--auto` - bypass human approval gates, used by `/skill:vibe`
 
 ## Blueprint
 
@@ -33,47 +33,108 @@ Create proposal specs with:
 file=$(blueprint create spec "<topic>" --status spec_review --depth <level>)
 ```
 
-Expected body:
+Specs are staged review artifacts. Optimize for human review before
+implementation detail. A reviewer should be able to answer these within two
+minutes:
+
+1. What decision is being requested?
+2. Why is this recommendation better than alternatives?
+3. What is in scope and out of scope?
+4. What risks or open questions remain?
+5. What observable criteria define success?
+
+At `spec_review`, write only the spec slice:
 
 ```markdown
-## Research Notes
+## Review Brief
 
-<validated current-state notes, paths, constraints>
+- Decision needed:
+- Recommendation:
+- Why:
+- Scope:
+- Approval unblocks:
 
-## Spec
+## Current State
 
-### Problem
+### Observed Behavior
 
-### Recommendation
+### Relevant Code
 
-### Architecture Context
+| Area | Path | Notes |
+| ---- | ---- | ----- |
 
-### Risks
+### Existing Patterns To Preserve
 
-### Challenges
+### Constraints
 
-## Plan
+## Proposed Target State
 
-**Phase 1: <name>**
+### Behavior
 
-- Files: <paths>
-- Approach: <what changes>
-- Steps:
-  1. <action, path, done signal>
-- Done signal: <observable result>
-- Verify: <command or manual check>
+### Architecture
+
+### Interfaces / Data / Config
+
+### Non-Goals
+
+### Acceptance Criteria
+
+- [ ] <observable result>
+
+## Tradeoffs
+
+### Options Considered
+
+| Option | Pros | Cons | Verdict |
+| ------ | ---- | ---- | ------- |
+
+### Risks & Mitigations
+
+| Risk | Mitigation |
+| ---- | ---------- |
+
+### Open Questions
+
+- None
+
+## Evidence Appendix
+
+### Source-Backed Claims
+
+| Claim | Evidence |
+| ----- | -------- |
+
+### Research Notes
+
+- <brief notes, only when useful>
 
 ## Approval History
 
-- <timestamp> — spec approved | plan approved | revised from user feedback
+- <timestamp> - spec approved | revised from user feedback
+```
+
+At `plan_review`, append the implementation plan after spec approval:
+
+```markdown
+## Implementation Plan
+
+### Phase 1: <name>
+
+- Goal:
+- Files:
+- Approach:
+- Steps:
+  1. <action, path, done signal>
+- Done:
+- Verify:
 ```
 
 Use frontmatter status for progress:
 
-- `spec_review` — spec slice drafted; awaiting user review
-- `spec_approved` — spec slice accepted; plan slice may be drafted
-- `plan_review` — plan slice drafted; awaiting user review
-- `approved` — proposal ready for `/skill:implement`
+- `spec_review` - spec slice drafted; awaiting user review
+- `spec_approved` - spec slice accepted; plan slice may be drafted
+- `plan_review` - plan slice drafted; awaiting user review
+- `approved` - proposal ready for `/skill:implement`
 
 Run `blueprint commit spec <slug>` after every blueprint write or
 status change. If it fails, stop and show the error.
@@ -93,38 +154,62 @@ status change. If it fails, stop and show the error.
 ### 2. Research
 
 Use targeted `bash`/`read` calls. Do not dump broad files or logs.
+Keep raw evidence out of the review path unless it directly supports a
+claim.
 
 Depth guidance:
 
-- `medium`: key files and architecture, 3-5 phases
+- `medium`: key files and architecture, 3-5 implementation phases
 - `high`: all relevant files, 2-level call chains, line refs, 5-7
-  phases
+  implementation phases
 - `max`: exhaustive affected modules, dependency graph, annotated
-  snippets, 7+ phases
+  snippets, 7+ implementation phases
 
-Research output must include:
+Research must identify:
 
 - Current behavior and relevant file paths
 - Existing patterns to preserve
 - Constraints, risks, and edge cases
 - Candidate implementation approach
 - Verification commands or checks
+- Alternatives considered when there is a meaningful choice
 
 Spot-check at least three architectural claims against source before
-writing the spec.
+writing the spec. Prefer repo-relative paths in blueprint prose. Put dense
+path/line references in `## Evidence Appendix` instead of inline prose.
 
 ### 3. Write Spec Slice
 
-Write a timeless target-state spec:
+Write a human-reviewable spec. Put the decision summary first and supporting
+evidence later.
 
-- **Problem** — current gap or failure
-- **Recommendation** — target behavior in present tense; no transition
-  verbs like "add" or "replace"
-- **Architecture Context** — target module roles and interactions
-- **Risks** — edge cases, failure modes, constraints
-- **Challenges** — 1-3 devil's-advocate concerns, or "None"
+The spec must make these easy to answer:
 
-Set status to `spec_review`, write the blueprint, and commit.
+1. What decision is requested?
+2. Why is this recommendation better than alternatives?
+3. What is in scope and out of scope?
+4. What risks or open questions remain?
+5. What observable criteria define success?
+
+Use target-state language for behavior and architecture, but do not sacrifice
+clarity to avoid verbs like "add", "replace", or "remove". Keep
+implementation sequencing in the later plan slice.
+
+Spec section guidance:
+
+- **Review Brief** - five concise bullets for the requested decision,
+  recommendation, rationale, scope, and what approval unlocks.
+- **Current State** - observed behavior, relevant code, patterns, and
+  constraints. Use tables for code/path summaries.
+- **Proposed Target State** - desired behavior, architecture,
+  interfaces/data/config, non-goals, and acceptance criteria.
+- **Tradeoffs** - alternatives, risks with mitigations, and open questions.
+- **Evidence Appendix** - source-backed claims and brief research notes.
+  Avoid turning this into a raw dump.
+- **Approval History** - append status changes or feedback revisions.
+
+Set status to `spec_review`, write the blueprint, and commit. Do not write
+`## Implementation Plan` yet unless `--auto` is present.
 
 If `--auto` is absent, stop after reporting:
 
@@ -146,14 +231,18 @@ continue without waiting for human approval.
 
 ### 4. Write Plan Slice
 
-After spec approval, write a phased plan in the same blueprint. Every
-phase must include:
+After spec approval, append `## Implementation Plan` to the same blueprint.
+Every phase must include:
 
+- Goal
 - Files to read/modify/create
 - Approach
 - Ordered steps
 - Done signal
 - Verification
+
+Keep phases tactical and executable. Avoid repeating the spec rationale unless
+it changes the implementation order.
 
 Set status to `plan_review`, write the blueprint, and commit.
 
