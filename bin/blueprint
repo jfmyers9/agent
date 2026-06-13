@@ -34,9 +34,19 @@ EOF
 
 # Derive project name from git remote, git dir, or cwd.
 cmd_project() {
-    basename "$(git remote get-url origin 2>/dev/null | sed 's|\.git$||')" 2>/dev/null \
-        || basename "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's|/\.git$||; s|/\.bare$||')" 2>/dev/null \
-        || basename "$(pwd)"
+    project_source="$(git remote get-url origin 2>/dev/null | sed 's|\.git$||')"
+    if [ -n "$project_source" ]; then
+        basename "$project_source"
+        return
+    fi
+
+    project_source="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null | sed 's|/\.git$||; s|/\.bare$||')"
+    if [ -n "$project_source" ]; then
+        basename "$project_source"
+        return
+    fi
+
+    basename "$(pwd)"
 }
 
 # Generate a slug from arbitrary text.
