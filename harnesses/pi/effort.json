@@ -1,5 +1,7 @@
 {
   "gpt-5.5": "high",
   "gpt-5.4": "high",
-  "gpt-5.4-mini": "high"
+  "gpt-5.4-mini": "high",
+  "claude-sonnet-4-6": "high",
+  "claude-haiku-4-5": "high"
 }

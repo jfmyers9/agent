@@ -133,7 +133,7 @@ install_pi() {
 	if [ -d "$SCRIPT_DIR/node_modules" ]; then
 		link_item "$SCRIPT_DIR/node_modules" "$dir/node_modules"
 	fi
-	for config in keybindings.json tui.json effort.json; do
+	for config in keybindings.json tui.json effort.json models.json; do
 		if [ -f "$SCRIPT_DIR/harnesses/pi/$config" ]; then
 			link_item "$SCRIPT_DIR/harnesses/pi/$config" "$dir/$config"
 		fi
