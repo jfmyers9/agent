@@ -47,5 +47,5 @@
   "alwaysThinkingEnabled": true,
   "promptSuggestionEnabled": true,
   "skipDangerousModePermissionPrompt": true,
-  "theme": "light"
+  "theme": "dark"
 }
