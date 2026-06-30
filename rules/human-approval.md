@@ -1,38 +1,15 @@
 # Human Approval Gates
 
-Use blueprint files as the default review surface for non-auto workflow approvals.
-The user may review those files locally in their editor or Obsidian and reply in
-chat with approval or feedback.
+Approval gates apply only to proposal-producing research.
 
 ## Protocol
 
-1. Write or update the blueprint.
-2. Run `blueprint commit <type> <slug>`.
-3. Report the blueprint path, status, and requested decision.
-4. Stop and wait for the user's chat response unless the workflow is running
-   with an explicit `--auto` bypass.
+1. Write one `proposal/` artifact with status `draft`.
+2. Commit it and report its path.
+3. Wait for explicit approval, feedback, or `$implement <proposal>`.
+4. Approval or explicit implementation advances it to `approved` immediately.
+5. Feedback revises the same proposal and leaves it `draft`.
+6. Successful implementation advances it to `complete`.
 
-## Outcomes
-
-Interpret the user's chat response as:
-
-- Explicit approval, such as `approve`, `approved`, `lgtm`, or `ship it`:
-  advance the relevant blueprint status and commit.
-- Requested changes or questions: revise the same artifact, add/update
-  `## Approval History`, commit, and return it to review.
-- Ambiguous response: ask for clarification. Do not infer approval.
-- No response: leave status unchanged and report the resume command.
-
-## Loop
-
-1. Write or update the blueprint.
-2. Run `blueprint commit <type> <slug>`.
-3. Wait for explicit chat approval or feedback.
-4. On feedback, edit the same blueprint, add/update `## Approval History`,
-   commit, and return to review.
-5. On approval, update status and commit immediately.
-
-## Automation
-
-`--auto` bypasses human gates for autonomous workflows. It must still write and
-commit each blueprint status change.
+`--auto` may advance a proposal directly to `approved`. Reviews and reports are
+complete when generated and require no status approval loop.

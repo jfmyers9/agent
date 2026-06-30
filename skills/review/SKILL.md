@@ -1,237 +1,129 @@
 ---
 name: review
 description: >
-  Senior engineer code review, filing findings in review blueprints.
-  Triggers: 'review code', 'code review', 'review my changes'.
+  Create a durable code review artifact for introduced changes. Invoke only as
+  /skill:review or $review when a persistent review is wanted.
+disable-model-invocation: true
+user-invocable: true
 allowed-tools: Bash, Read, Write, Glob, Grep
-argument-hint: "[--local] [file-pattern] [<branch|PR>] | --continue [slug]"
+argument-hint: "[--local] [file-pattern] [branch|PR] [--proposal <slug-or-path>]"
 ---
 
 # Review
 
-Review introduced code and write findings to a `review/` blueprint.
-Blueprints are the only review tracker.
+Review introduced code and store verified findings in one complete artifact.
 
 @rules/blueprints.md, @rules/harness-compat.md, and
 @rules/artifact-readability.md apply.
-
-## Arguments
-
-- `<file-pattern>` — optional changed-file filter
-- `<branch|PR>` — optional branch or PR number
-- `--local` — review staged/unstaged local changes instead of a branch
-- `--continue [slug]` — continue latest or matching review blueprint
 
 ## Workflow
 
 ### 1. Resolve Target
 
-- Numeric arg: resolve branch with
-  `gh pr view <N> --json headRefName -q .headRefName`, then review
-  that branch.
-- Branch arg: checkout only if explicitly requested.
-- `--local`: review staged/unstaged local changes.
-- Empty: review current branch. If current branch is `main`/`master`
-  and local staged/unstaged changes exist, review those local changes.
-  If no local changes exist on `main`/`master`, stop unless files were
-  explicitly supplied.
+- PR number: resolve its head branch.
+- Branch: review its merge-base diff; checkout only when explicitly requested.
+- `--local`: review staged and unstaged changes.
+- Empty: current branch, or local changes on trunk.
+- `--proposal`: read that proposal for conditional coherence review.
 
-Set:
-
-```bash
-branch=$(git branch --show-current)
-trunk=$(gt trunk 2>/dev/null || echo main)
-review_target=branch
-if [ "$branch" = "main" ] || [ "$branch" = "master" ] || [ "${LOCAL_CHANGES:-0}" = 1 ]; then
-  if ! git diff --quiet || ! git diff --cached --quiet; then
-    review_target=local
-  fi
-fi
-```
+Untracked files are included only when explicitly named. Exclude generated
+files, lock files, build output, coverage, and binaries unless they are the
+focus.
 
 ### 2. Gather Context
 
-Run targeted commands:
+Collect bounded changed-file lists, diffs, commits, and optional PR metadata.
+For large diffs, summarize first and read complete files only around candidate
+findings. If no proposal was supplied, a clearly branch-matching proposal may
+be discovered with `blueprint find --type proposal,spec,plan --match <slug>`;
+absence is normal.
 
-```bash
-if [ "$review_target" = local ]; then
-  git diff --name-only
-  git diff --cached --name-only
-  git diff
-  git diff --cached
-else
-  git log --oneline "$trunk"..HEAD
-  git diff "$trunk"...HEAD --name-only
-  git diff "$trunk"...HEAD
-fi
-gh pr view --json title,body,labels,reviewDecision 2>/dev/null || true
-```
+### 3. Apply Lenses
 
-For local-change reviews, treat unstaged and staged diffs as introduced code.
-If a file has both staged and unstaged hunks, review both and identify
-which finding comes from which diff only when that distinction matters.
-Untracked files are reviewed only when explicitly named by file-pattern.
+Read the concise checklists in `skills/review/perspectives/` and apply:
 
-Apply file-pattern filters if provided. Exclude lock files, generated
-artifacts, `dist/`, `build/`, `coverage/`, and binaries unless they are
-the focus.
+Core:
 
-Large diffs: for files with >200 diff lines, keep first 50 and last 50
-lines in prompt context, then read full files only when needed.
+- correctness and compatibility, including language/framework idioms
+- design and maintainability
+- tests
 
-Keep reviews biased toward smaller, safer PRs. Defer speculative additions,
-future-proofing, or broad refactors unless they fix a concrete issue
-introduced by this change.
+Conditional:
 
+- security and operations when trust, persistence, concurrency, deployment, or
+  production failure boundaries changed
+- proposal coherence when a relevant proposal or legacy design exists
 
-### 3. Detect Context
+For every candidate: inspect the cited line and nearby code; trace callers,
+callees, state, or async paths as needed; confirm it is introduced; prune false
+positives. Defer valid non-blocking cleanup instead of inflating findings.
 
-Language reviewer:
+### 4. Write Findings
 
-- `.go` -> go
-- `.ts` / `.tsx` -> typescript
-- `.py` -> python
-- `.rs` -> rust
-
-Plan coherence:
-
-```bash
-branch_slug=$(blueprint slug "$branch")
-if [ "$review_target" != local ]; then
-  plan_file=$(blueprint find --type spec,plan --match "$branch_slug")
-fi
-```
-
-If found, read `## Spec` and compare the diff against it.
-
-### 4. Review Perspectives
-
-Run each perspective sequentially in this session:
-
-- Architect
-- Code Quality
-- Devil's Advocate
-- Operations
-- Test Quality
-- Language-specific reviewer, if detected
-- Design Coherence, if a source spec exists
-
-Perspective prompts live in `skills/review/perspectives/*.md`. Read each
-prompt and apply it to the gathered raw diff/context. If prompt files are
-unavailable, use the perspective names above as lenses.
-
-For every potential finding, verify against source before keeping it:
-
-1. Read `file:line` ± 20 lines.
-2. Check whether the issue is handled nearby or by callers/callees.
-3. Check whether it is introduced by this branch.
-4. For async/concurrent/state-machine findings, trace the full path.
-
-Remove false positives aggressively. Keep uncertain items only with
-`[needs-review]`. Classify valid but non-blocking simplifications or future
-work as deferred instead of actionable findings.
-
-### 5. Aggregate Findings
-
-Build one unified findings document:
+Assign stable sequential IDs (`F001`, `F002`, ...). Never renumber existing IDs
+when updating a review.
 
 ```markdown
 ## Summary
 
-- Assessment: Sound | Minor Concerns | Significant Concerns | Alternative Recommended
-- Perspectives: <list>
-- Findings: <actionable count>
-- Deferred: <deferred count>
-- Verification: verified <N>, pruned <M> false positives, downgraded <K>
-
-## Reviewer Summaries
-
-- Architect: ...
-- Code Quality: ...
-- Devil's Advocate: ...
-- Operations: ...
-- Test Quality: ...
+- Assessment: Sound | Minor Concerns | Significant Concerns
+- Lenses: <applied lenses>
+- Findings: <count>
+- Deferred: <count>
 
 ## Findings
 
-### <short title>
+### F001: <short title>
 
 - Severity: critical | medium | low
 - File: `<path:line>` or `cross-file`
 - Confidence: source reading | execution verified | production/tool data | inferred
+- Lenses: <names>
 - Verification: <what was checked>
-- Perspectives: <which lenses found it>
 
-<why this is an introduced, actionable issue and what should change>
+<introduced problem, impact, and specific correction>
 
 ## Deferred Findings
 
-### [defer] <short title>
+### D001: <short title>
 
-- Severity: low | medium
-- File: `<path:line>` or `cross-file`
-- Confidence: <label>
-- Verification: <what was checked>
+<non-blocking observation>
 
-<valid observation that should not block this PR>
+## Resolutions
 
-## What I verified
+| Finding | Outcome | Change | Verification |
+| ------- | ------- | ------ | ------------ |
 
-- <source checks, caller/callee checks, tests, or commands reviewed>
+## What I Verified
 
-## Considered and dismissed
+- <checks>
 
-- <false positive or pre-existing issue and why it was removed>
+## Considered And Dismissed
 
-## Reply Notes
-
-<optional notes for PR responses>
+- <candidate and why pruned>
 ```
 
-Skip empty sections. Group duplicate findings by root cause. Put consensus or
-critical actionable findings first within `## Findings`. `Deferred Findings`
-are body-only recommendations, not fix requirements.
+Omit empty deferred/dismissed sections, but retain the empty resolution table
+when actionable findings exist.
 
-
-
-### 6. Store Review Blueprint
+### 5. Store Complete Review
 
 ```bash
-if [ "$review_target" = local ]; then
-  file=$(blueprint create review "Review: local changes" --status draft --branch "$branch")
-else
-  file=$(blueprint create review "Review: $branch" --status draft --branch "$branch")
-fi
+file=$(blueprint create review "Review: <target>" --status complete --branch "$branch")
 ```
 
-If a source plan/spec was found:
+Link a source proposal when used. Write once, then
+`blueprint commit review <slug>`. Reviews are complete when generated; finding
+resolution state lives in `## Resolutions`.
 
-```bash
-SOURCE_SLUG=$(basename "$plan_file" .md)
-blueprint link "$file" "$SOURCE_SLUG"
-```
+### 6. Report
 
-Write the findings body, then:
-
-```bash
-blueprint commit review <slug>
-```
-
-If commit fails, stop and show the error.
-
-### 7. Report
-
-```text
-Review: <path>
-Assessment: <rating>
-Findings: <actionable/deferred counts>
-Next: /skill:fix for actionable findings, /skill:simplify for deferred design cleanup, or /skill:commit if clean
-```
+Return path, assessment, counts, and `$fix <review>` or `$commit` as the next
+action.
 
 ## Rules
 
-- Review introduced code first.
-- Only flag pre-existing code when it is critical and newly relevant.
-- Always verify findings against source before output.
-- Do not create native task state.
-- Do not spawn subagents or teams.
+- Review introduced code first; mention pre-existing code only when newly
+  activated or critical to the change.
+- Findings require source verification and a concrete impact.
+- Do not create native task state or spawn reviewers.

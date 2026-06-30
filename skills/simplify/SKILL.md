@@ -1,9 +1,10 @@
 ---
 name: simplify
 description: >
-  Read-only simplification review for blueprints, design docs, plans, and
-  proposed architectures. Produces recommendations without editing code.
-  Triggers: 'simplify design', 'simplification report', 'simplify plan'.
+  Create a durable read-only simplification report for a design document.
+  Invoke only as /skill:simplify or $simplify.
+disable-model-invocation: true
+user-invocable: true
 allowed-tools: Bash, Read, Write, Glob, Grep
 argument-hint: "<blueprint-slug-or-path> [--scope <area>]"
 ---
@@ -27,7 +28,7 @@ Review a blueprint or design document and write a simplification report.
 
 - If an explicit path exists, read it.
 - Else resolve a matching blueprint with:
-  `blueprint find --type spec,plan,report --match <arg>`.
+  `blueprint find --type proposal,report,spec,plan --match <arg>`.
 - If no source is provided, stop and ask for a blueprint slug or path.
 - If a blueprint source is found, link the simplification report to it after
   creating the report.
@@ -131,7 +132,7 @@ If `blueprint commit` exits non-zero, stop and show the error.
 Simplification: <path>
 Status: complete
 Recommendations: <count>
-Next: apply manually, revise the source blueprint, or /skill:implement if already approved
+Next: apply manually, revise the source, or $implement <proposal>
 ```
 
 ## Rules

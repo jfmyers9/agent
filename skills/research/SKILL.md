@@ -1,308 +1,100 @@
 ---
 name: research
 description: >
-  Research topics, investigate codebases, and create blueprint proposals for
-  local review. Triggers: 'research', 'investigate', 'explore'.
+  Create a durable, evidence-backed proposal for local review. Invoke only as
+  /skill:research or $research when a proposal artifact is wanted.
+disable-model-invocation: true
+user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
-argument-hint: "<topic or question> | --continue | --discard [slug] | --depth <medium|high|max> | --auto"
+argument-hint: "<topic> | --continue [slug] | --discard [slug] | --depth <medium|high|max> | --auto"
 ---
 
 # Research
 
-Research a topic and write one `spec/` blueprint proposal as the durable
-source of truth for implementation. The user reviews blueprints locally and
-approves or requests changes in chat.
+Research a decision and write one proposal with one approval boundary.
 
 @rules/blueprints.md, @rules/human-approval.md,
 @rules/harness-compat.md, and @rules/artifact-readability.md apply.
 
 ## Arguments
 
-- `<topic>` - new research topic
-- `--continue` - resume the most recent spec blueprint
-- `--discard [slug]` - delete the most recent or matching spec
-  blueprint
-- `--depth <medium|high|max>` - thoroughness, default `medium`
-- `--auto` - bypass human approval gates, used by `/skill:vibe`
-
-## Blueprint
-
-Create proposal specs with:
-
-```bash
-file=$(blueprint create spec "<topic>" --status spec_review --depth <level>)
-```
-
-Specs are staged review artifacts. Optimize for human review before
-implementation detail. A reviewer should be able to answer these within two
-minutes:
-
-1. What decision is being requested?
-2. Why is this recommendation better than alternatives?
-3. What is in scope and out of scope?
-4. What risks or open questions remain?
-5. What observable criteria define success?
-
-At `spec_review`, write only the spec slice:
-
-```markdown
-## Review Brief
-
-- Decision needed:
-- Recommendation:
-- Why:
-- Scope:
-- Approval unblocks:
-
-## Current State
-
-### Observed Behavior
-
-### Relevant Code
-
-| Area | Path | Notes |
-| ---- | ---- | ----- |
-
-### Existing Patterns To Preserve
-
-### Constraints
-
-## Human-Readable Map
-
-### System Map
-
-<Mermaid flowchart or `Diagram omitted: <reason>`>
-
-### Request / Data Flow
-
-<Mermaid sequence diagram or `Diagram omitted: <reason>`>
-
-### Flow Trace
-
-| Step | Code / Config | Responsibility | Evidence |
-| ---- | ------------- | -------------- | -------- |
-
-## Proposed Target State
-
-### Behavior
-
-### Architecture
-
-### Interfaces / Data / Config
-
-### Non-Goals
-
-### Acceptance Criteria
-
-- [ ] <observable result>
-
-## Tradeoffs
-
-### Options Considered
-
-| Option | Pros | Cons | Verdict |
-| ------ | ---- | ---- | ------- |
-
-### Risks & Mitigations
-
-| Risk | Mitigation |
-| ---- | ---------- |
-
-### Open Questions
-
-- None
-
-## Evidence Appendix
-
-### Evidence Summary
-
-| Claim | Evidence | Verification | Confidence |
-| ----- | -------- | ------------ | ---------- |
-
-Use confidence labels from `@rules/artifact-readability.md`.
-
-### Investigation Log
-
-- Commands run:
-- Tests/probes:
-- External docs/tools:
-- Gaps:
-
-### Research Notes
-
-- <brief notes, only when useful>
-
-## Approval History
-
-- <timestamp> - spec approved | revised from user feedback
-```
-
-At `plan_review`, append the implementation plan after spec approval:
-
-```markdown
-## Implementation Plan
-
-### Phase 1: <name>
-
-- Goal:
-- Files:
-- Approach:
-- Steps:
-  1. <action, path, done signal>
-- Done:
-- Verify:
-```
-
-Use frontmatter status for progress:
-
-- `spec_review` - spec slice drafted; awaiting user review
-- `spec_approved` - spec slice accepted; plan slice may be drafted
-- `plan_review` - plan slice drafted; awaiting user review
-- `approved` - proposal ready for `/skill:implement`
-
-Run `blueprint commit spec <slug>` after every blueprint write or
-status change. If it fails, stop and show the error.
+- `<topic>` — decision to research
+- `--continue [slug]` — resume the latest or matching proposal
+- `--discard [slug]` — delete the latest or matching proposal and commit
+- `--depth <medium|high|max>` — evidence depth; default `medium`
+- `--auto` — approve immediately for an explicitly autonomous workflow
 
 ## Workflow
 
-### 1. Resolve Work
+### 1. Resolve
 
-- `--discard`: find via `blueprint find --type spec [--match <slug>]`,
-  delete it, run `blueprint commit spec <slug>`, report.
-- `--continue`: find the latest spec via `blueprint find --type spec`,
-  read it, and resume from frontmatter `status` and the latest user
-  response.
-- New topic: parse flags, derive topic text, create a new spec
-  blueprint.
+- Continue/discard: `blueprint find --type proposal --match <slug>`.
+- New work:
+  `file=$(blueprint create proposal "<topic>" --status draft --depth <level>)`.
+- Existing legacy specs/plans may be read as evidence; never create a new one.
 
 ### 2. Research
 
-Use targeted `bash`/`read` calls. Do not dump broad files or logs.
-Keep raw evidence out of the review path unless it directly supports a
-claim.
+Inspect current behavior, relevant paths, local patterns, constraints, risks,
+alternatives, and verification options. Spot-check at least three material
+claims against source. Keep raw output out of the artifact.
 
-Depth guidance:
+Depth:
 
-- `medium`: key files and architecture, 3-5 implementation phases
-- `high`: all relevant files, 2-level call chains, line refs, 5-7
-  implementation phases
-- `max`: exhaustive affected modules, dependency graph, annotated
-  snippets, 7+ implementation phases
+- `medium`: key paths and main tradeoffs
+- `high`: affected modules, call paths, edge cases
+- `max`: exhaustive boundaries, dependencies, and migration risks
 
-Research must identify:
+For non-trivial flows, follow `@rules/artifact-readability.md`: include a small
+diagram and evidence trace, or state why a diagram is unnecessary.
 
-- Current behavior and relevant file paths
-- Existing patterns to preserve
-- Constraints, risks, and edge cases
-- Candidate implementation approach
-- Verification commands or checks
-- Alternatives considered when there is a meaningful choice
-- Human-readable maps for non-trivial architecture, request flow, data flow,
-  state transitions, or dependency graphs
+### 3. Write Proposal
 
-Spot-check at least three architectural claims against source before
-writing the spec. Prefer repo-relative paths in blueprint prose. Put dense
-path/line references in `## Evidence Appendix` instead of inline prose.
+Replace the generated section placeholders with:
 
-For non-trivial systems, include a Mermaid system map, request/data-flow
-diagram, or an explicit `Diagram omitted: <reason>`. Back diagrams with a
-flow trace or evidence table. Label major claims using the confidence labels
-from `@rules/artifact-readability.md`.
+```markdown
+## Decision
 
-### 3. Write Spec Slice
+- Decision requested:
+- Recommendation:
+- Scope / non-goals:
+- Risks / open questions:
 
-Write a human-reviewable spec. Put the decision summary first and supporting
-evidence later.
+## Evidence
 
-The spec must make these easy to answer:
+<current behavior, relevant paths, patterns, alternatives, confidence>
 
-1. What decision is requested?
-2. Why is this recommendation better than alternatives?
-3. What is in scope and out of scope?
-4. What risks or open questions remain?
-5. What observable criteria define success?
+## Approach
 
-Use target-state language for behavior and architecture, but do not sacrifice
-clarity to avoid verbs like "add", "replace", or "remove". Keep
-implementation sequencing in the later plan slice.
+<implementation-ready changes, affected files, ordering, verification>
 
-Spec section guidance:
+## Acceptance Criteria
 
-- **Review Brief** - five concise bullets for the requested decision,
-  recommendation, rationale, scope, and what approval unlocks.
-- **Current State** - observed behavior, relevant code, patterns, and
-  constraints. Use tables for code/path summaries.
-- **Human-Readable Map** - diagrams and flow traces for architecture,
-  request/data flow, state, or dependencies. Omit only with a reason.
-- **Proposed Target State** - desired behavior, architecture,
-  interfaces/data/config, non-goals, and acceptance criteria.
-- **Tradeoffs** - alternatives, risks with mitigations, and open questions.
-- **Evidence Appendix** - confidence-labeled evidence summary,
-  investigation log, and brief research notes. Avoid turning this into a
-  raw dump.
-- **Approval History** - append status changes or feedback revisions.
+- [ ] <observable result>
 
-Set status to `spec_review`, write the blueprint, and commit. Do not write
-`## Implementation Plan` yet unless `--auto` is present.
+## Implementation Notes
 
-If `--auto` is absent, stop after reporting:
-
-```text
-Spec/Plan: <path>
-Status: spec_review
-Review: open the blueprint locally and reply with approval or feedback
-Next: /skill:research --continue
+<empty until implementation, or prior notes when continuing>
 ```
 
-On explicit chat approval, append/update `## Approval History`, set
-status to `spec_approved`, commit, and continue to planning.
+Commit every write with `blueprint commit proposal <slug>`. Keep status
+`draft` while awaiting a decision.
 
-On feedback, revise only the affected blueprint content, append/update
-`## Approval History`, commit, and return to `spec_review`.
+### 4. Approval
 
-If `--auto` is present, set status to `spec_approved`, commit, and
-continue without waiting for human approval.
+- Approval (`approve`, `approved`, `lgtm`, `ship it`): set `approved`, commit,
+  and report `$implement <proposal>`.
+- `$implement <proposal>` is itself explicit approval; implementation advances
+  the proposal before editing code.
+- Feedback: revise the same proposal, keep `draft`, commit, and return it once.
+- `--auto`: set `approved` and commit without waiting.
 
-### 4. Write Plan Slice
-
-After spec approval, append `## Implementation Plan` to the same blueprint.
-Every phase must include:
-
-- Goal
-- Files to read/modify/create
-- Approach
-- Ordered steps
-- Done signal
-- Verification
-
-Keep phases tactical and executable. Avoid repeating the spec rationale unless
-it changes the implementation order.
-
-Set status to `plan_review`, write the blueprint, and commit.
-
-If `--auto` is absent, stop after reporting:
-
-```text
-Spec/Plan: <path>
-Status: plan_review
-Review: open the blueprint locally and reply with approval or feedback
-Next: /skill:research --continue
-```
-
-On explicit chat approval, append/update `## Approval History`, set
-status to `approved`, and commit.
-
-On feedback, revise only the affected plan/spec content, append/update
-`## Approval History`, commit, and return to `plan_review`.
-
-If `--auto` is present, set status to `approved` and commit.
+Do not create a second planning artifact or a second approval stage.
 
 ## Output
 
-Keep user-facing output concise:
-
 ```text
-Spec/Plan: <path>
-Status: <status>
-Next: <review instruction or /skill:implement>
+Proposal: <path>
+Status: <draft|approved>
+Next: <approve, give feedback, or $implement <proposal>>
 ```

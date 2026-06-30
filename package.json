@@ -2,9 +2,11 @@
   "name": "agent-config",
   "private": true,
   "scripts": {
-    "check": "bun run typecheck && bun run test",
+    "check": "bun run check:blueprint-shell && bun run typecheck && bun run test",
+    "check:blueprint-shell": "sh -n bin/blueprint",
     "typecheck": "tsc --noEmit --pretty false --project tsconfig.typecheck.json",
-    "test": "bun run test:pi-low-risk && bun run test:pi-fileops && bun run test:pi-skillful && bun run test:pi-system && bun run test:pi-tui && bun run test:pi-token && bun run test:pi-spawn && bun run test:pi-vim",
+    "test": "bun run test:blueprint && bun run test:pi-low-risk && bun run test:pi-fileops && bun run test:pi-skillful && bun run test:pi-system && bun run test:pi-tui && bun run test:pi-token && bun run test:pi-spawn && bun run test:pi-vim",
+    "test:blueprint": "bun test tests/*.test.ts",
     "test:pi-low-risk": "bun test harnesses/pi/extensions/agents-local/index.test.ts harnesses/pi/extensions/git-tool/index.test.ts harnesses/pi/extensions/shared/editor-composition.test.ts harnesses/pi/extensions/shared/ordered-widgets.test.ts harnesses/pi/extensions/shared/lane-placement.test.ts",
     "test:pi-fileops": "bun test harnesses/pi/extensions/fileops/**/*.test.ts",
     "test:pi-skillful": "bun test harnesses/pi/extensions/skillful/index.test.ts",

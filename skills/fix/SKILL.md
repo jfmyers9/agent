@@ -1,110 +1,58 @@
 ---
 name: fix
 description: >
-  Convert user feedback on recent implementations into blueprint-backed
-  fix plans. Triggers: /fix, 'fix this', 'create issues from feedback'.
-allowed-tools: Bash, Read, Write, Glob, Grep
-argument-hint: "[feedback-text]"
+  Revalidate and resolve supplied feedback or findings from an existing review.
+  Use when the user asks to fix identified issues.
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep
+argument-hint: "[feedback-text|review-slug-or-path]"
 ---
 
 # Fix
 
-Convert feedback into a `plan/` blueprint consumable by
-`/skill:implement`.
+Revalidate feedback, implement valid fixes, verify them, and record resolutions.
 
 @rules/blueprints.md and @rules/harness-compat.md apply.
 
-## Arguments
-
-- `<feedback-text>` — feedback to convert
-- no args — use latest review blueprint or ask for feedback
-
 ## Workflow
 
-### 1. Gather Context
+### 1. Resolve Feedback
 
-Run in parallel where possible:
+- Explicit text: use it directly.
+- Review path/slug: read it; resolve slugs with
+  `blueprint find --type review --match <slug>`.
+- No args: use the most relevant recent review if one exists; otherwise ask for
+  feedback.
 
-```bash
-git diff --name-only HEAD~3..HEAD
-git log --oneline -5
-branch=$(git branch --show-current)
-branch_slug=$(blueprint slug "$branch")
-review_file=$(blueprint find --type review --match "$branch_slug")
-```
+Do not create a fix plan. Existing proposals or legacy plans may be context,
+not required trackers.
 
-If no feedback text was provided and a review blueprint exists, read it
-and extract actionable findings. If neither exists, ask for feedback.
+### 2. Revalidate
 
-If feedback names files, read those files.
+For each finding, read the cited code and nearby callers/tests. Mark it
+`valid`, `already resolved`, `not reproducible`, or `declined`, with evidence.
+Only valid unresolved findings enter implementation.
 
-### 2. Analyze Feedback
+### 3. Implement And Verify
 
-Break feedback into findings. For each finding:
+Reuse the implement loop: smallest complete change, focused test first, broader
+checks when warranted. Preserve unrelated changes.
 
-- classify: `bug`, `task`, or `feature`
-- priority: P0-P4, default P2
-- file/line if known
-- concrete change requested
-- verification signal
+### 4. Record Review Resolutions
 
-Group findings:
-
-- Phase 1: Bugs
-- Phase 2: Improvements
-- Phase 3: Features
-
-Skip empty phases.
-
-### 3. Create Fix Plan
-
-Create the plan:
-
-```bash
-file=$(blueprint create plan "Fix: <brief-summary>" --status draft)
-```
-
-If sourced from a review blueprint:
-
-```bash
-SOURCE_SLUG=$(basename "$review_file" .md)
-blueprint link "$file" "$SOURCE_SLUG"
-```
-
-Write:
+When feedback came from a review, update that same file:
 
 ```markdown
-## Feedback Analysis
+## Resolutions
 
-### Summary
-- Findings: N
-- Source: <feedback/review path>
-
-**Phase 1: Bug Fixes**
-1. <file:line> — <actionable fix>
-   - Why: <reason>
-   - Verify: <check>
-
-**Phase 2: Improvements**
-...
-
-**Phase 3: Features**
-...
+| Finding | Outcome | Change | Verification |
+| ------- | ------- | ------ | ------------ |
+| F001 | fixed | `<path>` — summary | `<command>` — pass |
 ```
 
-Run `blueprint commit plan <slug>` after writing. If it fails, stop
-and show the error.
+Use the review's stable finding IDs. Outcomes: `fixed`, `already resolved`,
+`not reproducible`, or `declined`. Commit with
+`blueprint commit review <slug>`.
 
-### 4. Report
+### 5. Report
 
-```text
-Fix Plan: <path>
-Findings: N (X bugs, Y improvements, Z features)
-Next: /skill:implement
-```
-
-## Rules
-
-- One fix plan per feedback batch.
-- Keep findings actionable and file-specific.
-- Do not create native task state.
+Return outcomes, files changed, and verification. No new blueprint is created.

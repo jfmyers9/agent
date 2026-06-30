@@ -1,9 +1,10 @@
 ---
 name: report
 description: >
-  Post-implementation execution report summarizing commits, files
-  changed, and plan-vs-reality. Triggers: 'report', 'execution
-  report', 'what was built'.
+  Create a durable post-implementation execution report. Invoke only as
+  /skill:report or $report when a persistent report is wanted.
+disable-model-invocation: true
+user-invocable: true
 allowed-tools: Bash, Read, Write, Glob, Grep
 argument-hint: "[--branch <name>]"
 ---
@@ -74,16 +75,16 @@ git diff --diff-filter=M --name-only "$trunk".."$branch"
 git diff --diff-filter=D --name-only "$trunk".."$branch"
 ```
 
-### 5. Find Source Plan (Optional)
+### 5. Find Source Proposal (Optional)
 
 ```bash
-plan_file=$(blueprint find --type plan,spec)
+source_file=$(blueprint find --type proposal,spec,plan)
 ```
 
-If found, extract `$SOURCE_SLUG`: `SOURCE_SLUG=$(basename "$plan_file" .md)`
+If found, extract `$SOURCE_SLUG`: `SOURCE_SLUG=$(basename "$source_file" .md)`
 
-Read it and extract phase titles (lines matching
-`**Phase N:` or `### Phase N:`) for plan-vs-reality mapping.
+Read it and extract acceptance criteria and approach headings for
+proposal-vs-reality mapping.
 
 ### 6. Generate Slug
 
@@ -97,7 +98,7 @@ Create the report file:
 ```bash
 file=$(blueprint create report "Report: <branch name>" --status complete --branch "$branch")
 ```
-If source plan was found in step 5:
+If a source artifact was found in step 5:
 ```bash
 blueprint link "$file" "$SOURCE_SLUG"
 ```
@@ -117,11 +118,13 @@ Write the body content into `$file` (append after frontmatter).
 
 - **Stats** — lines added/removed, file count. From diff stats.
 
-- **Plan vs Reality** (only if plan found in step 5) — each plan
-  phase mapped to outcome: completed, partial, or skipped. Brief
+- **Proposal vs Reality** (only if a source was found) — each criterion or
+  approach item mapped to completed, partial, or skipped. Brief
   note on deviations.
 
-- **Watchouts** — prose on deviations from plan, stuck or failed work, edge cases discovered during implementation, and follow-up suggestions. If nothing notable, write "None."
+- **Watchouts** — prose on deviations, stuck or failed work, edge cases
+  discovered during implementation, and follow-up suggestions. If nothing
+  notable, write "None."
 
 ### 8. Commit-on-Write
 
@@ -139,4 +142,4 @@ with the error output.
 Show:
 - Report file path
 - Commit count, files changed, lines added/removed
-- Link to plan if one was used
+- Link to source proposal if one was used

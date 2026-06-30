@@ -1,106 +1,46 @@
 ---
 name: acceptance
 description: >
-  Validate implementation against acceptance criteria using a
-  blueprint-backed verifier/breaker review. Triggers: 'accept',
-  'acceptance check', 'verify implementation', 'did it work'.
-argument-hint: "[blueprint-slug] [--auto]"
+  Create a durable acceptance review against named criteria. Invoke only as
+  /skill:acceptance or $acceptance when a persistent verdict is wanted.
+disable-model-invocation: true
 user-invocable: true
-allowed-tools:
-  - Bash
-  - Read
-  - Glob
-  - Grep
-  - Write
+argument-hint: "<proposal-or-path>"
+allowed-tools: [Bash, Read, Glob, Grep, Write]
 ---
 
 # Acceptance
 
-Verify an implementation against its blueprint criteria. Store the
-verdict in a `review/` blueprint.
+Verify implementation criteria and store a complete review artifact.
 
 @rules/blueprints.md and @rules/harness-compat.md apply.
 
-## Arguments
-
-- `<blueprint-slug>` — spec/plan/review blueprint to verify
-- `--auto` — create a fix plan for failures
-- no args — verify the latest spec/plan blueprint
-
 ## Workflow
 
-### 1. Resolve Target
+### 1. Resolve Criteria
 
-Find the target blueprint:
-
-```bash
-blueprint find --type spec,plan,review [--match <slug>]
-```
-
-Read acceptance criteria from, in order:
-
-- `## Plan` phase done signals
-- `## Spec` recommendation/problem
-- `## Feedback Analysis` findings
-- `## Implementation Notes`
-
-If criteria are unclear, ask what to verify.
-
-### 2. Gather Changes
+Read an explicit path or resolve:
 
 ```bash
-trunk=$(gt trunk 2>/dev/null || echo main)
-git diff "$trunk"...HEAD --name-only
-git diff "$trunk"...HEAD
+blueprint find --type proposal,review,spec,plan --match <slug>
 ```
 
-If no branch diff exists, use staged/unstaged diff; if still empty,
-stop with "Nothing to verify".
+Prefer `## Acceptance Criteria`, then legacy done signals/findings. If criteria
+remain unclear, ask what to verify.
 
-Summarize large diffs; read full files only for specific checks.
+### 2. Gather And Verify
 
-### 3. Verify
+Inspect branch/local changes and run two focused lenses:
 
-Run two passes sequentially in this session:
+- Verifier: mark every criterion `PASS`, `PARTIAL`, `FAIL`, or `N/A` with
+  file/line and execution evidence.
+- Breaker: test implied requirements, edge cases, integration risk, negative
+  behavior, and technically-complete but unusable outcomes.
 
-**Verifier pass**
+Verdict is `FAIL` for any failure, `PARTIAL` for partial criteria or a high
+breaker finding, otherwise `PASS`.
 
-For each criterion, mark:
-
-- PASS — fully met with file/line evidence
-- PARTIAL — partly met, gap explained
-- FAIL — not met
-- N/A — not applicable
-
-**Breaker pass**
-
-Hunt for:
-
-1. implied requirements
-2. edge cases
-3. integration risks
-4. technically-met-but-incomplete behavior
-5. missing negative tests
-
-Rate breaker findings HIGH/MEDIUM/LOW.
-
-### 4. Reconcile
-
-Verdict rules:
-
-| Condition | Verdict |
-|---|---|
-| Any verifier FAIL | FAIL |
-| Any verifier PARTIAL | PARTIAL |
-| All PASS + breaker HIGH | PARTIAL |
-| All PASS + no breaker HIGH | PASS |
-
-Consensus findings are verifier PARTIAL/FAIL items that overlap with a
-breaker HIGH/MEDIUM finding.
-
-### 5. Store Review
-
-Create an acceptance review blueprint:
+### 3. Store Review
 
 ```bash
 file=$(blueprint create review "Acceptance: <target>" --status complete)
@@ -111,24 +51,30 @@ Write:
 
 ```markdown
 ## Acceptance Verdict
+
 PASS | PARTIAL | FAIL
 
 ## Criteria Matrix
-| Criterion | Verifier | Breaker Flags | Evidence |
 
-## Consensus Findings
+| Criterion | Result | Breaker flags | Evidence |
+| --------- | ------ | ------------- | -------- |
 
-## Verifier Details
+## Findings
 
-## Breaker Findings
+### F001: <title>
+
+<actionable gap>
+
+## Resolutions
+
+| Finding | Outcome | Change | Verification |
+| ------- | ------- | ------ | ------------ |
 ```
 
-Run `blueprint commit review <slug>`.
+Use stable sequential finding IDs. Commit with
+`blueprint commit review <slug>`.
 
-### 6. Act
+### 4. Report
 
-- PASS: suggest `/skill:commit`.
-- PARTIAL/FAIL with `--auto`: read `skills/fix/SKILL.md` and create a
-  fix plan from consensus findings.
-- PARTIAL/FAIL without `--auto`: report findings and suggest
-  `/skill:fix`.
+Return artifact path, verdict, and findings. Suggest `$fix <review>` for gaps or
+`$commit` for a pass. Do not automatically create or execute a fix plan.

@@ -26,17 +26,18 @@
 - Summarize large file contents rather than reading in full when
   a summary suffices
 
-## Planning State
+## Durable Artifacts
 
-Prefer portable, file-backed state over harness-native state:
+Blueprints are opt-in. Create them only when I explicitly invoke `context`,
+`research`, `review`, `diagnose`, `acceptance`, `simplify`, `report`, or
+`archive`.
 
-- Research specs: `blueprint create spec "<topic>"`
-- Implementation plans: `blueprint create plan "<topic>"`
+- Proposals: `blueprint create proposal "<topic>"`
 - Reviews: `blueprint create review "<topic>"`
 - Reports: `blueprint create report "<topic>"`
 
-When a harness provides native tasks, they may mirror blueprint state,
-but blueprints remain the portable source of truth.
+Ordinary Q&A, coding, debugging, and PR work use chat and the working tree.
+Existing blueprints may be optional inputs.
 
 @rules/blueprints.md
 @rules/context-budget.md

@@ -1,14 +1,16 @@
 # Blueprints Convention
 
-The `blueprint` CLI is the canonical implementation of these
-conventions. Skills should use CLI commands instead of inline
-boilerplate.
+Blueprints are opt-in durable documents. Create one only when the user
+explicitly invokes an artifact skill: `context`, `research`, `review`,
+`diagnose`, `acceptance`, `simplify`, `report`, or `archive`.
+
+Ordinary questions, coding, debugging, PR work, and branch management do not
+create blueprints. They may consume an existing blueprint when the user names
+one or when it is clearly relevant input.
 
 ## Project Derivation
 
-Use `blueprint project` to get the project name. Never approximate
-from `pwd` or infer from the working directory name — worktrees
-and renamed clones will produce wrong results.
+Always use the CLI:
 
 ```sh
 project=$(blueprint project)
@@ -16,90 +18,58 @@ project=$(blueprint project)
 
 ## Directory Layout
 
-```
-~/workspace/blueprints/<project>/spec/       # research-backed proposal specs
-~/workspace/blueprints/<project>/plan/       # tactical implementation plans
-~/workspace/blueprints/<project>/review/     # code review blueprints
-~/workspace/blueprints/<project>/report/     # execution reports
-~/workspace/blueprints/<project>/archive/    # consumed blueprints (all types)
+```text
+~/workspace/blueprints/<project>/proposal/  # decisions awaiting/after approval
+~/workspace/blueprints/<project>/review/    # code and acceptance findings
+~/workspace/blueprints/<project>/report/    # context, diagnosis, and reports
+~/workspace/blueprints/<project>/archive/   # archived artifacts
 ```
 
-Directories are created automatically by `blueprint create`.
+Legacy `spec/` and `plan/` directories remain readable, findable, and
+archivable. Do not create new files in them.
 
 ## Artifact Roles
 
-Use `spec/` for research-backed proposal specs: the durable source of
-truth for a new product, architecture, or workflow decision. A spec
-blueprint may include a `## Plan` section with execution phases; it does
-not need a separate `plan/` file just to be implementable.
-
-Use `plan/` for tactical execution artifacts derived from existing
-context: fix batches, PR feedback, debug plans, response drafts,
-split-commit plans, and pipeline trackers.
-
-`/skill:implement` may consume approved blueprints from either `spec/`
-or `plan/`. The directory identifies artifact role; frontmatter status
-identifies whether it is approved for execution.
+- `proposal/`: one decision and implementation approach. Required sections:
+  `Decision`, `Evidence`, `Approach`, `Acceptance Criteria`, and
+  `Implementation Notes`. States: `draft -> approved -> complete`.
+- `review/`: stable findings and their resolutions. Generated reviews are
+  complete artifacts; resolution progress belongs in the body.
+- `report/`: completed context, diagnosis, simplification, and execution
+  reports.
 
 ## Human Review
 
-For non-auto workflows, blueprints are the review artifact. After every
-review-state write, report the path and status, then wait for the user to
-review locally and reply in chat with approval or feedback. Do not infer
-approval from silence or ambiguous replies.
+Research has one approval boundary. A new proposal is `draft`. Either an
+explicit approval response or invoking `$implement <proposal>` authorizes the
+work and advances it to `approved`. Feedback revises the same proposal.
 
-Use explicit approval phrases such as `approve`, `approved`, `lgtm`, or
-`ship it` before advancing a blueprint to an approved status.
+## Naming And Writes
 
-## Naming
+Files use `<epoch>-<slug>.md`. Generate slugs with:
 
-All files use `<epoch>-<slug>.md` where epoch is Unix seconds
-(e.g., `1711324800-my-feature.md`). No skill-specific prefixes.
+```sh
+blueprint slug "<text>"
+```
 
-Generate slugs via `blueprint slug "<text>"`.
-
-## Commit-on-Write
-
-Fires after every blueprint file write or move (not just at skill
-completion):
+After each artifact write, status change, or move:
 
 ```sh
 blueprint commit <type> <slug>
 ```
 
-If `blueprint commit` exits non-zero, STOP and alert the user
-with the error output. Blueprint data may be at risk.
-
-## Archive Protocol
-
-Archival is manual. Use `/archive` to move a blueprint to
-`archive/` when it is no longer needed in its active directory.
+If commit fails, stop and show the error. Archive only when explicitly asked:
 
 ```sh
-blueprint archive <slug>
-# or for most recent:
-blueprint archive
+blueprint archive [slug]
 ```
 
 ## Linking
 
-Use `source` frontmatter to connect related blueprints:
-
-```yaml
----
-source: "[[1711324800-my-feature]]"
----
-```
-
-- `source`: Obsidian wikilink to the blueprint that triggered this one
-- Only added by skills that discover a prior blueprint (review,
-  report, fix)
-- Obsidian resolves bare filenames across vault directories — no
-  path prefix needed
-- Creates a directed graph: spec <- review <- fix plan <- report
-
-Skills can add/update source links via:
+Use `source` only when one artifact derives from another:
 
 ```sh
 blueprint link "$file" "<source-slug>"
 ```
+
+Obsidian resolves the stored bare filename wikilink across directories.

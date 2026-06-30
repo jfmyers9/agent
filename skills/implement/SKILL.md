@@ -1,132 +1,72 @@
 ---
 name: implement
 description: >
-  Execute approved implementation plans from blueprint files. Triggers:
-  'implement', 'build this', 'execute plan', 'start work'.
+  Implement requested work from freeform instructions or an existing proposal,
+  review, or legacy blueprint. Use when the user asks to build or change code.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
-argument-hint: "[blueprint-slug-or-path] [--no-report]"
+argument-hint: "[instructions|blueprint-slug-or-path]"
 ---
 
 # Implement
 
-Implement an approved blueprint. The blueprint is the durable source of
-truth and the execution plan.
+Implement freeform work or an existing artifact. Blueprints are optional input.
 
-@rules/blueprints.md, @rules/human-approval.md,
-@rules/harness-compat.md, and @rules/artifact-readability.md apply.
+@rules/blueprints.md, @rules/harness-compat.md, and
+@rules/artifact-readability.md apply.
 
-## Arguments
+## Inputs
 
-- `[blueprint-slug-or-path]` — optional spec/plan/review blueprint
-- `--no-report` — skip automatic report generation
+- Freeform request — use the conversation as the execution source.
+- File path — read that proposal, review, report, or legacy blueprint.
+- Slug — resolve with
+  `blueprint find --type proposal,review,report,spec,plan --match <slug>`.
+- No artifact — proceed directly; do not search for or create one.
+
+Explicitly invoking this skill with a draft proposal authorizes it. Set the
+proposal to `approved` and commit before source edits. Reviews and legacy
+artifacts require no particular status; explicit implementation is sufficient
+authorization.
 
 ## Workflow
 
-### 1. Resolve Blueprint
+### 1. Bound Work
 
-- If an explicit file path exists, use it.
-- Else if an argument remains, run:
-  `blueprint find --type plan,spec,review --match <arg>`
-- Else run: `blueprint find --type plan,spec,review`
-- Select the most recent file whose frontmatter status is `approved`.
-- If none exists, stop and suggest `/skill:research` or
-  `/skill:research --continue` for pending `spec_review`/`plan_review`
-  blueprints.
+Inspect `git status --short`, read referenced files, and extract required
+changes plus acceptance checks. For a review, implement actionable unresolved
+findings. For freeform work, derive the smallest safe execution sequence.
 
-Read the file and skip YAML frontmatter. Do not execute `draft`,
-`spec_review`, `spec_approved`, or `plan_review` content by default.
+### 2. Implement
 
-If the user explicitly requested an unapproved file or slug, do not make
-code changes. Report the blueprint path and status, ask the user to
-review it locally, and wait for explicit chat approval or feedback.
+For each cohesive change:
 
-### 2. Parse Plan
+1. Read affected code and tests.
+2. Make the smallest complete change.
+3. Preserve unrelated user changes.
+4. Run the narrowest useful verification, then broader checks as risk warrants.
 
-Parse phases from the blueprint body:
+Stop and report genuine blockers. Do not create a tracker or report artifact.
 
-- `**Phase N: ...**`
-- `### Phase N: ...`
-- `## Phase N: ...`
+### 3. Update Source Artifact When Present
 
-If no phases exist, treat the entire `## Plan`, `## Feedback Analysis`,
-or `## Findings` section as one phase.
+- Proposal: append concise changes and verification under
+  `## Implementation Notes`; set `complete` only after all criteria pass.
+- Review: leave finding resolution updates to `fix`, unless implementation was
+  explicitly invoked on that review; then add/update its resolution table.
+- Legacy spec/plan: append implementation notes and preserve readable legacy
+  status behavior.
 
-Each phase should provide:
+Commit each artifact write with its artifact type.
 
-- phase title
-- referenced files
-- required changes
-- verification command/check
+### 4. Report
 
-For multi-phase plans, derive an execution map before editing:
-
-| Phase / Task | Files | True blockers | Can run independently? | Verify |
-| ------------ | ----- | ------------- | ---------------------- | ------ |
-
-True blockers exist only when a later task needs files, APIs, schemas,
-types, behavior, or verification output from an earlier task. Phase numbers
-alone do not make a dependency.
-
-### 3. Implement Work
-
-For each phase, in order:
-
-1. Read referenced files first.
-2. Make the smallest change that satisfies the phase.
-3. Stay within files named or clearly implied by the blueprint.
-4. Run the phase verification if specified.
-5. If no verification is specified, run the smallest relevant test,
-   typecheck, lint, or smoke command available.
-6. Append/update an `## Implementation Notes` section in the blueprint:
-
-   ```markdown
-   ## Implementation Notes
-
-   ### Execution Map
-
-   | Phase / Task | Files | True blockers | Can run independently? | Verify |
-   | ------------ | ----- | ------------- | ---------------------- | ------ |
-
-   ### Phase N: <title>
-
-   - Status: complete | blocked
-   - Files changed: <paths>
-   - Verification: <command> — <result>
-   - Notes: <deviations or blockers>
-   ```
-
-7. Run `blueprint commit <type> <slug>` after the blueprint write.
-
-If a phase is blocked, stop after recording the blocker.
-
-### 4. Complete Blueprint
-
-When all phases are complete:
-
-```bash
-blueprint status "$file" complete
-blueprint commit <type> <slug>
-```
-
-Unless `--no-report` was passed, read `skills/report/SKILL.md` and
-follow it to create a report blueprint.
-
-### 5. Report
-
-Show:
-
-- blueprint path
-- phases completed / blocked
-- files changed
-- verification commands and results
-- next step: `/skill:review`, `/skill:commit`, or blocker details
+Return files changed, verification commands/results, and any remaining work.
+Suggest `$review` or `$commit` when useful. Generate a report artifact only
+when the user invokes `$report`.
 
 ## Rules
 
-- Execute only approved blueprints.
-- Use explicit chat approval for unapproved blueprints before code
-  changes.
-- Do not create harness-native task/team/subagent state.
-- Do not spawn subagents or teams.
-- Prefer vertical, testable changes.
-- Preserve user changes; inspect `git status` before large edits.
+- Freeform implementation requires no blueprint.
+- A named proposal or review constrains scope but does not replace source
+  inspection.
+- Revalidate findings before changing code.
+- Do not create harness-native durable state.

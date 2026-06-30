@@ -66,21 +66,21 @@ Portable across harnesses:
 - `AGENTS.md` — global instructions
 - `rules/*.md` — style, tests, comments, PR workflow, context budget
 - `skills/*/SKILL.md` — Agent Skills-compatible workflow packages
-- `bin/blueprint` — file-backed specs, plans, reviews, reports
+- `bin/blueprint` — opt-in proposals, reviews, and reports
 
-Blueprints are the portable source of truth for long-lived state.
-Research-backed proposals live in `spec/` and may include their own
-`## Plan` execution section. Tactical fix/debug/PR plans live in
-`plan/`:
+Blueprints are durable artifacts created only by explicitly invoked artifact
+skills. Ordinary coding and PR workflows do not create them:
 
 ```sh
-blueprint create spec "topic"
-blueprint create plan "fix or PR feedback topic"
+blueprint create proposal "topic"
 blueprint create review "topic"
 blueprint create report "topic"
-blueprint find --type plan,spec,review
+blueprint find --type proposal,review,report
 blueprint archive <slug>
 ```
+
+New `spec` and `plan` creation is rejected. Existing files remain findable and
+archivable for compatibility.
 
 ## Claude Code adapter
 
@@ -95,8 +95,8 @@ Claude-specific features retained outside shared skills:
 - Claude Code hooks and statusline protocol
 - Claude plugin settings
 
-Shared skills intentionally avoid native task/team paths and use
-blueprints for durable workflow state in every harness.
+Shared skills avoid native task/team dependencies. Blueprints remain optional
+unless an artifact skill is explicitly invoked.
 
 ## Pi adapter
 
@@ -142,19 +142,12 @@ installed through Codex's user skill path and can be invoked with
 
 ## Portability status
 
-Shared skills use blueprints for durable state and avoid native
-Task/Team orchestration paths.
+Manual artifact skills: `context`, `research`, `review`, `diagnose`,
+`acceptance`, `simplify`, `report`, and `archive`.
 
-Blueprint-backed workflow skills:
-
-- `research`, `implement`, `review`, `fix`, `vibe`
-- `acceptance`, `split-commit`, `debug`, `respond`, `pr-plan`,
-  `resume-work`, `report`, `archive`
-
-Direct-action / utility skills:
-
-- `commit`, `daily`, `gt`, `start`, `submit`, `refine`,
-  `git-surgeon`, `writing-skills`
+Direct workflows may consume artifacts but do not require or create trackers:
+`implement`, `fix`, `debug`, `pr-plan`, `respond`, `split-commit`, `vibe`, and
+`resume-work`.
 
 ## Rules
 

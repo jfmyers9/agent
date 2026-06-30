@@ -1,10 +1,10 @@
 ---
 name: context
 description: >
-  Map a codebase, subsystem, feature area, path set, or symbol into a durable
-  blueprint report for future reference or handoff to research, debug, review,
-  or implementation workflows. Triggers: 'get context', 'map codebase',
-  'codebase overview', 'understand this area', 'context report'.
+  Create a durable codebase context report. Invoke only as /skill:context or
+  $context when a persistent mapping artifact is wanted.
+disable-model-invocation: true
+user-invocable: true
 allowed-tools: Bash, Read, Glob, Grep
 argument-hint: "<scope> [--depth quick|medium|high|max] [--for general|research|debug|implement|review] [--continue] [--update <slug>] [--link <slug>]"
 ---
@@ -37,7 +37,8 @@ Create a durable codebase-context blueprint report.
   `blueprint find --type report --match <slug>`. Preserve durable notes that
   are still true, refresh snapshot metadata, and mark stale claims explicitly.
 - For `--link <slug>`, resolve the source blueprint with
-  `blueprint find --type spec,plan,review,report --match <slug>` and link it
+  `blueprint find --type proposal,review,report,spec,plan --match <slug>` and
+  link it
   after creating the context report.
 - For new work, derive the scope from arguments. If no scope is provided,
   inspect the repository root, README, project metadata, and top-level tree to

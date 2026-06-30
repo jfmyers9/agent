@@ -33,4 +33,5 @@ Create a new Graphite branch.
 
 5. **Confirm completion**
    - Report branch created
-   - Suggest: `/skill:research` to plan work or `/skill:implement` to start building
+   - Suggest `/skill:implement` to start building. Mention `/skill:research`
+     only when the user wants a durable proposal.

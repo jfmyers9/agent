@@ -1,9 +1,9 @@
 ---
 name: archive
 description: >
-  Archive a blueprint file. Moves the most recent (or specified)
-  plan file to archive/ and commits. Triggers: /archive,
-  "archive this blueprint", "archive plan".
+  Archive a durable artifact. Invoke only as /skill:archive or $archive.
+disable-model-invocation: true
+user-invocable: true
 allowed-tools: Bash, Glob
 argument-hint: "[slug]"
 ---

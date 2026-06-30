@@ -12,7 +12,7 @@ Usage: blueprint <command> [args...]
 Commands:
   project             Derive project name from git remote or directory
   slug <text>         Generate a URL-safe slug from text
-  create <type> <topic> [--status S] [--source SLUG] [--depth D] [--branch B]
+  create <proposal|review|report> <topic> [--status S] [--source SLUG] [--depth D] [--branch B]
                       Create a new blueprint file
   commit <type> <slug>
                       Commit and push blueprint changes
@@ -101,13 +101,25 @@ cmd_slug() {
 # Create a new blueprint file.
 cmd_create() {
     if [ $# -lt 2 ]; then
-        echo "Usage: blueprint create <type> <topic> [--status S] [--source SLUG] [--depth D] [--branch B]" >&2
+        echo "Usage: blueprint create <proposal|review|report> <topic> [--status S] [--source SLUG] [--depth D] [--branch B]" >&2
         exit 1
     fi
 
     bp_type="$1"
     bp_topic="$2"
     shift 2
+
+    case "$bp_type" in
+        proposal|review|report) ;;
+        spec|plan)
+            echo "Error: cannot create legacy '$bp_type' blueprints. Use 'blueprint create proposal <topic>'; existing $bp_type files remain discoverable." >&2
+            exit 1
+            ;;
+        *)
+            echo "Error: invalid blueprint type '$bp_type'. Must be one of: proposal, review, report" >&2
+            exit 1
+            ;;
+    esac
 
     # Defaults
     bp_status="draft"
@@ -128,6 +140,16 @@ cmd_create() {
                 ;;
         esac
     done
+
+    if [ "$bp_type" = "proposal" ]; then
+        case "$bp_status" in
+            draft|approved|complete) ;;
+            *)
+                echo "Error: invalid proposal status '$bp_status'. Must be one of: draft, approved, complete" >&2
+                exit 1
+                ;;
+        esac
+    fi
 
     bp_project="$(cmd_project)"
     bp_slug="$(cmd_slug "$bp_topic")"
@@ -156,6 +178,18 @@ cmd_create() {
         fi
         echo "---"
         echo ""
+        if [ "$bp_type" = "proposal" ]; then
+            echo "## Decision"
+            echo ""
+            echo "## Evidence"
+            echo ""
+            echo "## Approach"
+            echo ""
+            echo "## Acceptance Criteria"
+            echo ""
+            echo "## Implementation Notes"
+            echo ""
+        fi
     } > "$bp_file"
 
     printf '%s\n' "$bp_file"
@@ -203,12 +237,23 @@ cmd_status() {
     fi
 
     case "$new_status" in
-        draft|spec_review|spec_approved|plan_review|approved|complete) ;;
+        draft|spec_"review"|spec_"approved"|plan_"review"|approved|complete) ;;
         *)
-            echo "Error: invalid status '$new_status'. Must be one of: draft, spec_review, spec_approved, plan_review, approved, complete" >&2
+            echo "Error: invalid status '$new_status'. Use draft, approved, complete, or a supported legacy status" >&2
             exit 1
             ;;
     esac
+
+    status_type="$(basename "$(dirname "$status_file")")"
+    if [ "$status_type" = "proposal" ]; then
+        case "$new_status" in
+            draft|approved|complete) ;;
+            *)
+                echo "Error: invalid proposal status '$new_status'. Must be one of: draft, approved, complete" >&2
+                exit 1
+                ;;
+        esac
+    fi
 
     # Replace status line only within YAML frontmatter (between first --- pair)
     awk -v ns="$new_status" '
@@ -223,7 +268,7 @@ cmd_status() {
 # Find blueprints matching criteria. Returns most recent match.
 cmd_find() {
     find_project="$(cmd_project)"
-    find_types="spec,plan,review,report"
+    find_types="proposal,review,report,spec,plan"
     find_match=""
 
     while [ $# -gt 0 ]; do
@@ -286,7 +331,7 @@ cmd_archive() {
 
     if [ $# -ge 1 ] && [ -n "$1" ]; then
         # Search for file matching slug across active directories
-        for d in spec plan review report; do
+        for d in proposal review report spec plan; do
             dir="$BLUEPRINT_DIR/$project/$d"
             [ -d "$dir" ] || continue
             for f in "$dir"/*"$1"*.md; do
@@ -298,7 +343,7 @@ cmd_archive() {
     else
         # Find most recent file across active directories
         all_files=""
-        for d in spec plan review report; do
+        for d in proposal review report spec plan; do
             dir="$BLUEPRINT_DIR/$project/$d"
             [ -d "$dir" ] || continue
             for f in "$dir"/*.md; do
@@ -307,7 +352,7 @@ cmd_archive() {
             done
         done
         if [ -n "$all_files" ]; then
-            # shellcheck disable=SC2086
+            # shellcheck disable=SC2012,SC2086
             archive_target="$(ls -t $all_files 2>/dev/null | head -1)"
         fi
     fi
@@ -386,10 +431,18 @@ cmd_validate() {
 
     # 6. Under BLUEPRINT_DIR in recognized structure
     realvf="$(cd "$(dirname "$vf")" && pwd)/$(basename "$vf")"
+    vf_type="$(basename "$(dirname "$realvf")")"
     case "$realvf" in
         "$BLUEPRINT_DIR"/*/*/*.md) ;;
         *)
             errors="${errors}file not under blueprint directory structure
+"
+            ;;
+    esac
+    case "$vf_type" in
+        proposal|review|report|spec|plan|archive) ;;
+        *)
+            errors="${errors}unrecognized blueprint directory: ${vf_type}
 "
             ;;
     esac

@@ -1,9 +1,10 @@
 ---
 name: diagnose
 description: >
-  Read-only diagnosis for bugs, incidents, CI failures, and confusing system
-  behavior. Produces blueprint-backed root-cause reports before fixes.
-  Triggers: 'diagnose', 'root cause', 'investigate failure'.
+  Create a durable read-only root-cause report. Invoke only as /skill:diagnose
+  or $diagnose when a persistent diagnosis artifact is wanted.
+disable-model-invocation: true
+user-invocable: true
 allowed-tools: Bash, Read, Write, Glob, Grep
 argument-hint: "<problem-description|blueprint-slug> [--continue]"
 ---

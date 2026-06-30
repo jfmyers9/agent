@@ -10,8 +10,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 # Writing Skills
 
-Create portable Agent Skills that use blueprints for durable workflow
-state.
+Create portable Agent Skills with opt-in durable artifact behavior.
 
 @rules/harness-compat.md applies.
 
@@ -30,9 +29,9 @@ Extract skill name and brief description. Ask if either is missing.
 
 If unclear, ask:
 
-- trigger phrases for `description`
+- exact use context for `description`
 - arguments / flags
-- whether the skill creates blueprint state
+- whether explicit invocation should create a durable artifact
 - expected output format
 
 ### 3. Reference Existing Skills
@@ -58,8 +57,7 @@ Write `skills/{skill-name}/SKILL.md`:
 ---
 name: {skill-name}
 description: >
-  {What it does + when to use.}
-  Triggers: '{trigger1}', '{trigger2}'.
+  {Specific capability and exact use context.}
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 argument-hint: "{args}"
 ---
@@ -86,7 +84,7 @@ argument-hint: "{args}"
 
 - `name` matches directory
 - name is lowercase kebab-case
-- description uses folded scalar `>` and includes triggers
+- description uses folded scalar `>` and names a narrow invocation context
 - `allowed-tools` is minimal and portable
 - title is the skill name only, no suffixes
 - `## Arguments` exists when `argument-hint` exists
@@ -108,19 +106,21 @@ Do not add harness-native task/team/subagent tools to shared skills.
 
 ## Blueprint Integration
 
-Skills that create durable work should use blueprints.
+Only explicitly invoked artifact skills should create blueprints. Add
+`disable-model-invocation: true` and `user-invocable: true` when the skill must
+never route from ordinary conversation.
 
 Common patterns:
 
 ```bash
-file=$(blueprint create spec "<topic>" --status draft)
-file=$(blueprint create plan "<topic>" --status draft)
-file=$(blueprint create review "<topic>" --status draft)
+file=$(blueprint create proposal "<topic>" --status draft)
+file=$(blueprint create review "<topic>" --status complete)
 file=$(blueprint create report "<topic>" --status complete)
 blueprint link "$file" "<source-slug>"
 blueprint status "$file" complete
 blueprint commit <type> <slug>
 ```
 
-Use blueprint body sections for design, findings, notes, and resume
-state. Use frontmatter `status:` for progress.
+Proposals use `Decision`, `Evidence`, `Approach`, `Acceptance Criteria`, and
+`Implementation Notes`, with `draft -> approved -> complete`. Reviews and
+reports are complete when generated; resolution state belongs in the body.

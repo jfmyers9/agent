@@ -7,9 +7,5 @@ instructions live in `AGENTS.md`.
 
 ## Claude Code Task Compatibility
 
-When using Claude Code native tasks, mirror portable blueprint state:
-
-- Exploration plans: task `metadata.design`
-- Review summaries: task `metadata.notes`
-- Task state: task `status` field
-- View: `TaskGet(taskId)`
+Native tasks may track session-local work. Do not mirror them into blueprints
+unless the user explicitly requests a durable artifact skill.
