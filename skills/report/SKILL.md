@@ -1,145 +1,124 @@
 ---
 name: report
 description: >
-  Create a durable post-implementation execution report. Invoke only as
-  /skill:report or $report when a persistent report is wanted.
+  Create a durable post-implementation report from a committed branch diff and
+  its verification evidence. Invoke only as /skill:report or $report when a
+  persistent execution record is wanted.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash, Read, Write, Glob, Grep
-argument-hint: "[--branch <name>]"
+argument-hint: "[--branch <name>] [--proposal <slug-or-path>]"
 ---
 
 # Report
 
-Generate a post-implementation execution report and write it to
-the blueprints repo.
+Summarize committed implementation work and store an evidence-backed report
+blueprint.
+
+@rules/blueprints.md, @rules/harness-compat.md, and
+@rules/artifact-readability.md apply.
+
+Keep generated frontmatter intact and write the body below its closing `---`.
+Immediately before committing, run `blueprint validate "$file"` and inspect the
+entire blueprint repository. Stop if its index is nonempty or the current
+project has changes outside `$file`: `blueprint commit` stages the project
+subtree and commits the existing index.
 
 ## Arguments
 
-- No args: auto-detect from current branch
-- `--branch <name>`: override branch detection
+- No arguments — report the current branch.
+- `--branch <name>` — report another local branch without checking it out.
+- `--proposal <slug-or-path>` — compare the implementation with an explicit
+  source proposal.
 
-## Steps
+## Workflow
 
-### 1. Derive Project
+### 1. Resolve The Commit Range
 
-```bash
-project=$(blueprint project)
-```
+Resolve the branch from `--branch` or `git branch --show-current`, and verify
+that the ref exists. Resolve trunk from configured Graphite metadata, then the
+remote default branch, then an existing `main` or `master` ref. Record the
+exact refs used.
 
-### 2. Detect Branches
+Use `<trunk>..<branch>` for commits and the merge-base range
+`<trunk>...<branch>` for the implementation diff. If the commit range is empty,
+return `No implementation commits found on <branch>` and stop without creating
+a report.
 
-```bash
-trunk=$(gt trunk 2>/dev/null || echo main)
-branch=$(git branch --show-current)
-```
+Inspect `git status --short`. The report covers committed changes; list
+relevant uncommitted changes under watchouts rather than implying they are in
+the diff.
 
-Parse `$ARGUMENTS` for `--branch <name>` — if present, override
-`$branch`.
+### 2. Resolve An Optional Source Proposal
 
-### 3. Check for Commits
+- With `--proposal`, store and read the existing path as `source_file`, or
+  resolve one unambiguous `source_file` with
+  `blueprint find --type proposal --match <slug>`.
+- Without `--proposal`, derive the branch slug with `blueprint slug "$branch"`
+  and store the matching proposal as `source_file` only when its filename/topic
+  and intent clearly match the branch. Do not run an unfiltered proposal search
+  or attach a merely recent artifact.
+- When a source is used, extract its decision, approach, acceptance criteria,
+  and implementation notes for comparison.
 
-```bash
-git log --oneline "$trunk".."$branch"
-```
+No source proposal is a normal outcome.
 
-If empty (trunk == HEAD), report "No implementation commits found
-on `$branch`" and **stop**.
+### 3. Gather Implementation Evidence
 
-### 4. Gather Git Data
-
-Run in parallel:
-
-```bash
-# Commit list
-git log --oneline "$trunk".."$branch"
-```
-
-```bash
-# Diff stats
-git diff --stat "$trunk".."$branch"
-```
+Run bounded independent reads in parallel when possible:
 
 ```bash
-# Created files
-git diff --diff-filter=A --name-only "$trunk".."$branch"
+git log --format='%h%x09%s' <trunk>..<branch>
+git diff --stat <trunk>...<branch>
+git diff --name-status <trunk>...<branch>
+git diff --numstat <trunk>...<branch>
 ```
+
+Inspect enough of the changed code and tests to explain what the commits
+actually implement. Collect available verification from executed checks, CI,
+and source proposal implementation notes. Never infer a passing check from
+file names or commit messages; mark unavailable evidence as not verified.
+
+### 4. Write The Complete Report
 
 ```bash
-# Modified files
-git diff --diff-filter=M --name-only "$trunk".."$branch"
+file=$(blueprint create report "Report: <branch>" --status complete --branch "$branch")
 ```
+
+When the source proposal is a blueprint, link it:
 
 ```bash
-# Deleted files
-git diff --diff-filter=D --name-only "$trunk".."$branch"
+source_slug=$(basename "$source_file" .md)
+blueprint link "$file" "$source_slug"
 ```
 
-### 5. Find Source Proposal (Optional)
+Write these sections in order:
 
-```bash
-source_file=$(blueprint find --type proposal,spec,plan)
-```
+1. `## Summary` — editorial overview of the delivered behavior and scope, based
+   on the diff rather than a restated commit log.
+2. `## Snapshot` — branch, trunk/base ref, head SHA, commit range, and relevant
+   working-tree state.
+3. `## Human-Readable Map` — include a small diagram and trace only when the
+   implementation changes non-trivial architecture or cross-boundary flow;
+   otherwise state why it is omitted.
+4. `## Commits` — `Hash` and `Message` table, one row per commit.
+5. `## Files Changed` — `Created`, `Modified`, `Deleted`, and `Renamed` path
+   lists; omit empty groups.
+6. `## Stats` — file count and added/removed lines; identify binary changes
+   separately instead of treating `-` as a number.
+7. `## Verification` — command/check, result, and evidence label. State
+   explicitly when verification was not run or could not be confirmed.
+8. `## Proposal vs Reality` — only when a source proposal was used. Map each
+   criterion and material approach item to `met`, `partial`, `not met`, or
+   `not verified`, with evidence and deviations.
+9. `## Watchouts` — uncommitted work, deviations, failed work, edge cases, and
+   follow-ups. Write `None.` only after checking each category.
 
-If found, extract `$SOURCE_SLUG`: `SOURCE_SLUG=$(basename "$source_file" .md)`
+Keep raw logs out of the report and avoid claims stronger than the available
+evidence.
 
-Read it and extract acceptance criteria and approach headings for
-proposal-vs-reality mapping.
+### 5. Commit And Report
 
-### 6. Generate Slug
-
-```bash
-slug=$(blueprint slug "$branch")
-```
-
-### 7. Write Report
-
-Create the report file:
-```bash
-file=$(blueprint create report "Report: <branch name>" --status complete --branch "$branch")
-```
-If a source artifact was found in step 5:
-```bash
-blueprint link "$file" "$SOURCE_SLUG"
-```
-
-Write the body content into `$file` (append after frontmatter).
-
-**Body sections** (in order):
-
-- **Summary** — 2-3 sentence editorial overview of what was
-  implemented. Curate context, don't just echo the git log.
-
-- **Commits** — table with columns: Hash, Message. One row per
-  commit.
-
-- **Files Changed** — three sublists: Created, Modified, Deleted.
-  Each shows file paths. Omit empty sublists.
-
-- **Stats** — lines added/removed, file count. From diff stats.
-
-- **Proposal vs Reality** (only if a source was found) — each criterion or
-  approach item mapped to completed, partial, or skipped. Brief
-  note on deviations.
-
-- **Watchouts** — prose on deviations, stuck or failed work, edge cases
-  discovered during implementation, and follow-up suggestions. If nothing
-  notable, write "None."
-
-### 8. Commit-on-Write
-
-Per @rules/blueprints.md:
-
-```sh
-blueprint commit report <slug>
-```
-
-If `blueprint commit` exits non-zero, STOP and alert the user
-with the error output.
-
-### 9. Report to User
-
-Show:
-- Report file path
-- Commit count, files changed, lines added/removed
-- Link to source proposal if one was used
+Run `blueprint commit report <slug>`. Stop and show the error if it fails.
+Return the report path, commit count, file count, added/removed lines,
+verification summary, and source proposal path when one was used.

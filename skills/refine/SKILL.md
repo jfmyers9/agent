@@ -1,74 +1,79 @@
 ---
 name: refine
 description: >
-  Simplify code + improve comments in uncommitted changes. Use `simplify`
-  for read-only blueprint/design simplification reports.
-  Triggers: 'refine', 'clean up code', 'simplify changes'.
+  Simplify code and improve comments only within uncommitted code changes. Use
+  for requests to refine, clean up, or simplify the current diff; use simplify
+  for a read-only design or blueprint simplification report.
 allowed-tools: Bash, Read, Edit, Glob, Grep
 argument-hint: "[file-pattern]"
 ---
 
 # Refine
 
-Polish uncommitted changes: simplify code, improve comments.
-
-For design documents, blueprints, or plans that should not be edited, use
-`/skill:simplify` instead. This skill edits only uncommitted code changes.
+Improve the clarity of uncommitted code without changing behavior or expanding
+scope.
 
 ## Arguments
 
-- `<file-pattern>` — limit to matching files (glob or path)
+- `[file-pattern]` — optional path or glob limiting the changed files to refine.
 
-## Steps
+## Workflow
 
-### 1. Identify Files
+### 1. Identify Eligible Hunks
 
-- If `$ARGUMENTS`: use as file pattern
-- Otherwise: `git diff --name-only` + `git diff --cached --name-only`
-- Filter to code files (exclude config, lock, generated)
-- No files → inform + exit
+Read repository instructions and inspect `git status --short`, staged and
+unstaged diffs, and relevant untracked code files. If a pattern was supplied,
+intersect it with those changes. Exclude generated, vendored, lock, and
+configuration files unless the user explicitly included them.
 
-### 2. Read Files (parallel)
+Operate only on code lines already changed and the minimum surrounding code
+needed to keep the edit coherent. Do not treat an entire changed file as
+authorized refactor scope. If no eligible hunks remain, report that and stop.
 
-Read all identified files.
+### 2. Read Context
 
-### 3. Analyze + Apply
+Read each eligible diff plus enough callers, types, and tests to preserve its
+behavior. Batch independent reads when supported, but do not load entire large
+files when targeted ranges answer the question.
 
-For each file, find and fix:
+### 3. Simplify Code
 
-**Simplify code** — apply standard simplification patterns
-(guard clauses, naming, single-responsibility, etc).
+Apply only clear, local improvements such as:
 
-**Improve comments:**
-- Remove code-restating comments ("increment counter",
-  "loop through items", "return result")
-- Remove contextless TODOs
-- Keep: why-explanations, edge case warnings, business logic,
-  perf constraints
-- Update inaccurate/outdated comments (don't remove)
+- flattening needless nesting with guard clauses;
+- replacing duplicated local logic with an existing nearby helper;
+- choosing names that expose intent;
+- removing dead code introduced by the current change; and
+- reducing accidental complexity without adding an abstraction.
 
-**Doc comments** (JSDoc, docstrings, GoDoc, RustDoc):
-- Preserve by default — consumed by tools + IDEs
-- Remove only if vacuous (empty, or restates signature with
-  zero info)
-- If inaccurate → update, don't remove
+Keep public APIs, error behavior, ordering, performance constraints, and side
+effects unchanged. Do not add features, migrations, compatibility shims, error
+handling, dependencies, or speculative extensibility.
 
-### 4. Verify
+### 4. Improve Comments
 
-Check syntax after changes (linter/parser). Revert + note
-if verification fails.
+- Remove comments that merely narrate syntax or repeat the code.
+- Remove contextless TODOs introduced by the change.
+- Preserve explanations of intent, business rules, edge cases, invariants,
+  security constraints, and non-obvious performance decisions.
+- Update inaccurate comments instead of deleting useful context.
+- Preserve doc comments by default because tools and IDEs consume them. Remove
+  one only when it is empty or adds nothing beyond the signature.
+- Do not add comments to unchanged code.
 
-### 5. Summary
+### 5. Verify
 
-Per file: simplifications applied, comments removed/improved.
-Offer `git diff` to review.
+Inspect the refined diff to confirm every edit stays within scope and remains
+behavior-preserving. Run the narrowest relevant formatter, parser, linter, type
+check, or test. Use a formatter only when it can stay within scope, and remove
+any unrelated formatting churn. If verification fails because of a refinement,
+correct it or revert only that refinement edit; never discard the user's
+pre-existing hunk.
 
-## Boundaries
+### 6. Report
 
-Do NOT:
-- Add features or change behavior
-- Add error handling or abstractions
-- Add comments to unchanged code
-- Touch code outside the diff
-- Refactor beyond uncommitted changes
-- Produce design/blueprint simplification reports; use `simplify` for that
+Return the files and simplifications, comment changes, and verification results.
+Do not stage, commit, or create a blueprint.
+
+For a design document, blueprint, or plan that should remain unchanged, use the
+explicit `simplify` artifact skill instead.

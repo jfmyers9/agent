@@ -1,7 +1,8 @@
 ---
 name: submit
 description: >
-  Sync branches and create/update PRs via Graphite.
+  Restack Graphite branches and create or update their pull requests when the
+  user asks to submit, push, or create a PR. Leaves new PRs in draft by default.
   Triggers: /submit, "submit PR", "push branch", "create PR".
 allowed-tools: Bash
 argument-hint: "[--stack] [--sync-only] [--ready]"
@@ -9,36 +10,43 @@ argument-hint: "[--stack] [--sync-only] [--ready]"
 
 # Submit
 
-Sync branches and create/update PRs via Graphite.
+Prepare and submit the current Graphite branch or stack.
+
+@rules/pr-workflow.md and @rules/harness-compat.md apply.
 
 ## Arguments
 
-- `--stack` — submit entire stack, not just current branch
-- `--sync-only` — restack only, skip PR creation
-- `--ready` — mark PR as ready (not draft)
+- `--stack` — include descendants of the current branch
+- `--sync-only` — restack locally and stop without pushing or updating PRs
+- `--ready` — publish submitted PRs instead of leaving new PRs in draft
 
-## Steps
+`--sync-only` is retained as the public flag name, but it performs a Graphite
+restack; it does not run the repository-wide `gt sync` operation.
 
-1. **Verify clean working tree**
-   - Run `git status --porcelain`
-   - If output is non-empty → warn user about uncommitted changes and stop
+## Workflow
 
-2. **Restack branches**
-   - Run `gt restack --only`
-   - If exit code is non-zero → show error and stop
-
-3. **Check for sync-only mode**
-   - If `$ARGUMENTS` contains `--sync-only` → stop here (restack complete)
-
-4. **Build submit command**
-   - Base: `gt submit`
-   - If `$ARGUMENTS` contains `--stack` → add `--stack`
-   - If `$ARGUMENTS` contains `--ready` → add `--no-draft`
-   - Default: creates draft PR (no additional flags)
-
-5. **Execute submit**
-   - Run the constructed command
-   - Capture and display output
-
-6. **Show PR URLs**
-   - Extract and display PR URLs prominently from output
+1. Parse only the three supported flags. Reject unknown arguments and reject
+   `--ready` with `--sync-only` because no PR will be updated.
+2. Verify that `gt` is available and that the path from
+   `git rev-parse --git-path .graphite_repo_config` exists; do not invoke `gt`
+   merely as a detector. Verify the current branch is not trunk when a submit
+   is requested.
+3. Run `git status --short`. If the worktree or index is not clean, report the
+   files and stop before restacking.
+4. Restack with `gt restack --downstack --no-interactive` so the current branch
+   and every ancestor that `gt submit` may update are prepared. With `--stack`,
+   use `gt restack --no-interactive` to prepare descendants too. On conflicts,
+   show the affected branch and Graphite's recovery guidance, then stop without
+   submitting.
+5. If `--sync-only` was supplied, report the completed restack and stop.
+6. Build the submit command from explicit arguments:
+   - Start with `gt submit --no-stack --no-interactive --no-edit` so the default
+     cannot include descendants through prompts or configuration.
+   - Replace `--no-stack` with `--stack` only when requested.
+   - Add `--draft` by default so new PRs are drafts.
+   - Replace `--draft` with `--publish` only for explicit `--ready`.
+   - Never add `--force`; let Graphite use its guarded default update behavior.
+7. Run the command once. On failure, report the error without closing PRs,
+   deleting branches, force-pushing, or falling back to `gh pr create`.
+8. Display every PR URL reported by Graphite and summarize which branches were
+   created, updated, left draft, or published.

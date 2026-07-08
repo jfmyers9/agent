@@ -1,137 +1,123 @@
 ---
 name: git-surgeon
-description: "Non-interactive hunk-level git operations — stage, unstage, discard by hunk ID."
+description: >
+  Perform non-interactive hunk-level Git staging, unstaging, and explicitly
+  approved discards using ephemeral hunk IDs.
+allowed-tools: Bash, Write
 user-invocable: false
 ---
 
 # Git Surgeon
 
-Non-interactive hunk-level staging, unstaging, and discarding using
-standard git commands and `shasum` for hunk identification.
+Select text-diff hunks without opening an interactive Git prompt.
 
-## Hunk ID Generation
+## Safety And Scope
 
-Parse `git diff` (unstaged) or `git diff --cached` (staged) output.
-Each hunk begins with `@@ -a,b +c,d @@`. Generate a stable 7-char
-hex ID:
+- Preserve unrelated staged and unstaged changes.
+- Treat IDs as ephemeral: re-list hunks immediately before every operation.
+- Stage and unstage on request. Discard only when the user explicitly approves
+  the destructive operation against freshly listed IDs.
+- Do not apply hunk operations to binary files, submodules, untracked files, or
+  file-level rename, copy, and mode-only changes. Report the required file-level
+  operation instead.
+- Never commit; this skill changes only the index or working tree requested.
 
-```bash
-echo -n "<file-path>:<full-hunk-content>" | shasum | cut -c1-7
+## Build A Hunk Snapshot
+
+Use deterministic, color-free diffs:
+
+```sh
+# Unstaged: index -> working tree
+git diff --no-ext-diff --no-textconv --no-color --unified=3 --
+
+# Staged: HEAD -> index
+git diff --cached --no-ext-diff --no-textconv --no-color --unified=3 --
 ```
 
-Where `<full-hunk-content>` is everything from the `@@` line through
-the last line before the next hunk or file header.
+Parse paths from each `diff --git` record and preserve Git's exact file-header
+lines. Each hunk starts at `@@ -a,b +c,d @@` and ends before the next hunk or
+file record. The hunk content includes its `@@` header and every context and
+change line exactly as emitted.
 
-**Collision handling:** If two hunks produce the same ID, append
-`-2`, `-3`, etc. in order of appearance.
+For each hunk, hash the byte sequence `<view> NUL <path> NUL <hunk>` with
+`git hash-object --stdin` and use the first seven hexadecimal characters as its
+ID. Do not normalize whitespace or line endings. If IDs collide within one
+snapshot, suffix later occurrences with `-2`, `-3`, and so on.
 
-**IDs are ephemeral.** They shift whenever the diff changes. Always
-re-list before operating.
+List hunks in source order:
+
+```text
+ID       View       File                    Stats    Preview
+a1b2c3d  unstaged   src/auth.ts             +5/-2    + const token = sign(...)
+e4f5g6h  staged     src/auth.ts             +1/-1    - return null
+```
+
+Use the first added or removed source line as the preview; ignore file headers.
+Show the complete stored hunk, including its header and context, when asked for
+an ID.
+
+## Build A Selective Patch
+
+Resolve every requested ID against one fresh snapshot. For each affected file,
+copy its exact patch headers and only the selected hunks. A normal text patch
+must retain:
+
+1. `diff --git ...`;
+2. applicable metadata such as `index ...`;
+3. `--- ...` and `+++ ...`; and
+4. each selected `@@ ... @@` block with its exact content.
+
+Build one patch for all requested IDs so the operation can be checked and
+applied atomically. Do not interpolate patch text into a shell command; pass a
+temporary patch file to `git apply`.
 
 ## Operations
 
-### List Hunks
+### Stage
 
-Parse `git diff` output. For each hunk, extract file path, line
-stats, and first changed line as preview. Output a table:
+Source the patch from the unstaged snapshot, then run:
 
-```
-ID       File                    Stats    Preview
-a1b2c3d  src/auth.ts             +5/-2    + const token = jwt.sign(...)
-e4f5g6h  src/auth.ts             +1/-1    - return null
-1234567  lib/utils.py            +12/-0   + def retry(fn, attempts=3):
+```sh
+git apply --cached --check "$patch_file"
+git apply --cached "$patch_file"
 ```
 
-For staged hunks, use `git diff --cached` instead.
+This updates the index without rewriting the working tree.
 
-### Show Hunk
+### Unstage
 
-Given an ID from the list, display the full hunk diff content
-including the `@@` header and all context/change lines.
+Source the patch from the staged snapshot and reverse-apply it to the index:
 
-### Stage Hunk(s)
-
-Extract target hunk(s) as a valid patch and apply to the index:
-
-```bash
-# Build patch with required headers:
-# 1. diff --git a/<file> b/<file>
-# 2. --- a/<file>
-# 3. +++ b/<file>
-# 4. @@ ... @@ hunk header + content
-
-# Apply to index only (stages without modifying working tree)
-echo "$patch" | git apply --cached
+```sh
+git apply --cached --reverse --check "$patch_file"
+git apply --cached --reverse "$patch_file"
 ```
 
-The patch **must** include the `diff --git` header, `--- a/file` and
-`+++ b/file` lines, and the `@@ ... @@` hunk header with content.
-Without all four parts, `git apply` will reject it.
+This preserves the working-tree content.
 
-### Unstage Hunk(s)
+### Discard
 
-Same approach using staged diff as source, applied in reverse:
+After explicit approval, source the patch from the fresh unstaged snapshot and
+reverse-apply it to the working tree:
 
-```bash
-# Extract from staged diff
-git diff --cached -- <file>
-
-# Build patch for target hunk(s), then reverse-apply
-echo "$patch" | git apply --cached --reverse
+```sh
+git apply --reverse --check "$patch_file"
+git apply --reverse "$patch_file"
 ```
 
-### Discard Hunk(s)
+Discard is destructive and may be unrecoverable. Re-list immediately before
+applying; if an approved ID or its content changed, stop and request approval
+for the new IDs.
 
-Extract from working tree diff, reverse-apply to working tree:
+## Verify
 
-```bash
-# Extract from unstaged diff
-git diff -- <file>
+After any operation:
 
-# Build patch for target hunk(s), then reverse-apply to working tree
-echo "$patch" | git apply --reverse
-```
+1. remove the temporary patch file;
+2. inspect `git status --short`;
+3. inspect fresh staged and unstaged diffs for every affected file; and
+4. confirm that only the requested hunks moved or disappeared.
 
-**Warning:** Discard is destructive and cannot be undone.
-
-## Workflow Examples
-
-### Selective Staging
-
-```
-1. List hunks:        parse `git diff` → table with IDs
-2. Show hunk:         display full content of hunk `a1b2c3d`
-3. Stage hunk:        build patch for `a1b2c3d`, `git apply --cached`
-4. Commit:            `git commit -m "..."`
-```
-
-### Partial File (3 hunks, stage 2)
-
-```
-1. List hunks:        file shows 3 hunks: a1b2c3d, e4f5g6h, 1234567
-2. Stage two:         build combined patch with a1b2c3d + 1234567
-3. Verify:            `git diff --cached -- <file>` shows 2 hunks
-4. Commit:            staged hunks committed, e4f5g6h remains unstaged
-```
-
-### Unstage Mistake
-
-```
-1. List staged hunks: parse `git diff --cached` → table with IDs
-2. Identify mistake:  hunk e4f5g6h was staged by accident
-3. Unstage:           build patch from cached diff, `git apply --cached --reverse`
-4. Verify:            `git diff --cached` no longer shows that hunk
-```
-
-## Troubleshooting
-
-- **"ID not found"** — The diff changed since listing. Re-run list
-  to get current IDs.
-- **Duplicate IDs across files** — Collision handling adds `-2`,
-  `-3` suffixes. Use the suffixed ID.
-- **`git apply` fails** — Verify the patch includes all four
-  required parts: `diff --git` header, `---`/`+++` lines, and `@@`
-  hunk header with content. Missing any part causes rejection.
-- **Hunk won't apply after other operations** — Context lines may
-  have shifted. Re-list and re-extract the hunk from fresh diff
-  output.
+If `git apply --check` fails, do not retry with reduced context or force flags.
+Re-list, rebuild from the current diff, and report persistent failures. If an ID
+is missing, the diff changed; return the fresh list instead of guessing.

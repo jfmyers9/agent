@@ -1,126 +1,131 @@
 ---
 name: writing-skills
 description: >
-  Create new skills with proper structure + frontmatter.
-  Triggers: 'new skill', 'create a skill', 'write a skill',
-  'add skill for'.
-argument-hint: "<skill-name> <description>"
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+  Create or update repository Agent Skills with precise routing metadata,
+  portable tools, cohesive workflows, and verification. Use when asked to add,
+  rewrite, or improve a skill under `skills/`.
+argument-hint: "<skill-name-or-path> [description]"
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
 # Writing Skills
 
-Create portable Agent Skills with opt-in durable artifact behavior.
+Create or revise a portable skill without weakening its behavioral contracts.
 
-@rules/harness-compat.md applies.
-
-## Arguments
-
-- `<skill-name>` — kebab-case skill name
-- `<description>` — what the skill does
-
-## Steps
-
-### 1. Parse Arguments
-
-Extract skill name and brief description. Ask if either is missing.
-
-### 2. Gather Requirements
-
-If unclear, ask:
-
-- exact use context for `description`
-- arguments / flags
-- whether explicit invocation should create a durable artifact
-- expected output format
-
-### 3. Reference Existing Skills
-
-Read 2-3 nearby skills for conventions:
-
-```bash
-ls skills/*/SKILL.md
-```
-
-Match frontmatter style, heading structure, and concise imperative
-instructions.
-
-### 4. Create Skill File
-
-```bash
-mkdir -p skills/{skill-name}
-```
-
-Write `skills/{skill-name}/SKILL.md`:
-
-```markdown
----
-name: {skill-name}
-description: >
-  {Specific capability and exact use context.}
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep
-argument-hint: "{args}"
----
-
-# {Skill Title}
-
-{One-line imperative summary.}
-
-@rules/harness-compat.md applies.
+@rules/skill-editing.md and @rules/harness-compat.md apply.
 
 ## Arguments
 
-- `<arg>` — description
-- `--flag` — description
+- `<skill-name-or-path>` — new kebab-case name or existing skill/path.
+- `[description]` — optional capability and intended invocation context.
+
+For an update, infer the current description from the target and use the user's
+request as the desired delta. Ask for missing information only when the target
+or required behavior cannot be determined safely.
 
 ## Workflow
 
-### 1. {First Step}
+### 1. Resolve The Target
 
-{Imperative instructions.}
+- Treat an existing name or `SKILL.md` path as an update.
+- For a new skill, validate a lowercase kebab-case name and use
+  `skills/<name>/SKILL.md`.
+- If several targets match, ask which one; do not guess or overwrite.
+- Read repository instructions before creating directories or editing files.
+
+### 2. Discover Existing Contracts
+
+For an update, read the entire target from frontmatter through its final line.
+For both new and existing skills:
+
+1. read two or three nearby skills with similar side effects or routing;
+2. search tests, documentation, and other skills for references to the target,
+   exact phrases, flags, and workflow guarantees;
+3. identify applicable rules and verify every referenced skill, command, and
+   helper actually exists; and
+4. record the routing boundary, authorized side effects, required outputs, and
+   behaviors that must remain stable unless the user requested a change.
+
+Do not append new behavior before understanding how it fits the existing
+workflow.
+
+### 3. Design Frontmatter
+
+Use only fields the repository supports:
+
+```markdown
+---
+name: example-skill
+description: >
+  Perform a specific capability. Use when the user requests its narrow,
+  distinguishable workflow.
+allowed-tools: Bash, Read, Glob, Grep
+argument-hint: "<required> [--optional]"
+---
 ```
 
-### 5. Verify
+- Make `name` match the directory exactly.
+- Describe both what the skill does and when it should route. Include a negative
+  boundary when a neighboring skill is easy to confuse; avoid keyword lists in
+  place of a semantic description.
+- Include `argument-hint` only when the skill accepts arguments, and document
+  every argument in the body.
+- Grant the smallest portable `allowed-tools` set: inspection usually needs
+  `Bash, Read, Glob, Grep`; add `Edit` or `Write` only for file changes.
+- Never list harness-native task, team, or subagent tools in shared frontmatter.
+- Add `user-invocable: true` and `disable-model-invocation: true` when the skill
+  must run only through explicit invocation, including opt-in durable artifact
+  skills. Preserve these fields on existing explicit-only skills.
 
-- `name` matches directory
-- name is lowercase kebab-case
-- description uses folded scalar `>` and names a narrow invocation context
-- `allowed-tools` is minimal and portable
-- title is the skill name only, no suffixes
-- `## Arguments` exists when `argument-hint` exists
-- instructions use imperative voice
-- prose wraps near 80 chars
+Omit optional fields that add no constraint. If a workflow needs an optional
+tool outside the portable set, either leave tools unrestricted or specify a
+portable fallback; do not declare a tool set that makes the workflow
+impossible.
 
-### 6. Tool Selection
+### 4. Write A Cohesive Workflow
 
-Use portable tools only:
+For a new skill, create the directory and a concise `SKILL.md`. For an update,
+integrate changes into the workflow step where they belong, remove duplication,
+and keep section order aligned with execution order.
 
-| Need | Tools |
-|------|-------|
-| inspect repo | Bash, Read, Glob, Grep |
-| edit files | Bash, Read, Edit, Write, Glob, Grep |
-| git-only | Bash |
-| blueprint workflow | Bash, Read, Write, Edit |
+Use this structure only where each section adds value:
 
-Do not add harness-native task/team/subagent tools to shared skills.
+1. one imperative purpose statement;
+2. applicable rule references;
+3. arguments and defaults;
+4. ordered workflow with inputs, safety boundaries, verification, and output;
+   and
+5. exceptional behavior or blockers near the step that can trigger them.
 
-## Blueprint Integration
+Write direct imperative instructions. Prefer observable decision criteria over
+subjective language such as "best" or "appropriate." Define what the agent may
+change, when it must ask, how it preserves unrelated work, and what completion
+requires. Give exact commands only when they are stable and verified; otherwise
+instruct the agent to inspect current project documentation or CLI help.
 
-Only explicitly invoked artifact skills should create blueprints. Add
-`disable-model-invocation: true` and `user-invocable: true` when the skill must
-never route from ordinary conversation.
+Keep ordinary workflows in chat and the working tree. Only skills explicitly
+invoked for durable artifacts may create blueprints; when one does, follow
+`@rules/blueprints.md` and `@rules/human-approval.md`. Do not add artifact side
+effects to unrelated skills. Make artifact workflows preserve and validate
+frontmatter, derive link targets from the source file's full stem, and inspect
+the whole blueprint repository before committing. They must stop on an existing
+index or unrelated project changes because `blueprint commit` stages the
+project subtree and commits the existing index.
 
-Common patterns:
+### 5. Verify The Result
 
-```bash
-file=$(blueprint create proposal "<topic>" --status draft)
-file=$(blueprint create review "<topic>" --status complete)
-file=$(blueprint create report "<topic>" --status complete)
-blueprint link "$file" "<source-slug>"
-blueprint status "$file" complete
-blueprint commit <type> <slug>
-```
+Read the final file top to bottom and check:
 
-Proposals use `Decision`, `Evidence`, `Approach`, `Acceptance Criteria`, and
-`Implementation Notes`, with `draft -> approved -> complete`. Reviews and
-reports are complete when generated; resolution state belongs in the body.
+- valid YAML frontmatter and matching name/directory;
+- a narrow, accurate routing description;
+- argument, tool, invocation, and side-effect metadata consistent with the
+  body;
+- imperative instructions in workflow order, without contradictions,
+  duplicated rules, dangling references, or stale pseudo-templates;
+- preserved behavior contracts and unrelated user changes;
+- readable Markdown with prose wrapped near 80 characters; and
+- targeted repository tests or validators for skill contracts.
+
+Inspect the final diff and report files changed, key routing or workflow
+decisions, and validation results. Do not create a blueprint unless the user
+explicitly invoked an artifact skill.

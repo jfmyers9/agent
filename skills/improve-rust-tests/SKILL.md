@@ -1,74 +1,134 @@
 ---
 name: improve-rust-tests
-description: "Improve Rust test suites with a wide, evidence-grounded pass over placement, coverage, readability, and tooling. Use when the user asks to improve Rust tests, adopt stronger Rust testing practices, add property tests, reorganize unit/integration tests, or modernize a Rust project toward TDD guidance."
+description: >
+  Improve a Rust test suite's behavior coverage, placement, readability, and
+  tooling. Use when asked to strengthen Rust tests, add properties, reorganize
+  unit or integration tests, or modernize testing practices.
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 user-invocable: true
 ---
 
 # Improve Rust Tests
 
-Take a wide pass over a Rust project and move its tests toward the Rust testing guidance in the TDD skill. Activate `$tdd` before using this skill if it is not already active, then follow its Rust testing reference. The goal is substantial, behavior-focused improvement, not coverage padding.
+Strengthen tests around realistic bugs and public behavior without padding
+coverage or coupling tests to implementation details.
 
-## Process
+@rules/test-quality.md, @rules/rust.md, and @rules/harness-compat.md apply.
 
-### 1. Establish the baseline
+## Workflow
 
-- Read project instructions, Cargo workspace layout, and existing test commands.
-- Inspect `Cargo.toml` dev-dependencies before adding any tools.
-- Use `sym` first for source navigation when it can answer the question; use `rg` for file/text discovery.
-- Run the narrowest useful baseline command: `cargo nextest run` when available, otherwise `cargo test`; include `cargo test --doc` when doctests matter.
-- Note existing failures before editing; do not claim them as caused by your changes unless verified.
+### 1. Establish Scope And Baseline
 
-### 2. Map the current test shape
+- Read repository instructions, the Cargo workspace layout, toolchain files,
+  test configuration, and current dev-dependencies.
+- Inspect the working tree and preserve unrelated changes.
+- Discover source and tests with `rg`; use optional navigation tools only when
+  they are available and provide a documented fallback.
+- Run the narrowest project-standard baseline test command. Use Cargo's built-in
+  test command when no project runner is configured, and include doctests when
+  the selected runner omits them.
+- Record pre-existing failures before editing. Do not attribute them to the
+  change without reproducing that causality.
 
-Classify coverage by placement: `tests/*.rs`, CLI tests, `#[cfg(test)]` module tests, private-helper tests, doctests, snapshots, properties, filesystem tests, and fixture-heavy tests.
+### 2. Map The Test Suite
 
-Identify bad smells: unit tests dwarf production modules; tests assert getters, constants, or type-system facts; assertions mirror production algorithms; integration tests verify internals; properties lack named invariants; fixtures hide behavior.
+Inventory integration tests, CLI tests, sibling unit-test files, doctests,
+properties, snapshots, filesystem tests, fixtures, and shared helpers. Trace
+important public behaviors and failure boundaries to their current coverage.
 
-### 3. Present improvement candidates
+Look for evidence-backed improvement opportunities:
 
-Before editing, present a numbered list of substantial candidates. For each:
+- missing boundary, error, state-transition, ordering, or integration cases;
+- tautologies, getter tests, type-system facts, and coverage-only execution;
+- assertions that duplicate the production algorithm;
+- tests coupled to private structure when a public contract is clearer;
+- oversized or inline test modules that violate `@rules/rust.md`;
+- unnamed properties, opaque fixtures, brittle snapshots, and excessive mocks;
+  and
+- slow duplicated setup or nondeterministic filesystem, clock, or concurrency
+  behavior.
 
-- **Files** — tests and production seams involved
-- **Problem** — what the current test shape misses or obscures
-- **Change** — what would move, be added, deleted, or rewritten
-- **Tooling** — whether to use `pretty_assertions`, `rstest`, `proptest`, `assert_cmd`, `tempfile`, `assert_fs`, or `insta`
-- **Verification** — the command that should fail before the change or prove it after the change
+Every proposed test must name the realistic bug or invariant it would protect.
+Apply the deletion test from `@rules/test-quality.md` and remove redundant tests.
 
-Ask which candidates to execute unless the user asked for an automatic pass.
+### 3. Present Candidates
 
-### 4. Execute selected improvements
+Before editing, present a numbered list of substantial candidates. For each,
+include:
 
-Work vertically. For each selected behavior:
+- files and behavior involved;
+- the concrete coverage or readability problem;
+- tests to add, move, rewrite, or delete;
+- production seams, if any, that must change;
+- optional tooling and why it earns its dependency cost; and
+- the focused and final verification commands.
 
-1. State the bug scenario or invariant the test will catch.
-2. Choose placement using the Rust TDD placement ladder.
-3. Add the smallest test that proves the behavior or property.
-4. Confirm RED when changing behavior; for pure test refactors, preserve GREEN.
-5. Implement or refactor only enough to satisfy the selected test improvement.
-6. Run the narrowest GREEN command.
-7. Delete redundant, misleading, or implementation-coupled tests.
+Proceed immediately when the user requested an automatic pass or already chose
+candidates. Otherwise ask which numbered candidates to implement.
 
-Use tools deliberately: `pretty_assertions` for diffs, `rstest` for named cases/fixtures, `proptest` for properties, `assert_cmd` for CLI contracts, `tempfile`/`assert_fs` for filesystem contracts, and `insta` only for existing or explicitly requested snapshots.
+### 4. Implement Vertically
 
-### 5. Refactor test organization
+For each selected behavior:
 
-When improving placement, prefer integration tests for public crate behavior; keep CLI tests at the executable boundary; keep module tests focused; move oversized unit test modules with `#[cfg(test)] mod foo_tests;`; keep private-helper tests only when clearer than public setup; keep shared helpers small.
+1. State the bug scenario or invariant.
+2. Choose the narrowest placement that tests the right contract.
+3. Add or refactor the smallest meaningful test.
+4. Demonstrate RED when fixing an existing bug or changing behavior. Preserve
+   GREEN for organization-only refactors and new coverage of correct behavior;
+   never break production code merely to manufacture RED.
+5. Change production code only when required by the selected behavior or a
+   necessary test seam.
+6. Run the focused test, then the required Clippy check for the implementation
+   slice.
+7. Delete tests made redundant, misleading, or implementation-coupled.
 
-### 6. Verify and report
+Use real owned collaborators. Mock only external boundaries such as networks,
+clocks, and third-party services. Three or more mocks usually indicate a design
+seam worth simplifying before adding more tests.
 
-Run the project-appropriate final gate, usually:
+### 5. Place Tests Deliberately
+
+- Put public crate behavior in `tests/*.rs` when it needs only public APIs.
+- Test executable contracts at the CLI boundary.
+- Keep private-behavior tests beside their module but in separate files, using
+  the sibling or directory convention required by `@rules/rust.md`. Do not add
+  inline `mod tests { ... }` bodies.
+- Use doctests for stable user-facing examples, not internal edge cases.
+- Keep shared helpers small, explicit, and behavior-neutral.
+
+When touching an inline module, extract it incrementally. Proactively split
+test bodies over roughly 200 lines and use one convention consistently per
+crate.
+
+### 6. Select Tooling Conservatively
+
+Use `pretty_assertions` for materially clearer diffs, `rstest` for genuinely
+shared named cases or fixtures, `proptest` for named invariants over broad input
+spaces, `assert_cmd` for CLI contracts, and `tempfile` or `assert_fs` for
+filesystem boundaries. Use `insta` only when snapshots already form part of the
+contract or the user explicitly requested them.
+
+Before adding a crate, inspect existing dependencies and use `cargo search` to
+verify the current version as required by `@rules/rust.md`. Avoid overlapping
+tools and remove a dependency when its last use disappears.
+
+### 7. Verify And Report
+
+Format only files changed by this workflow while editing. Do not run a
+mutating workspace-wide formatter when unrelated dirty Rust files exist. Use
+the repository's configured feature sets and commands; enable all features
+only when the project supports that combination. Unless project instructions
+require a different equivalent, finish with:
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy --all -- -D warnings
-cargo nextest run
-cargo test --doc
+cargo clippy --workspace --all-targets -- \
+  -D warnings -W clippy::all
+cargo test --workspace
+cargo build --workspace
 ```
 
-Adjust to the project if it uses different workspace commands. Report:
-
-- behaviors/properties now covered
-- tests deleted or moved
-- dev-dependencies added and why
-- commands run and results
-- remaining test-suite risks or follow-up candidates
+Run the configured nextest command as well when the project standardizes on it.
+Do not hide warnings with `#[allow(...)]`. Report behaviors and properties now
+covered, tests moved or deleted, dependencies changed and why, commands and
+results, pre-existing failures, and remaining test-suite risks.

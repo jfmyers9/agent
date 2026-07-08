@@ -1,56 +1,91 @@
 ---
 name: research
 description: >
-  Create a durable, evidence-backed proposal for local review. Invoke only as
-  /skill:research or $research when a proposal artifact is wanted.
+  Create a durable, evidence-backed proposal for a technical decision. Invoke
+  only as /skill:research or $research when a proposal artifact is wanted.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
-argument-hint: "<topic> | --continue [slug] | --discard [slug] | --depth <medium|high|max> | --auto"
+argument-hint: >
+  <topic> | --continue [slug] | --discard [slug]
+  [--depth <medium|high|max>] [--auto]
 ---
 
 # Research
 
-Research a decision and write one proposal with one approval boundary.
+Research one decision and write one proposal with one approval boundary.
 
 @rules/blueprints.md, @rules/human-approval.md,
 @rules/harness-compat.md, and @rules/artifact-readability.md apply.
 
+Keep generated frontmatter intact and write the body below its closing `---`.
+Immediately before each non-deletion commit, run `blueprint validate "$file"`
+and inspect the entire blueprint repository. Stop if its index is nonempty or
+the current project has changes outside `$file`: `blueprint commit` stages the
+project subtree and commits the existing index.
+
 ## Arguments
 
-- `<topic>` — decision to research
-- `--continue [slug]` — resume the latest or matching proposal
-- `--discard [slug]` — delete the latest or matching proposal and commit
-- `--depth <medium|high|max>` — evidence depth; default `medium`
-- `--auto` — approve immediately for an explicitly autonomous workflow
+- `<topic>` — decision to research.
+- `--continue [slug]` — revise the latest or matching proposal.
+- `--discard [slug]` — delete the latest or matching proposal, commit the
+  deletion, and stop.
+- `--depth <medium|high|max>` — evidence depth; default `medium`.
+- `--auto` — approve the resulting proposal without waiting for a separate
+  approval response.
+
+Treat `--continue` and `--discard` as mutually exclusive. Require a topic for
+new work.
 
 ## Workflow
 
-### 1. Resolve
+### 1. Resolve The Mode
 
-- Continue/discard: `blueprint find --type proposal --match <slug>`.
-- New work:
-  `file=$(blueprint create proposal "<topic>" --status draft --depth <level>)`.
-- Existing legacy specs/plans may be read as evidence; never create a new one.
+- Continue or discard a named proposal with
+  `blueprint find --type proposal --match <slug>`. With no slug, resolve the
+  latest proposal. Confirm one unambiguous result, store its path in `file`,
+  and derive its artifact slug before changing it.
+- For `--continue`, read the full proposal and preserve still-valid decisions,
+  evidence, and implementation notes.
+- For `--discard`, validate and preflight the resolved proposal, then remove
+  only that file, run `blueprint commit proposal <slug>`, report the deletion,
+  and stop. Validation is not possible after deletion. Never discard source
+  changes.
+- For new work, do not create the proposal until the research is ready to
+  write. Existing legacy specs and plans may be evidence; never create one.
 
-### 2. Research
+### 2. Research The Decision
 
-Inspect current behavior, relevant paths, local patterns, constraints, risks,
-alternatives, and verification options. Spot-check at least three material
-claims against source. Keep raw output out of the artifact.
+Inspect current behavior, relevant paths, local conventions, constraints,
+risks, alternatives, and verification options. Verify every material
+current-state claim against source; check at least three claims when the
+proposal contains that many. Separate observed evidence from inference and
+keep raw command output out of the artifact. Do not modify product code or
+target-system remote state during research; proposal persistence is the sole
+authorized external write.
 
-Depth:
+Depth controls breadth:
 
-- `medium`: key paths and main tradeoffs
-- `high`: affected modules, call paths, edge cases
-- `max`: exhaustive boundaries, dependencies, and migration risks
+- `medium` — key paths and primary tradeoffs.
+- `high` — affected modules, call paths, failure modes, and edge cases.
+- `max` — reachable boundaries, dependencies, compatibility, and migration
+  risks.
 
-For non-trivial flows, follow `@rules/artifact-readability.md`: include a small
-diagram and evidence trace, or state why a diagram is unnecessary.
+For non-trivial architecture or flow, put a small diagram and its evidence
+trace under `## Evidence`; otherwise state why a diagram is unnecessary.
 
-### 3. Write Proposal
+### 3. Write One Proposal
 
-Replace the generated section placeholders with:
+For new work, create the proposal as `draft`, or as `approved` when `--auto`
+is present:
+
+```bash
+status=draft # use approved when --auto is present
+file=$(blueprint create proposal "<topic>" --status "$status" --depth "<level>")
+```
+
+For continued work, update the same file. Replace or preserve the generated
+sections so the proposal contains:
 
 ```markdown
 ## Decision
@@ -62,11 +97,11 @@ Replace the generated section placeholders with:
 
 ## Evidence
 
-<current behavior, relevant paths, patterns, alternatives, confidence>
+<current behavior, relevant paths, alternatives, evidence labels, confidence>
 
 ## Approach
 
-<implementation-ready changes, affected files, ordering, verification>
+<implementation-ready changes, affected files, ordering, and verification>
 
 ## Acceptance Criteria
 
@@ -74,22 +109,26 @@ Replace the generated section placeholders with:
 
 ## Implementation Notes
 
-<empty until implementation, or prior notes when continuing>
+<empty before implementation; preserve existing notes when continuing>
 ```
 
-Commit every write with `blueprint commit proposal <slug>`. Keep status
-`draft` while awaiting a decision.
+Commit each body revision with `blueprint commit proposal <slug>`. When
+`--auto` advances an existing draft, commit the body revision first, then run
+`blueprint status "$file" approved` and commit that status change separately.
+Stop and show any commit error.
 
-### 4. Approval
+### 4. Apply The Approval Boundary
 
-- Approval (`approve`, `approved`, `lgtm`, `ship it`): set `approved`, commit,
-  and report `$implement <proposal>`.
+- Explicit approval (`approve`, `approved`, `lgtm`, `ship it`): set the same
+  proposal to `approved` and commit the status change.
 - `$implement <proposal>` is itself explicit approval; implementation advances
-  the proposal before editing code.
-- Feedback: revise the same proposal, keep `draft`, commit, and return it once.
-- `--auto`: set `approved` and commit without waiting.
+  a draft before editing source.
+- Feedback: if the proposal is approved, return it to `draft` and commit that
+  status change. Revise and commit the same proposal, then wait at the same
+  approval boundary again.
+- `--auto`: leave the proposal `approved`; do not wait.
 
-Do not create a second planning artifact or a second approval stage.
+Do not create a second planning artifact or approval stage.
 
 ## Output
 

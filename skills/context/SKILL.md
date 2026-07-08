@@ -1,109 +1,125 @@
 ---
 name: context
 description: >
-  Create a durable codebase context report. Invoke only as /skill:context or
-  $context when a persistent mapping artifact is wanted.
+  Create a durable, evidence-backed map of a codebase area. Invoke only as
+  /skill:context or $context when a persistent context report is wanted.
 disable-model-invocation: true
 user-invocable: true
-allowed-tools: Bash, Read, Glob, Grep
-argument-hint: "<scope> [--depth quick|medium|high|max] [--for general|research|debug|implement|review] [--continue] [--update <slug>] [--link <slug>]"
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep
+argument-hint: >
+  <scope> [--depth <level>] [--for <audience>] [--continue]
+  [--update <slug>] [--link <slug>]
 ---
 
 # Context
 
-Create a durable codebase-context blueprint report.
+Map a bounded codebase area and store reusable evidence in a report blueprint.
 
 @rules/blueprints.md, @rules/harness-compat.md, and
 @rules/artifact-readability.md apply.
 
+Keep generated frontmatter intact and write the body below its closing `---`.
+Immediately before committing, run `blueprint validate "$file"` and inspect the
+entire blueprint repository. Stop if its index is nonempty or the current
+project has changes outside `$file`: `blueprint commit` stages the project
+subtree and commits the existing index.
+
 ## Arguments
 
-- `<scope>` — repo, subsystem, feature, path, symbol, or file set to map.
-- `--depth <quick|medium|high|max>` — thoroughness, default `medium`.
-- `--for <general|research|debug|implement|review>` — tune handoff notes,
-  default `general`.
-- `--continue` — resume the latest context report.
-- `--update <slug>` — refresh an existing context report.
-- `--link <slug>` — link the context report to another blueprint.
+- `<scope>` — repository, subsystem, feature, path, symbol, or file set to map.
+- `--depth <quick|medium|high|max>` — inspection depth; default `medium`.
+- `--for <general|research|debug|implement|review>` — audience for handoff
+  notes; default `general`.
+- `--continue` — finish the latest context report.
+- `--update <slug>` — refresh a matching context report in place.
+- `--link <slug>` — link the report to a source blueprint.
+
+Depth controls breadth:
+
+- `quick` — entrypoints, primary modules, and immediate verification commands.
+- `medium` — main runtime/data flows, state, interfaces, and tests.
+- `high` — relevant callers, callees, failure paths, and hidden invariants.
+- `max` — reachable boundaries and edge cases within the declared scope.
 
 ## Workflow
 
-### 1. Resolve Work
+### 1. Resolve The Report And Source
 
-- For `--continue`, find the latest `report/` blueprint whose topic or body
-  identifies it as a context report. Read it and continue from its current
-  scope, snapshot, open questions, and status.
-- For `--update <slug>`, find the matching report with
-  `blueprint find --type report --match <slug>`. Preserve durable notes that
-  are still true, refresh snapshot metadata, and mark stale claims explicitly.
-- For `--link <slug>`, resolve the source blueprint with
-  `blueprint find --type proposal,review,report,spec,plan --match <slug>` and
-  link it
-  after creating the context report.
-- For new work, derive the scope from arguments. If no scope is provided,
-  inspect the repository root, README, project metadata, and top-level tree to
-  choose a repo-wide scope.
-- Create new reports with:
+- Treat `--continue` and `--update` as mutually exclusive. For `--continue`,
+  identify the latest report whose topic or body marks it as a context report.
+  Do not assume the latest generic report is context. Store its path in `file`.
+- For `--update <slug>`, resolve it with
+  `blueprint find --type report --match <slug>` and confirm that it is a
+  context report. Store the unambiguous resolved path in `file`.
+- Continue and update the same file; do not create a replacement. Preserve
+  still-valid durable notes, refresh snapshot metadata, and mark stale claims.
+- For `--link <slug>`, resolve one unambiguous `source_file` with
+  `blueprint find --type proposal,review,report,spec,plan --match <slug>`.
+- For new work, derive the scope from the request. If no scope is given,
+  inspect the repository root, README, project metadata, and top-level tree,
+  then use a repository-wide scope.
+
+### 2. Bound The Inspection
+
+Record included paths, symbols, and behaviors plus explicit exclusions. Ignore
+generated, vendored, build, coverage, lockfile, and binary artifacts unless
+they are in scope.
+
+- Path scope: inspect those paths plus only the direct callers, callees, tests,
+  configuration, and documentation needed to explain them.
+- Feature or symbol scope: find definitions and references first, then read
+  only the files needed to trace material flows.
+- Repository scope: inventory top-level ownership boundaries before selecting
+  representative entrypoints and flows.
+
+Prefer symbol-aware tools when available. Keep searches and command output
+bounded. Preserve user changes and record relevant dirty state; do not modify
+the working tree.
+
+### 3. Collect And Verify The Map
+
+Capture concise evidence for:
+
+- branch, commit, dirty state, and observation date
+- entrypoints and ownership boundaries
+- major modules, types, schemas, stores, caches, and configuration
+- external CLI, API, UI, event, file, network, and database interfaces
+- tests, probes, and useful verification commands
+- local patterns, invariants, risks, and unresolved questions
+
+For each material behavior, trace the entrypoint, orchestration, state or data
+transformation, side effects, output boundary, and relevant test. Cite paths
+and line numbers for claims future work may rely on.
+
+Verify all material architecture claims against source; verify at least three
+when the report contains that many. Label verification with the evidence terms
+from `@rules/artifact-readability.md`, and state confidence separately. Add a
+small Mermaid map and trace table for non-trivial architecture or flow;
+otherwise state why a diagram is unnecessary.
+
+### 4. Write The Context Report
+
+After inspection, create new reports as complete:
 
 ```bash
-file=$(blueprint create report "Context: <scope>" --status draft)
+file=$(blueprint create report "Context: <scope>" --status complete)
 ```
 
-If a source blueprint was resolved, link it:
+For continue/update, edit the resolved report. Link a requested source to the
+new or existing report with:
 
 ```bash
-blueprint link "$file" "<source-slug>"
+source_slug=$(basename "$source_file" .md)
+blueprint link "$file" "$source_slug"
 ```
 
-### 2. Bound The Scope
-
-- Record included paths, symbols, features, or repo-wide boundaries.
-- Record explicit exclusions, especially generated, vendored, build,
-  coverage, lockfile, and binary artifacts unless they are the focus.
-- If a scope names paths, constrain inspection to those paths plus direct
-  callers, callees, tests, configs, and docs needed to explain behavior.
-- If a scope names a feature or symbol, search definitions and references
-  first, then read only the files needed to trace important flows.
-- Prefer symbol-aware tooling when available. Use `Read`, `Glob`, and `Grep`
-  for portable inspection. Do not dump broad files or logs.
-
-### 3. Inventory The Area
-
-Collect concise evidence for:
-
-- branch, commit, dirty state, and date
-- key docs and config files
-- entrypoints
-- major modules and ownership boundaries
-- important types, schemas, stores, caches, and config
-- tests and verification commands
-- external interfaces such as CLI, API, UI, events, files, network, or DB
-
-Use source line references for claims that future work may rely on. For
-medium, high, and max depth reports, include Mermaid diagrams for
-non-trivial architecture or flow paths, or write `Diagram omitted: <reason>`.
-
-### 4. Trace Important Flows
-
-For each major behavior in scope, identify:
-
-1. entrypoint
-2. dispatch or orchestration layer
-3. data or state transformations
-4. side effects
-5. output or boundary crossing
-6. related tests or verification command
-
-Back each diagram with a trace table that cites code, config, or commands.
-Verify at least three architecture claims against source before writing the
-report. Cite each verified claim with file paths, line references, and a
-confidence label from `@rules/artifact-readability.md`.
-
-### 5. Write The Context Report
-
-Write or update the report body with these sections:
+Write or update this structure:
 
 ```markdown
+## Executive Summary
+
+<concise bullets explaining what the area does and how to reason about it>
+
 ## Scope
 
 <included boundaries, exclusions, depth, and intended audience>
@@ -112,15 +128,11 @@ Write or update the report body with these sections:
 
 - Branch: <branch>
 - Commit: <sha>
-- Dirty state: <clean or relevant files>
-- Date: <timestamp>
+- Dirty state: <clean or relevant paths>
+- Observed: <timestamp>
 - Entry paths: <paths>
 
-## Executive Summary
-
-<5-10 bullets explaining what the area does and how to reason about it>
-
-## Architecture Map
+## Human-Readable Map
 
 ### System Map
 
@@ -128,15 +140,7 @@ Write or update the report body with these sections:
 
 ### Main Modules
 
-- `<path>` — role, ownership, key exports/classes/functions
-
-### Runtime Flow
-
-1. <entrypoint>
-2. <dispatch/control layer>
-3. <state/data transformation>
-4. <side effects>
-5. <output>
+- `<path>` — responsibility, ownership, and key exports
 
 ### Request / Data Flow
 
@@ -149,11 +153,11 @@ Write or update the report body with these sections:
 
 ### Data Model / State
 
-- <important types, schemas, stores, caches, config>
+- <important types, schemas, stores, caches, and configuration>
 
 ### External Interfaces
 
-- <CLI/API/UI/events/files/network/db/etc.>
+- <CLI, API, UI, events, files, network, database>
 
 ## Evidence Summary
 
@@ -164,20 +168,13 @@ Write or update the report body with these sections:
 
 - `<path:line>` — why it matters
 
-## Investigation Log
-
-- Commands run:
-- Tests/probes:
-- External docs/tools:
-- Gaps:
-
 ## Patterns To Preserve
 
-- <local conventions, module boundaries, error handling, test style>
+- <local conventions, boundaries, error handling, and test style>
 
 ## Risks / Sharp Edges
 
-- <coupling, hidden invariants, global state, migrations, slow tests>
+- <coupling, invariants, global state, migrations, or expensive checks>
 
 ## Verification / Useful Commands
 
@@ -187,61 +184,41 @@ Write or update the report body with these sections:
 
 ## Open Questions
 
-- <unknowns worth resolving before changing this area>
+- <unknown, why it matters, and how to answer it>
 
 ## Handoff Notes
 
-### For Research
+<notes tuned to --for: constraints for research; fault domains for debug;
+touchpoints for implement; regression surfaces for review; reusable context for
+general>
 
-<assumptions and context a proposal should start from>
+## Investigation Log
 
-### For Debug
-
-<likely fault domains, reproduction hints, and useful commands>
-
-### For Implementation
-
-<likely touchpoints and constraints; not a phased plan>
+- Commands run:
+- Tests/probes:
+- External docs/tools:
+- Gaps:
 ```
 
-Keep the report descriptive. Do not create an implementation plan, even when
-`--for implement` is requested. Capture likely touchpoints and constraints only.
+Keep the report descriptive. Even for `--for implement`, record touchpoints and
+constraints rather than an implementation plan.
 
-### 6. Complete And Commit
+### 5. Commit And Report
 
-Set the report status to `complete`:
+Run `blueprint commit report <slug>` after writing the body. On an existing
+report, commit each link, body, or other frontmatter update before making the
+next one. For an existing draft, commit the body first, then set it to complete
+and commit that status change separately:
 
 ```bash
 blueprint status "$file" complete
-```
-
-Run commit-on-write after every report write or status change:
-
-```bash
 blueprint commit report <slug>
 ```
 
-If `blueprint commit` exits non-zero, stop and show the error.
-
-### 7. Output
-
-Return:
+Stop and show any commit error. Return:
 
 ```text
 Context: <path>
 Status: complete
-Use: reference for /skill:research, /skill:debug, /skill:review, /skill:implement
+Use: reference for $research, $debug, $review, or $implement
 ```
-
-When another skill receives a linked or named context report, it should read the
-report before proposing changes, diagnosing failures, reviewing code, or
-implementing plans.
-
-## Rules
-
-- Keep workflow state in blueprints, not chat or harness-native task stores.
-- Keep source inspection targeted to the requested scope and direct context.
-- Prefer source-linked claims over broad summaries.
-- Separate descriptive context from proposals, fixes, reviews, and
-  implementation plans.
-- Preserve user changes; report dirty state instead of reverting it.

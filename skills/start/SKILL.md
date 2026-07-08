@@ -1,37 +1,38 @@
 ---
 name: start
 description: >
-  Create a new Graphite branch. Use when beginning a new feature, starting fresh work, or needing a new
-  branch for a task. Triggers: /start, "start new branch", "begin work on".
+  Create a clean, empty Graphite branch when the user explicitly asks to start
+  a new branch for work. Triggers: /start, "start new branch", "begin work on".
 allowed-tools: Bash
 argument-hint: "<branch-name>"
 ---
 
 # Start
 
-Create a new Graphite branch.
+Create a new Graphite branch without committing existing worktree changes.
+
+@rules/pr-workflow.md and @rules/harness-compat.md apply.
 
 ## Arguments
 
-- `<branch-name>` — name for the new branch
+- `<branch-name>` — new branch name; prefix with `jm/` when absent
 
-## Steps
+## Workflow
 
-1. **Parse arguments**
-   - Extract branch name from `$ARGUMENTS`
-   - If no branch name → tell user: `/skill:start <branch-name>`, stop
-
-2. **Normalize branch name**
-   - Prefix with `jm/` if not already prefixed
-
-3. **Check working directory**
-   - Run `git status --porcelain`
-   - If uncommitted changes exist → warn user but continue
-
-4. **Create Graphite branch**
-   - Run `gt create <branch-name>`
-
-5. **Confirm completion**
-   - Report branch created
-   - Suggest `/skill:implement` to start building. Mention `/skill:research`
-     only when the user wants a durable proposal.
+1. Extract exactly one branch name from `$ARGUMENTS`. If it is missing, show
+   `/skill:start <branch-name>` and stop.
+2. Prefix the name with `jm/` unless it already has that prefix. Validate the
+   result with `git check-ref-format --branch` and reject an existing local
+   branch. Keep the value shell-quoted in every command.
+3. Verify that `gt` is available and that the path from
+   `git rev-parse --git-path .graphite_repo_config` exists. Do not invoke `gt`
+   merely to detect initialization because current versions may create
+   metadata. Do not fall back to `git switch -c`.
+4. Run `git status --short`. If any staged, unstaged, or untracked changes
+   exist, report them and stop: `gt create` can commit staged changes and prompt
+   to stage unstaged changes. Ask the user to commit or stash them first rather
+   than guessing their destination.
+5. Run `gt create <branch-name> --no-interactive`. If it fails, report the
+   Graphite error without retrying with different branch semantics.
+6. Confirm the current branch with `git branch --show-current` and report the
+   created branch.

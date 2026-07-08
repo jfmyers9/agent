@@ -1,28 +1,39 @@
 ---
 name: debug
 description: >
-  Diagnose and fix bugs, CI failures, and test failures. Use diagnose instead
-  when the user requests a read-only durable root-cause report.
+  Reproduce, diagnose, and fix bugs, CI failures, and test failures. Use when
+  the user wants the failure resolved; use diagnose for a read-only durable
+  root-cause report.
 allowed-tools: Bash, Read, Glob, Grep, Edit, Write
 argument-hint: "[error-description|blueprint-slug-or-path]"
 ---
 
 # Debug
 
-Reproduce, diagnose, fix, and verify a failure without requiring a tracker.
+Resolve a failure from reproducible evidence without creating a tracker.
 
 @rules/harness-compat.md applies.
 
 ## Workflow
 
-1. Resolve input. Use the error description directly, or read an explicitly
-   named proposal, review, report, or legacy blueprint as optional context.
-2. Inspect branch state and run the narrow failing check when known.
-3. Trace expected versus actual behavior, relevant state/data flow, recent
-   changes, and competing root-cause hypotheses.
-4. Make the smallest root-cause fix; avoid adjacent refactors.
-5. Re-run the failing check, then relevant regression checks.
-6. Report root cause, files changed, verification, and remaining risks.
+1. Resolve the failure description and read any explicitly named proposal,
+   review, report, or legacy blueprint as optional context. Do not search for an
+   artifact when none was named.
+2. Read applicable repository instructions, inspect the working tree, and
+   preserve unrelated changes.
+3. Reproduce the failure with the narrowest known command. Capture the exact
+   expected behavior, actual behavior, and baseline failures before editing.
+4. Trace the relevant control/data flow and recent changes. Form competing
+   root-cause hypotheses and falsify them with source evidence or focused
+   probes; do not patch a merely correlated symptom.
+5. Make the smallest complete root-cause fix. Add or strengthen a regression
+   test when it would catch the reported bug, and avoid adjacent refactors.
+6. Re-run the original reproducer, the focused regression checks, and broader
+   checks warranted by the change's risk.
+7. Report the root cause, files changed, commands and results, and any remaining
+   uncertainty or risk.
 
-Do not create a blueprint. If the user asks only for diagnosis, invoke the
-manual `diagnose` artifact skill instead.
+If the failure cannot be reproduced or the cause remains unproven, report the
+evidence and the next discriminating check instead of making a speculative
+edit. Do not create a blueprint. If the user explicitly requests a durable
+diagnosis, use the `diagnose` artifact skill and do not edit source files.

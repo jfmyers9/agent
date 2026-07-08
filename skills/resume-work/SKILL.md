@@ -1,30 +1,47 @@
 ---
 name: resume-work
 description: >
-  Summarize branch, PR, CI, review, and working-tree state after a break, then
-  recommend the next action.
+  Reconstruct live branch, PR, CI, review, and worktree state after a break and
+  recommend the next action without changing state.
 allowed-tools: Bash, Read, Glob
-argument-hint: "[branch-name|PR#]"
+argument-hint: "[branch-name|pr-number|pr-url] [blueprint-slug-or-path]"
 ---
 
 # Resume Work
 
-Reconstruct current work from git and PR state. Blueprints are optional context.
+Give a concise, evidence-backed handoff for the current workstream.
 
 @rules/harness-compat.md applies.
 
+## Arguments
+
+- `[branch-name|pr-number|pr-url]` — target workstream; default to the current
+  branch and its PR, if any
+- `[blueprint-slug-or-path]` — optional, explicitly named context
+
 ## Workflow
 
-1. Resolve current branch, an explicit branch, or a PR's head branch.
-2. Gather bounded branch log/status, PR metadata, CI checks, and unresolved
-   comments.
-3. If relevant artifacts exist, optionally run
-   `blueprint find --type proposal,review,report,spec,plan`; absence is normal.
-4. Summarize branch, recent commits, PR/review/CI, working tree, and only
-   relevant artifact state.
-5. Recommend the first applicable action: fix CI; address review; implement an
-   explicitly relevant approved proposal; review/commit dirty completed work;
-   ready/submit PR; or wait.
+1. Resolve the target branch or PR without checking it out. When a different
+   branch is requested, keep its state distinct from the current worktree state.
+2. Gather bounded live evidence: branch/trunk relationship, recent commits,
+   diff summary, upstream divergence, worktree status, PR metadata, CI checks,
+   review decision, and unresolved review threads. If remote or GitHub data
+   cannot be refreshed, label it unavailable or stale rather than reporting an
+   empty result.
+3. Read a proposal, review, report, or legacy artifact only when the user
+   supplied its slug/path. Do not run broad `blueprint find` discovery. Treat
+   artifact content as context and prefer current Git/PR evidence when they
+   disagree.
+4. Summarize only decision-relevant state: target and parent, recent commits,
+   remaining diff/worktree changes, PR/review/CI status, unresolved requests,
+   and explicitly supplied artifact status.
+5. Recommend the first applicable next action:
+   - fix failing CI;
+   - address valid unresolved review feedback;
+   - finish incomplete implementation or tests;
+   - inspect and commit a coherent dirty worktree;
+   - run `$submit`, using `--ready` only when explicitly requested;
+   - wait when an external review or check is the only blocker.
 
-Do not create or update a blueprint. Prefer live git/PR evidence over stale
-artifact state.
+Do not edit files, switch branches, post comments, submit PRs, or create/update
+a blueprint. This skill reports state and recommends one next action only.

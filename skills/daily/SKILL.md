@@ -1,129 +1,97 @@
 ---
 name: daily
 description: >
-  Summarize repo activity — your PRs, review requests, assigned
-  issues, and recent trunk commits. Triggers: 'daily summary',
-  'what's happening', 'repo status'.
-allowed-tools: Bash, Read, Glob
-argument-hint: "[path...]"
+  Generate a daily repository-attention summary of the user's open PRs, review
+  requests, assigned issues, and recent trunk commits. Use only for a requested
+  daily or repo-activity overview. Triggers: "daily summary", "repo activity".
+allowed-tools: Bash
+argument-hint: "[pathspec...]"
 ---
 
 # Daily
 
-Print a summary of what needs attention in the current repo.
+Summarize what needs the user's attention in the current repository.
+
+@rules/harness-compat.md applies.
 
 ## Arguments
 
-- `[path...]` — optional path patterns to filter PRs and commits
+- `[pathspec...]` — optional Git pathspecs used to filter PRs and trunk commits
 
-## Steps
+## Workflow
 
-### 1. Resolve Trunk
+1. **Resolve repository context**
+   - Parse pathspecs as shell-quoted values, not executable text.
+   - Verify the current Git repository and `origin` remote.
+   - Resolve trunk from `refs/remotes/origin/HEAD`, then fall back to an existing
+     `origin/main` or `origin/master`.
+   - Fetch that trunk quietly. If fetch fails, continue with the cached ref but
+     label trunk activity stale; if no trunk ref exists, mark it unavailable.
 
-Parse `$ARGUMENTS` for path patterns (store as `$PATHS`).
+2. **Gather bounded data**
+   - Run independent queries in parallel when the harness supports it:
+     - open PRs authored by `@me`, including draft state, review decision,
+       check rollup, URL, branch, and update time;
+     - open PRs with `review-requested:@me`, including author and update time;
+     - open issues assigned to `@me`, including labels and update time;
+     - commits on the resolved trunk from the last 24 hours, restricted by the
+       supplied pathspecs.
+   - Use native limits (`gh ... --limit`, `git log --max-count`) and select only
+     needed JSON fields. Never truncate JSON with `head` or `tail`.
+   - Capture each query's status separately. Report unavailable GitHub data and
+     its concise error; never convert command/authentication failure to `[]`.
+   - Bound collection to 100 items per category. If a category reaches the cap,
+     label its count `100+` rather than implying completeness.
 
-Detect the trunk branch:
+3. **Apply optional path filtering**
+   - Skip this step when no pathspec was supplied.
+   - For each fetched PR, query its changed file names with a bounded `gh pr
+     view` call and retain it when any file matches any supplied pathspec.
+   - Run independent file queries in bounded parallel batches. If a PR's files
+     cannot be fetched, mark its filter state unknown rather than excluding it.
+   - Report how many fetched PRs were outside the filter. Do not path-filter
+     assigned issues.
 
-```bash
-trunk=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null \
-  | sed 's|refs/remotes/origin/||')
-```
+4. **Normalize status**
+   - CI is `failing` when any check reports failure, error, cancellation,
+     timeout, action-required, startup-failure, or stale; `pending` when any
+     check is expected, requested, waiting, queued, or in progress; `passing`
+     when completed checks have no failure state; `none` when no checks exist;
+     and `unavailable` when the rollup could not be read.
+   - Map review decisions to `approved`, `changes requested`, `pending`, or
+     `none`. Describe review-request age as time since the PR was updated; do not
+     claim it is the request timestamp.
 
-If empty, try `main` then `master` — check which exists with
-`git rev-parse --verify origin/main` (then `origin/master`).
+5. **Print the summary**
 
-Fetch latest: `git fetch origin $trunk --quiet`
-
-### 2. Gather Context
-
-Run in parallel (all four Bash calls in one message):
-
-```bash
-# Your open PRs
-gh pr list --author @me \
-  --json number,title,isDraft,reviewDecision,statusCheckRollup,url,updatedAt,headRefName \
-  2>/dev/null | head -20 || echo "[]"
-```
-
-```bash
-# PRs requesting your review
-gh pr list --search "review-requested:@me" \
-  --json number,title,url,updatedAt,headRefName,author \
-  2>/dev/null | head -20 || echo "[]"
-```
-
-```bash
-# Assigned issues
-gh issue list --assignee @me \
-  --json number,title,labels,url,updatedAt \
-  2>/dev/null | head -20 || echo "[]"
-```
-
-```bash
-# Recent trunk commits (path-filtered if $PATHS set)
-git log origin/$trunk --oneline --since="24 hours ago" \
-  -- $PATHS 2>/dev/null | head -20 || echo ""
-```
-
-### 3. Path Filtering (conditional)
-
-Skip if `$ARGUMENTS` is empty (no path patterns provided).
-
-If path patterns were provided:
-- For each PR from step 2, fetch changed files:
-  `gh pr view <N> --json files --jq '.files[].path'`
-- Exclude PRs where no changed file matches any pattern
-  from `$PATHS`
-- Retain excluded PRs in a separate count for reporting:
-  "(N more PRs outside filtered paths)"
-
-### 4. Format and Print
-
-Print the summary directly to the user. Use today's date.
-
-#### Output template
-
-```
+```markdown
 ## Daily Summary — <YYYY-MM-DD>
 
 ### Your Open PRs (<count>)
-- #N (draft|ready) title — CI: passing|failing|pending, Review: approved|changes requested|pending|none
-(or "None" if no open PRs)
+- [#N](<url>) (draft|ready) <title> — CI: <state>, Review: <state>
 
 ### Review Requests (<count>)
-- #N @author title — waiting since <relative date>
-(or "None" if no review requests)
+- [#N](<url>) @<author> <title> — updated <relative time>
 
 ### Assigned Issues (<count>)
-- #N title [label1, label2]
-(or "None" if no assigned issues)
+- [#N](<url>) <title> [<labels>]
 
 ### Recent Activity on <trunk> (last 24h)
-- <hash> <subject>
-(or "No recent commits")
+- `<hash>` <subject>
 
 ### Needs Attention
-- Review #N from @author (requested <N days> ago)
-- Fix CI on #N (failing)
-- Respond to review on #N (changes requested)
+- Review [#N](<url>) from @<author> — updated <relative time>
+- Fix CI on [#N](<url>)
+- Respond to requested changes on [#N](<url>)
 ```
 
-#### Needs Attention heuristics
+Use `None` only after a successful empty query; use `Unavailable: <reason>` for
+failed sources. Limit each displayed section to 10 items and state the omitted
+count (or that the source query was capped).
 
-Populate from gathered data, in this priority order:
+Build **Needs Attention** in this order: review requests (least recently updated
+first), authored PRs with failing CI, then authored PRs with requested changes.
+Deduplicate PRs while preserving their highest-priority reason. Omit the section
+when no gathered item matches.
 
-1. PRs requesting your review — oldest first
-2. Your PRs with failing CI (`statusCheckRollup` contains
-   failures)
-3. Your PRs with `reviewDecision == "CHANGES_REQUESTED"`
-
-Omit the Needs Attention section entirely if no items match
-the heuristics — do not print "Nothing urgent".
-
-#### Formatting rules
-
-- Truncate each section at 10 items. If more exist, append
-  "(+N more)" after the last item.
-- If path filtering was applied in step 3, append
-  "(N more PRs outside filtered paths)" after the relevant
-  PR sections.
+Do not edit issues or PRs, post comments, change review state, or mutate branches.

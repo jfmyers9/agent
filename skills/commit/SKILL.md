@@ -1,51 +1,51 @@
 ---
 name: commit
 description: >
-  Create conventional commits with auto-generated messages. Optionally push with --push (non-Graphite repos).
-  Use after making changes, when saving progress, done with a change, ready to commit, or finished implementing.
+  Create a Conventional Commit when the user explicitly asks to commit changes.
+  Generate the message when omitted; optionally push only in non-Graphite repos.
   Triggers: /commit, "commit this".
 allowed-tools: Bash
-argument-hint: "[--amend] [--fixup <commit>] [--push] [--as <identity>] [--author <identity>] [--committer <identity>] [message]"
+argument-hint: >
+  [--amend] [--fixup <commit>] [--push] [--as <identity>]
+  [--author <identity>] [--committer <identity>] [message]
 ---
 
 # Commit
 
-Create Conventional Commits with useful generated messages.
+Create one accurate Conventional Commit from the intended changes.
+
+@rules/pr-workflow.md and @rules/harness-compat.md apply.
 
 ## Arguments
 
-- `[message]` - commit message (generated if omitted)
-- `--amend` - amend the previous commit
-- `--fixup <commit>` - create fixup commit for specified hash
-- `--push` - push after committing (non-Graphite repos only)
-- `--as <identity>` - set both author and committer identity
-- `--author <identity>` - set author identity only
-- `--committer <identity>` - set committer identity only
+- `[message]` — complete commit message; generate it when omitted
+- `--amend` — replace the current commit with the staged result
+- `--fixup <commit>` — create a fixup commit targeting `<commit>`
+- `--push` — push after committing, only in a non-Graphite repository
+- `--as <identity>` — set both author and committer
+- `--author <identity>` — set only the author
+- `--committer <identity>` — set only the committer
 
-Identity values may be either `Name <email@example.com>` or an email
-address. For email-only values, use `git config user.name` as the name;
-if unavailable, derive a readable name from the email local-part. Quote
-identities that contain spaces or angle brackets.
+Accept identities as `Name <email@example.com>` or an email address. For an
+email-only value, use `git config user.name`; if it is unset, derive a readable
+name from the email local-part. Quote every user-derived shell argument.
 
-## Autonomy
+## Guardrails
 
-Default to acting without prompting. Only ask for user input when:
-- Changed files span clearly unrelated features with no common theme
-- Sensitive files (.env, credentials) are in the diff
-- There is literally nothing to commit
-- A provided commit message is invalid, misleading, or dangerously
-  incomplete for an obvious breaking change, migration, security fix, or
-  compatibility risk
+- Act without prompting when one coherent, non-sensitive change set is clear.
+- Never stage untracked files automatically.
+- Stop for confirmation when staged or candidate files appear to contain
+  credentials, secrets, `.env` data, or private keys.
+- Ask how to split clearly unrelated changes instead of combining them.
+- Never pull, rebase, force-push, or retry with a force option as part of this
+  skill.
+- Refuse `--push` in a Graphite repository and direct the user to `$submit`.
+- If `--amend` and `--push` are combined, explain that the remote update may
+  require a history rewrite and stop before committing.
 
-In all other cases, proceed silently. The user will provide
-instructions if they want commits shaped differently.
+## Message Policy
 
-## Message Quality Policy
-
-Generate the smallest commit message that will still make sense to a
-future reader reviewing history without this chat context.
-
-Use this Conventional Commit shape:
+Use this Conventional Commit form:
 
 ```text
 <type>[optional scope][optional !]: <description>
@@ -55,147 +55,99 @@ Use this Conventional Commit shape:
 [optional footer(s)]
 ```
 
-Subject-only commits are allowed only when the staged diff is trivial and
-self-explanatory. Examples:
-- typo-only or wording-only documentation edits
-- formatting-only changes
-- a single obvious version/config bump
-- tiny mechanical updates where the subject fully explains the change
+Choose the type from observable intent: `feat`, `fix`, `docs`, `test`,
+`refactor`, `perf`, `build`, `ci`, or `chore`. Add a concise subsystem scope
+only when it improves scanning.
 
-For all non-trivial changes, generate a body by default. Include a body
-when the diff is behavior-changing, user-facing, architectural,
-cross-module, risky, test-only but semantically meaningful, a bug fix
-whose cause matters, or not obvious from the subject alone.
+For a generated message, a subject alone is sufficient only for a trivial,
+self-explanatory diff such as a typo, formatting-only edit, obvious version
+bump, or tiny mechanical change. For every meaningful diff, generate a short
+body that leads with why the change was made or its observable outcome. Include
+implementation detail only when it helps future maintenance; do not narrate
+file names or repeat the subject. Wrap body lines at 72 characters.
 
-Body rules:
-- Explain the "why" or observable outcome first.
-- Add key implementation detail only when it helps future maintenance.
-- Do not restate a file list or narrate obvious edits.
-- Prefer one short paragraph; use bullets only when they improve clarity.
-- Wrap body lines at 72 characters.
+Use `!` and a `BREAKING CHANGE: <description>` footer for breaking API, config,
+data, workflow, or compatibility changes. Preserve relevant trailers such as
+`Fixes: #123`, `Refs: #123`, and `Co-authored-by: Name <email>`.
 
-Footer rules:
-- Use `BREAKING CHANGE: <description>` for breaking API, config, data,
-  workflow, or compatibility changes. The header may also use `!`.
-- Use valid Git trailer-style footers when applicable, such as
-  `Fixes: #123`, `Refs: #123`, or `Co-authored-by: Name <email>`.
-- Put footers after one blank line following the body. If there is no
-  body, put footers after one blank line following the subject.
+## Workflow
 
-## Steps
+1. **Parse and validate arguments**
+   - Extract recognized flags, their values, and the remaining message.
+   - Treat a trailing `as <identity>` as `--as <identity>` only when no explicit
+     identity flag is present and the suffix already matches an accepted email
+     or `Name <email>` form. Otherwise keep it in the commit message.
+   - Require a target for `--fixup`; reject unknown flags and the incompatible
+     `--amend --fixup` combination.
+   - Reject a freeform message with `--fixup`; Git must derive that subject from
+     the target commit.
+   - Apply `--as` to both identities, then let `--author` or `--committer`
+     override its respective side.
+   - Reject malformed identities or identities without a valid email address.
 
-1. **Parse Arguments**
-   - Extract `--amend` flag from `$ARGUMENTS`
-   - Extract `--fixup <hash>` from `$ARGUMENTS`
-   - Extract `--push` flag from `$ARGUMENTS`
-   - Extract `--as <identity>`, `--author <identity>`, and
-     `--committer <identity>` values from `$ARGUMENTS`
-   - Treat a trailing natural-language `as <identity>` phrase as
-     `--as <identity>` when no explicit identity flag is present.
-   - If `--push` + `--amend`: warn that amending + pushing may require force push, suggest doing it manually. Stop.
-   - Extract commit message (remaining text)
+2. **Inspect the repository and intended diff**
+   - Run `git status --short` (never `-uall`), `git diff --cached --stat`, and
+     `git diff --cached --name-status`.
+   - Inspect the meaningful staged hunks with
+     `git diff --cached --no-ext-diff`; target relevant paths when the diff is
+     large instead of dumping or truncating it.
+   - For `--amend`, also inspect the current message and commit with
+     `git log -1 --format='%B'` and `git show --stat --format=fuller HEAD`.
+     Evaluate the amended commit as the existing commit plus staged changes.
 
-2. **Gather Context (Parallel)**
-   - `git status --short` (never use `-uall`)
-   - `git diff --cached --stat`
-   - `git diff --cached --name-status`
-   - `git diff --cached --no-ext-diff` for the meaningful staged hunks
-   - If `--amend`: `git log -1 --format="%B"` and `git diff HEAD~1`
+3. **Prepare the index**
+   - Treat `--amend` with an empty index plus a supplied message or identity as
+     a tree-preserving amend. Do not stage tracked or untracked working-tree
+     changes unless the user explicitly asks to include them. If the index is
+     not empty, ask whether those changes belong before continuing. For a
+     confirmed tree-preserving amend, skip the remaining index-preparation
+     bullets.
+   - If the index is empty and tracked files changed, stage tracked changes with
+     `git add -u`, subject to the sensitive/unrelated-change guardrails and the
+     tree-preserving exception above.
+   - If only untracked files changed, list them and ask which should be added.
+   - When tracked and untracked changes coexist, leave untracked files unstaged
+     and report them. Ask before continuing if they are required for a coherent
+     commit.
+   - Allow an empty index for `--amend` only when the user supplied a new
+     message or identity. Otherwise report that there is nothing to commit.
+   - A fixup commit always requires staged changes.
+   - Refresh the staged stat, names, and meaningful hunks after staging.
 
-3. **Validate Staged Changes**
-   - If nothing staged:
-     - Check `git diff --name-only` for tracked changes
-     - If tracked changes exist: stage all with `git add -u` (tracked only)
-     - Refresh staged context with `git diff --cached --stat`,
-       `git diff --cached --name-status`, and meaningful staged hunks
-     - Only ask user if changed files span clearly unrelated features/modules
-     - If nothing at all: report "nothing to commit" and stop
+4. **Choose and validate the message**
+   - For `--fixup`, let Git derive the `fixup!` message.
+   - For a tree-preserving amend without a supplied message, preserve the
+     existing message exactly. Validate a supplied replacement normally.
+   - Accept a supplied message when its subject is valid and it accurately
+     describes the staged result. Ask for correction or permission to generate
+     a replacement only when it is invalid, misleading, or omits an evident
+     breaking, migration, security, or compatibility risk.
+   - Otherwise generate the smallest message that remains useful without this
+     chat context. Use imperative mood, no trailing period, and the body/footer
+     rules above.
+   - Before committing, verify type, scope, subject, body decision, trailers,
+     and breaking-change notation against the staged result.
 
-4. **Analyze Diff For Message Content**
-   - Choose the Conventional Commit type from the staged behavior:
-     - `feat`: user-visible feature or capability
-     - `fix`: bug fix
-     - `docs`: documentation-only change
-     - `test`: test-only change
-     - `refactor`: behavior-preserving code restructuring
-     - `perf`: performance improvement
-     - `build`, `ci`, `chore`, or similar for tooling/maintenance
-   - Choose a concise scope from the main subsystem when it improves
-     scanning. Omit scope when no single useful scope exists.
-   - Decide whether a body is required using the Message Quality Policy.
-     If omitting the body, be able to justify that the diff is trivial or
-     fully explained by the subject.
-   - Identify required footers: breaking changes, issue references,
-     co-authors, or other trailers already implied by the work.
+5. **Commit safely**
+   - Use `git commit --fixup <commit>` for a fixup.
+   - Use `git commit --amend --no-edit` for a tree-preserving amend without a
+     supplied message.
+   - For normal and replacement messages, pass the complete message through
+     `git commit -F -` or `git commit --amend -F -` with a quoted heredoc whose
+     delimiter does not occur in the message. Do not interpolate message text
+     into a shell command.
+   - Apply a normalized author with `--author='Name <email>'`. Apply a
+     normalized committer with `GIT_COMMITTER_NAME` and
+     `GIT_COMMITTER_EMAIL`, shell-quoted safely, on the same command.
+   - If the commit fails, report the error and leave the index intact.
 
-5. **Handle Commit Message**
-   - For `--fixup`: no message validation needed.
-   - If message provided:
-     - Validate Conventional Commit format:
-       `<type>[optional scope][optional !]: <description>`
-     - Accept a valid concise message unless it misstates the diff or
-       omits known breaking-change, migration, security, or compatibility
-       context.
-     - If invalid or dangerously incomplete, ask for a corrected message
-       or permission to generate one.
-   - If no message: generate a Conventional Commit message from the diff
-     analysis.
-   - Generated subject rules:
-     - Use imperative mood.
-     - Keep it concise and specific.
-     - Avoid a trailing period.
-     - Include `!` only for breaking changes.
-   - Generated body/footer rules:
-     - Include a body for non-trivial diffs.
-     - Wrap body lines at 72 characters.
-     - Include required footers using valid trailer syntax.
-   - Before committing, self-check:
-     - Type and scope match the staged diff.
-     - Subject is accurate without being vague.
-     - Body is present for meaningful diffs or intentionally omitted for
-       a trivial/self-explanatory diff.
-     - Body explains why/outcome and avoids redundant file narration.
-     - Footer syntax is valid and breaking changes are marked.
-
-6. **Handle Identity**
-   - If `--as` is provided, apply that identity to both author and
-     committer unless `--author` or `--committer` overrides one side.
-   - Normalize each requested identity to name and email.
-   - Ask only if an identity is malformed or an email-only identity has
-     no valid email address.
-   - For author identity, pass `--author="Name <email>"` to
-     `git commit`; this also works for `--amend`.
-   - For committer identity, prefix the commit command with
-     `GIT_COMMITTER_NAME="Name" GIT_COMMITTER_EMAIL="email"`.
-
-7. **Execute Commit**
-   - Fixup: `git commit --fixup <hash>`
-   - Subject-only normal commit: `git commit -m "<subject>"`
-   - Subject-only amend: `git commit --amend -m "<subject>"`
-   - Multi-line normal commit: use a heredoc or equivalent
-     multi-line-safe command:
-
-     ```sh
-     git commit -F - <<'COMMIT_MSG'
-     <type>(<scope>): <subject>
-
-     <body wrapped at 72 characters>
-
-     <footer-token>: <footer value>
-     COMMIT_MSG
-     ```
-
-   - Multi-line amend: use `git commit --amend -F -` with the same
-     heredoc pattern.
-   - Include any identity env vars and `--author` argument in the same
-     `git commit` command, including heredoc-based commands.
-
-8. **Show Result**
-   - Display final commit with `git log -1 --oneline`
-   - If an identity override was used, display:
-     `git log -1 --format='%h %an <%ae> committed-by %cn <%ce> %s'`
-   - If `--push`:
-     - Detect Graphite trunk: `gt trunk 2>/dev/null`
-     - If Graphite detected AND current branch is NOT trunk: warn that `--push` bypasses Graphite branch tracking, suggest `/skill:submit` instead, skip push
-     - Otherwise: run `git push || (git pull --rebase && git push)`
-     - Display push result or error
+6. **Report and optionally push**
+   - Show `git log -1 --oneline`. When identity was overridden, show
+     `git log -1 --format='%h %an <%ae> committed-by %cn <%ce> %s'`.
+   - For `--push`, first check whether the path from
+     `git rev-parse --git-path .graphite_repo_config` exists. Do not use
+     `gt trunk` as a detector; it initializes unconfigured repositories. If
+     Graphite is configured, skip the push and recommend `$submit`.
+   - Otherwise run `git push` when an upstream exists, or
+     `git push --set-upstream origin HEAD` when it does not and `origin` exists.
+     On failure, report the error without pulling, rebasing, or forcing.

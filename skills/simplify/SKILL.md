@@ -1,8 +1,9 @@
 ---
 name: simplify
 description: >
-  Create a durable read-only simplification report for a design document.
-  Invoke only as /skill:simplify or $simplify.
+  Create a durable, read-only simplification review of a design document.
+  Invoke only as /skill:simplify or $simplify when a persistent report is
+  wanted.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash, Read, Write, Glob, Grep
@@ -11,72 +12,87 @@ argument-hint: "<blueprint-slug-or-path> [--scope <area>]"
 
 # Simplify
 
-Review a blueprint or design document and write a simplification report.
+Evaluate a design for unnecessary complexity and store evidence-backed,
+scope-preserving recommendations in a report blueprint.
 
 @rules/blueprints.md, @rules/harness-compat.md, and
 @rules/artifact-readability.md apply.
 
+Keep generated frontmatter intact and write the body below its closing `---`.
+Immediately before committing, run `blueprint validate "$file"` and inspect the
+entire blueprint repository. Stop if its index is nonempty or the current
+project has changes outside `$file`: `blueprint commit` stages the project
+subtree and commits the existing index.
+
 ## Arguments
 
-- `<blueprint-slug-or-path>` — blueprint, design doc, plan, or markdown file to
-  simplify.
-- `--scope <area>` — optional section, module, or concern to focus on.
+- `<blueprint-slug-or-path>` — proposal, report, legacy blueprint, design plan,
+  or Markdown document to evaluate.
+- `--scope <area>` — optional section, module, or concern to evaluate.
 
 ## Workflow
 
-### 1. Resolve Source
+### 1. Resolve And Bound The Source
 
-- If an explicit path exists, read it.
-- Else resolve a matching blueprint with:
-  `blueprint find --type proposal,report,spec,plan --match <arg>`.
-- If no source is provided, stop and ask for a blueprint slug or path.
-- If a blueprint source is found, link the simplification report to it after
-  creating the report.
+- Store an existing path in `source_file` and read it directly. Otherwise
+  resolve one unambiguous `source_file` with
+  `blueprint find --type proposal,report,spec,plan --match <slug>`.
+- If no source is provided, ask for a slug or path before continuing.
+- Record the requested scope and the source goals, non-goals, acceptance
+  criteria, and constraints that recommendations must preserve.
+- When the source is a blueprint, retain its full filename stem for linking.
+  Do not create the simplification report until the analysis is ready to write.
 
-Create a report blueprint:
+### 2. Verify The Existing Design
 
-```bash
-file=$(blueprint create report "Simplify: <source-title>" --status draft)
-blueprint link "$file" "<source-slug>" # when source is a blueprint
-```
+Read only the material source sections and referenced code needed to evaluate:
 
-### 2. Understand Existing Design
+- interfaces, data structures, APIs, and configuration
+- module boundaries, ownership, and data/control flow
+- phases, ordering constraints, and dependencies
+- existing local patterns the design should preserve
 
-Read only what is needed to evaluate complexity:
+Verify referenced code and systems before making claims about them. Do not
+rewrite the source document or modify product code.
 
-- goals, non-goals, acceptance criteria, and constraints
-- proposed interfaces, data structures, APIs, and config
-- phased plan and dependencies
-- existing code paths referenced by the source document
-- local patterns that the design should preserve
-
-When the source references code or systems, inspect relevant files before
-making recommendations. Do not rewrite the source document or edit code.
-
-### 3. Analyze Simplification Opportunities
+### 3. Identify Simpler Alternatives
 
 Look for:
 
 - redundant or overlapping interfaces
-- avoidable public API surface
-- complex data flow that can become linear or local
-- unclear module boundaries or mixed responsibilities
-- abstractions that do not remove real duplication or complexity
-- phases that can merge, split, or reorder around true dependencies
-- comments or documentation that obscure the core decision
+- avoidable public API or configuration surface
+- data/control flow that can become linear or local
+- unclear boundaries or mixed responsibilities
+- abstractions that do not remove real duplication or risk
+- phases that can merge, split, or reorder around actual dependencies
+- wording or documentation that obscures the core decision
 
-Prefer recommendations that make the plan smaller, safer, or easier to review.
-Do not recommend speculative rewrites that increase scope without reducing a
-specific complexity.
+Keep only recommendations that make the design smaller, safer, or easier to
+review while preserving its stated goals. Reject speculative rewrites and
+scope expansion unless they remove a specific, evidenced complexity.
 
-### 4. Write Simplification Report
+### 4. Write The Complete Report
+
+```bash
+file=$(blueprint create report "Simplify: <source-title>" --status complete)
+```
+
+Link a blueprint source:
+
+```bash
+source_slug=$(basename "$source_file" .md)
+blueprint link "$file" "$source_slug"
+```
+
+Write:
 
 ```markdown
 ## Summary
 
+- Overall assessment: Simple | Mostly simple | Too complex | Needs redesign
 - Recommendations: <count>
 - By type: Merge <n> | Extract <n> | Remove <n> | Restructure <n> | Clarify <n>
-- Overall assessment: Simple | Mostly simple | Too complex | Needs redesign
+- Source goals preserved: <short statement>
 
 ## Human-Readable Map
 
@@ -88,20 +104,24 @@ specific complexity.
 
 <Mermaid flowchart or `Diagram omitted: <reason>`>
 
+### Design Trace
+
+| Element | Source / Code | Current responsibility | Proposed change | Evidence |
+| ------- | ------------- | ---------------------- | --------------- | -------- |
+
 ## Recommendations
 
 ### 1. <short title>
 
 - Type: Merge | Extract | Remove | Restructure | Clarify
 - Location: <source section, path, or symbol>
-- Current state: <quote or description>
+- Current state: <concise quote or description>
 - Proposed change: <specific simplification>
-- Rationale: <why this improves reviewability, correctness, or maintainability>
-- Risk assessment:
-  - Functionality impact: None | Low | Medium | High
-  - Correctness impact: None | Low | Medium | High
-- Verification: <source reading, execution verified, production/tool data,
-  inferred>
+- Rationale: <concrete reduction in complexity or risk>
+- Functionality risk: None | Low | Medium | High
+- Correctness risk: None | Low | Medium | High
+- Verification: source reading | execution verified | production/tool data | inferred
+- Confidence: High | Medium | Low
 
 ## Recommendations Not Made
 
@@ -114,30 +134,23 @@ specific complexity.
 
 ## Open Questions
 
-- <question, why it matters, how to answer>
+- <question, why it matters, and how to answer it>
 ```
 
-### 5. Complete and Commit
+Include current/proposed diagrams only when they clarify a non-trivial design;
+otherwise use one omission reason. Omit `## Recommendations Not Made` and
+`## Open Questions` when empty.
 
-```bash
-blueprint status "$file" complete
-blueprint commit report <slug>
-```
+### 5. Commit And Report
 
-If `blueprint commit` exits non-zero, stop and show the error.
-
-### 6. Output
+Run `blueprint commit report <slug>` and stop on any error. Return:
 
 ```text
 Simplification: <path>
 Status: complete
 Recommendations: <count>
-Next: apply manually, revise the source, or $implement <proposal>
+Next: revise the source, or $implement <report> for requested code changes
 ```
 
-## Rules
-
-- Report only. Do not modify the source document or code.
-- Keep recommendations specific and tied to the source goals.
-- Avoid additions unless they reduce real complexity or clarify a boundary.
-- Keep workflow state in blueprints, not chat or harness-native stores.
+The report is advisory. Do not modify its source or implement recommendations
+within this skill.
