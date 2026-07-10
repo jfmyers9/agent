@@ -1,5 +1,5 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import type { z } from "zod";
+import { z } from "zod";
 import { createHashlineEditAnchor } from "../../fileops/hashline/anchors.js";
 import { textComponent } from "../../shared/tui";
 import type { PiToolResponse } from "./core.js";
@@ -333,7 +333,7 @@ export function registerPiContextTools(pi: {
 			name: def.name,
 			label: `Context: ${label}`,
 			description: def.description,
-			parameters: { type: "object", additionalProperties: true, properties: {} },
+			parameters: z.toJSONSchema(def.inputSchema),
 			renderShell: "self",
 			renderCall: createDirectCallRenderer(def.name),
 			renderResult: createDirectResultRenderer(def.name),
