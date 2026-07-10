@@ -561,16 +561,39 @@ function renderHashlineReadResult(
 	theme: RenderTheme,
 ): Text | EmptyComponent {
 	if (options.isPartial) return renderText(theme.fg("warning", "Reading..."));
-	if (!options.expanded) return EMPTY_VIEW;
-	const sections = parseHashlineSections(firstTextContent(result));
+	const text = firstTextContent(result);
+	const sections = parseHashlineSections(text);
 	const section = sections[0];
-	if (!section) return EMPTY_VIEW;
+	if (!section) return renderPlainReadResult(text, result, options, theme);
+	if (!options.expanded) return EMPTY_VIEW;
 	const highlightedRows = Array.isArray(result.details?.highlightedRows)
 		? (result.details.highlightedRows as string[])
 		: [];
 	return renderText(
 		`${renderHashlineHeader(section.header, theme)}\n${renderNumberedRows(section.rows, theme, section.rows.length, highlightedRows)}`,
 	);
+}
+
+function renderPlainReadResult(
+	text: string,
+	result: ToolTextResult,
+	options: { expanded?: boolean },
+	theme: RenderTheme,
+): Text | EmptyComponent {
+	const lines = toolTextLines(text);
+	if (lines.length === 0) return EMPTY_VIEW;
+	const limit = options.expanded ? lines.length : 12;
+	const protectedRead = result.details?.protected === true;
+	const role = protectedRead ? "warning" : "toolOutput";
+	const output = lines.slice(0, limit).map((line) => theme.fg(role, line));
+	if (lines.length > limit) {
+		output.push(
+			theme.fg("muted", `... (${lines.length - limit} more lines, `) +
+				keyHint("app.tools.expand", "to expand") +
+				theme.fg("muted", ")"),
+		);
+	}
+	return renderText(output.join("\n"));
 }
 
 function renderSearchCall(_params: { pattern?: unknown; path?: unknown }, _theme: RenderTheme): EmptyComponent {
