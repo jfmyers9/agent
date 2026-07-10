@@ -26,7 +26,7 @@ Adopted Pi settings from Luan's config:
 
 - quiet startup and reduced terminal progress noise
 - built-in `dark` theme selected explicitly
-- explicit Codex GPT and Anthropic Claude model cycle (`gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `claude-opus-4-8`, `claude-sonnet-4-6`, `claude-haiku-4-5`)
+- explicit GPT and Anthropic Claude model cycle (`gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `claude-opus-4-8`, `claude-sonnet-4-6`, `claude-haiku-4-5`)
 - tree navigation on double Escape
 - Emacs-style movement and queueing shortcuts
 - Luan's current `tui` footer/editor chrome, with provider usage bars defaulted off
