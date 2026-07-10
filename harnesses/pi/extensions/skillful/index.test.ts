@@ -7,14 +7,7 @@ import { findMentionAtCursor, wrapProvider } from "./autocomplete";
 import { installEditorHighlight } from "./editor";
 import { colorize } from "./highlight";
 import extension from "./index";
-import {
-	buildItems,
-	loadedDetails,
-	reconstructLoadedSkills,
-	rewriteSlashSkillReferences,
-	SKILLFUL_CUSTOM_TYPE,
-	stripFrontmatter,
-} from "./skills";
+import { buildItems, rewriteSlashSkillReferences, SKILLFUL_CUSTOM_TYPE, stripFrontmatter } from "./skills";
 
 describe("skillful highlighting", () => {
 	test("highlights known dollar and slash skill references", () => {
@@ -143,40 +136,6 @@ describe("skillful skills", () => {
 			),
 		).toBe("Use `$implement`, then suggest $plan <research>. Keep ~/blueprints/foo/archive/ unchanged.");
 	});
-
-	test("reconstructs loaded skills from active branch after latest compaction", () => {
-		const entries = [
-			{
-				type: "custom_message",
-				customType: SKILLFUL_CUSTOM_TYPE,
-				details: loadedDetails("precompact", "read"),
-			},
-			{ type: "compaction" },
-			{
-				type: "message",
-				message: {
-					role: "toolResult",
-					toolName: "skill",
-					details: loadedDetails("tool-read", "read"),
-				},
-			},
-			{
-				type: "custom_message",
-				customType: SKILLFUL_CUSTOM_TYPE,
-				details: {
-					...loadedDetails("custom-read", "read"),
-					loads: [loadedDetails("custom-read", "read"), loadedDetails("grouped-read", "read")],
-				},
-			},
-			{
-				type: "custom_message",
-				customType: SKILLFUL_CUSTOM_TYPE,
-				details: loadedDetails("cached-only", "cached"),
-			},
-		];
-
-		expect([...reconstructLoadedSkills(entries)].sort()).toEqual(["custom-read", "grouped-read", "tool-read"]);
-	});
 });
 
 describe("skillful extension", () => {
@@ -209,7 +168,6 @@ describe("skillful extension", () => {
 			string,
 			Array<(event: { prompt: string; systemPrompt: string }, ctx: unknown) => unknown>
 		>();
-		const emitted: Array<{ channel: string; data: unknown }> = [];
 		const pi = {
 			getCommands: () => [
 				{ source: "skill", name: "skill:tdd", sourceInfo: { path: skillPath } },
@@ -220,9 +178,7 @@ describe("skillful extension", () => {
 			},
 			registerTool() {},
 			registerMessageRenderer() {},
-			events: {
-				emit: (channel: string, data: unknown) => emitted.push({ channel, data }),
-			},
+			events: { emit() {} },
 		};
 
 		extension(pi as never);
@@ -249,7 +205,6 @@ describe("skillful extension", () => {
 				},
 			},
 		});
-		expect(emitted).toEqual([{ channel: "skillful:cache", data: { names: ["tdd"] } }]);
 	});
 
 	test("loads multiple referenced dollar skills in one custom message", async () => {
@@ -359,7 +314,7 @@ describe("skillful extension", () => {
 		expect(result).toBeUndefined();
 	});
 
-	test("registers skill tool with read and cached results", async () => {
+	test("registers skill tool with fresh read results", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "skillful-"));
 		const skillPath = join(dir, "SKILL.md");
 		writeFileSync(skillPath, "---\nname: tdd\n---\n# TDD\n\nUse `/plan` after the test loop.\n");
@@ -412,16 +367,11 @@ describe("skillful extension", () => {
 		expect(first?.content[0]?.text).toContain("Use `$plan` after the test loop.");
 		expect(first?.details).toMatchObject({ extension: "skillful", kind: "skill-load", name: "tdd", status: "read" });
 
+		writeFileSync(skillPath, "---\nname: tdd\n---\n# Updated TDD\n");
 		const second = await tool?.execute("call-2", { name: "tdd" }, undefined, undefined, ctx);
-		expect(second?.content[0]?.text).toBe(
-			'Skill "tdd" is already loaded in this session branch. Continue following its instructions.',
-		);
-		expect(second?.details).toMatchObject({
-			extension: "skillful",
-			kind: "skill-load",
-			name: "tdd",
-			status: "cached",
-		});
+		expect(second?.content[0]?.text).toContain("# Updated TDD");
+		expect(second?.content[0]?.text).not.toContain("Use `$plan` after the test loop.");
+		expect(second?.details).toMatchObject({ extension: "skillful", kind: "skill-load", name: "tdd", status: "read" });
 		await expect(tool?.execute("call-3", { name: "missing" }, undefined, undefined, ctx)).rejects.toThrow(
 			'Unknown skill "missing"',
 		);
@@ -435,46 +385,8 @@ describe("skillful extension", () => {
 				?.renderResult?.({ content: [], details: second?.details }, { expanded: false }, theme)
 				?.render(80)[0]
 				?.trim(),
-		).toBe("Skill - tdd cached");
+		).toBe("Skill - tdd read");
 		expect(tool?.renderCall?.({ name: "tdd" }, theme, { isPartial: false })?.render(80)).toEqual([]);
-	});
-
-	test("publishes branch-derived cache on session lifecycle events", async () => {
-		const handlers = new Map<string, Array<(event: { reason?: string }, ctx: unknown) => unknown>>();
-		const emitted: Array<{ channel: string; data: unknown }> = [];
-		const pi = {
-			getCommands: () => [],
-			on: (event: string, handler: (event: { reason?: string }, ctx: unknown) => unknown) => {
-				handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-			},
-			registerTool() {},
-			registerMessageRenderer() {},
-			events: {
-				emit: (channel: string, data: unknown) => emitted.push({ channel, data }),
-			},
-		};
-
-		extension(pi as never);
-
-		const ctx = {
-			hasUI: false,
-			sessionManager: {
-				getBranch: () => [
-					{
-						type: "custom_message",
-						customType: SKILLFUL_CUSTOM_TYPE,
-						details: loadedDetails("question", "read"),
-					},
-				],
-			},
-		};
-		await handlers.get("session_start")?.[0]?.({ reason: "startup" }, ctx);
-		await handlers.get("session_compact")?.[0]?.({}, { ...ctx, sessionManager: { getBranch: () => [] } });
-
-		expect(emitted).toEqual([
-			{ channel: "skillful:cache", data: { names: ["question"] } },
-			{ channel: "skillful:cache", data: { names: [] } },
-		]);
 	});
 
 	test("reinstalls autocomplete provider after reload", async () => {

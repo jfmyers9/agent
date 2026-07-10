@@ -4,9 +4,8 @@ import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
 const SKILL_PREFIX = "skill:";
 export const SKILLFUL_CUSTOM_TYPE = "skillful-load";
-export const SKILLFUL_CACHE_EVENT = "skillful:cache";
 
-export type SkillfulLoadStatus = "read" | "cached";
+export type SkillfulLoadStatus = "read";
 
 export type SkillfulLoadDetails = {
 	extension: "skillful";
@@ -79,48 +78,8 @@ export function formatReadSkillContent(name: string, filePath: string, body: str
 	return `<skill name="${name}" location="${filePath}">\nReferences are relative to ${baseDir}.\n\n${body}\n</skill>`;
 }
 
-export function formatCachedSkillContent(name: string): string {
-	return `Skill "${name}" is already loaded in this session branch. Continue following its instructions.`;
-}
-
 export function isSkillfulLoadDetails(value: unknown): value is SkillfulLoadDetails {
 	if (!value || typeof value !== "object") return false;
 	const details = value as Partial<SkillfulLoadDetails>;
 	return details.extension === "skillful" && details.kind === "skill-load" && typeof details.name === "string";
-}
-
-export function reconstructLoadedSkills(entries: unknown[]): Set<string> {
-	const branch = entries.filter((entry) => entry && typeof entry === "object") as Array<Record<string, unknown>>;
-	let lastCompactionIndex = -1;
-	for (let index = branch.length - 1; index >= 0; index -= 1) {
-		if (branch[index]?.type === "compaction") {
-			lastCompactionIndex = index;
-			break;
-		}
-	}
-	const loaded = new Set<string>();
-	for (const entry of branch.slice(lastCompactionIndex + 1)) {
-		for (const details of extractLoadDetails(entry)) {
-			if (details.status === "read") loaded.add(details.name);
-		}
-	}
-	return loaded;
-}
-
-function extractLoadDetails(entry: Record<string, unknown>): SkillfulLoadDetails[] {
-	if (entry.type === "custom_message" && entry.customType === SKILLFUL_CUSTOM_TYPE) {
-		return flattenLoadDetails(entry.details);
-	}
-	if (entry.type !== "message") return [];
-	const message = entry.message;
-	if (!message || typeof message !== "object") return [];
-	const msg = message as Record<string, unknown>;
-	if (msg.role !== "toolResult" || msg.toolName !== "skill") return [];
-	return flattenLoadDetails(msg.details);
-}
-
-function flattenLoadDetails(value: unknown): SkillfulLoadDetails[] {
-	if (!isSkillfulLoadDetails(value)) return [];
-	const loads = Array.isArray(value.loads) ? value.loads.filter(isSkillfulLoadDetails) : [];
-	return loads.length > 0 ? loads : [value];
 }

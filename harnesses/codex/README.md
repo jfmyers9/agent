@@ -26,10 +26,10 @@ The installer copies the mutable baseline config and links shared files:
 - `skills/` to `~/.agents/skills` for Codex discovery
 - `rules/` to `~/.agents/rules` for shared skill references
 
-If `~/.codex/config.toml` already exists as a real file, the installer backs it
-up before copying the baseline config. Codex may append local runtime state such
-as project trust, hook trust hashes, and UI notices to the installed copy; those
-tables are intentionally not checked into this repo.
+If `~/.codex/config.toml` already exists as a real file, the installer preserves
+it. Codex may append local runtime state such as project trust, hook trust
+hashes, and UI notices to the installed copy; those tables are intentionally
+not checked into this repo.
 
 Adopted Luan-inspired Codex ergonomics:
 

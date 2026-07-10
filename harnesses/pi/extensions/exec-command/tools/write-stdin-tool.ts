@@ -6,8 +6,8 @@ import type { ExecSessionManager, UnifiedExecResult } from "./exec-session-manag
 import { formatUnifiedExecResult } from "./unified-exec-format.ts";
 
 const WRITE_STDIN_PARAMETERS = Type.Object({
-	session_id: Type.Number({
-		description: "Identifier of the running unified exec session.",
+	process_id: Type.Number({
+		description: "Identifier of the running unified exec process.",
 	}),
 	chars: Type.Optional(
 		Type.String({
@@ -22,14 +22,14 @@ const WRITE_STDIN_PARAMETERS = Type.Object({
 });
 
 interface WriteStdinParams {
-	session_id: number;
+	process_id: number;
 	chars?: string;
 	yield_time_ms?: number;
 }
 
 interface FormattedExecTranscript {
 	output: string;
-	sessionId?: number;
+	processId?: number;
 	exitCode?: number;
 	stdinOpen?: boolean;
 	originalTokenCount?: number;
@@ -40,13 +40,13 @@ function parseFormattedExecTranscript(text: string): FormattedExecTranscript {
 	const marker = "\nOutput:\n";
 	const markerIndex = text.indexOf(marker);
 	const output = markerIndex !== -1 ? text.slice(markerIndex + marker.length) : text;
-	const sessionMatch = text.match(/Process running with session ID (\d+)/);
+	const processMatch = text.match(/Process running with process ID (\d+)/);
 	const exitCodeMatch = text.match(/Process exited with code (-?\d+)/);
 	const stdinMatch = text.match(/Stdin: (open|closed)/);
 	const ttyMatch = text.match(/TTY: yes/);
 	return {
 		output,
-		sessionId: sessionMatch ? Number(sessionMatch[1]) : undefined,
+		processId: processMatch ? Number(processMatch[1]) : undefined,
 		exitCode: exitCodeMatch ? Number(exitCodeMatch[1]) : undefined,
 		stdinOpen: ttyMatch ? true : stdinMatch ? stdinMatch[1] === "open" : undefined,
 	};
@@ -92,7 +92,7 @@ function getResultState(result: {
 	if (details) {
 		return {
 			output: details.output,
-			sessionId: details.session_id,
+			processId: details.process_id,
 			exitCode: details.exit_code,
 			stdinOpen: details.stdin_open,
 			originalTokenCount: details.original_token_count,
@@ -106,14 +106,14 @@ function getResultState(result: {
 }
 
 function parseWriteStdinParams(params: unknown): WriteStdinParams {
-	if (!params || typeof params !== "object" || !("session_id" in params) || typeof params.session_id !== "number") {
-		throw new Error("write_stdin requires numeric 'session_id'");
+	if (!params || typeof params !== "object" || !("process_id" in params) || typeof params.process_id !== "number") {
+		throw new Error("write_stdin requires numeric 'process_id'");
 	}
 	const chars = "chars" in params && typeof params.chars === "string" ? params.chars : undefined;
 	const yield_time_ms =
 		"yield_time_ms" in params && typeof params.yield_time_ms === "number" ? params.yield_time_ms : undefined;
 	return {
-		session_id: params.session_id,
+		process_id: params.process_id,
 		chars,
 		yield_time_ms,
 	};
@@ -174,20 +174,25 @@ function scheduleRunningInvalidation(context: RenderContextLike | undefined, run
 	}, BACKGROUND_TERMINAL_HUD_FRAME_MS);
 }
 
-export function registerWriteStdinTool(pi: ExtensionAPI, sessions: ExecSessionManager): void {
+export function registerWriteStdinTool(
+	pi: ExtensionAPI,
+	sessions: ExecSessionManager,
+	options: { onResult?: (input: WriteStdinParams, result: UnifiedExecResult) => void } = {},
+): void {
 	pi.registerTool({
 		name: "write_stdin",
 		label: "write_stdin",
-		description: "Writes characters to an existing unified exec session and returns recent output.",
+		description: "Writes characters to an existing unified exec process and returns recent output.",
 		renderShell: "self",
-		promptSnippet: "Write to an exec session.",
+		promptSnippet: "Write to an exec process.",
 		parameters: WRITE_STDIN_PARAMETERS,
 		async execute(_toolCallId, params) {
 			const typed = parseWriteStdinParams(params);
-			const command = sessions.getSessionCommand(typed.session_id);
+			const command = sessions.getSessionCommand(typed.process_id);
 			let result: UnifiedExecResult;
 			try {
 				result = await sessions.write(typed);
+				options.onResult?.(typed, result);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				throw new Error(`write_stdin failed: ${message}`);
@@ -199,7 +204,7 @@ export function registerWriteStdinTool(pi: ExtensionAPI, sessions: ExecSessionMa
 			};
 		},
 		renderCall(args, theme, context) {
-			const sessionId = typeof args.session_id === "number" ? args.session_id : "?";
+			const processId = typeof args.process_id === "number" ? args.process_id : "?";
 			const running = context?.isPartial === true;
 			if (isEmptyPoll(args)) {
 				return createEmptyResultComponent();
@@ -207,8 +212,8 @@ export function registerWriteStdinTool(pi: ExtensionAPI, sessions: ExecSessionMa
 			scheduleRunningInvalidation(context, running);
 			const currentElapsedMs = elapsedMs(context, running);
 			const input = typeof args.chars === "string" ? args.chars : undefined;
-			const snapshot = typeof sessionId === "number" ? sessions.getSessionSnapshot(sessionId) : undefined;
-			const command = typeof sessionId === "number" ? sessions.getSessionCommand(sessionId) : undefined;
+			const snapshot = typeof processId === "number" ? sessions.getSessionSnapshot(processId) : undefined;
+			const command = typeof processId === "number" ? sessions.getSessionCommand(processId) : undefined;
 			return renderExecCellComponent(
 				{
 					kind: "write-stdin",
@@ -217,7 +222,7 @@ export function registerWriteStdinTool(pi: ExtensionAPI, sessions: ExecSessionMa
 					failed: context?.isError === true,
 					elapsedMs: currentElapsedMs,
 					writeStdin: {
-						sessionId,
+						processId,
 						input,
 						stdinOpen: snapshot?.stdinOpen,
 					},
@@ -234,8 +239,8 @@ export function registerWriteStdinTool(pi: ExtensionAPI, sessions: ExecSessionMa
 			}
 			const output = renderTerminalText(state.output);
 			const footer =
-				state.sessionId !== undefined
-					? `${theme.fg("accent", `Session ${state.sessionId} still running`)}${
+				state.processId !== undefined
+					? `${theme.fg("accent", `Process ${state.processId} still running`)}${
 							state.stdinOpen ? `${theme.fg("dim", " · ")}${theme.fg("mdLink", "tty")}` : ""
 						}`
 					: state.exitCode !== undefined && state.exitCode !== 0

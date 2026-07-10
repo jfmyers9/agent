@@ -80,16 +80,61 @@ function missingCoreResponse(): CoreResponse {
 	};
 }
 
-export async function invokeCore(command: string, params: Record<string, unknown> = {}): Promise<CoreResponse> {
+export async function invokeCore(
+	command: string,
+	params: Record<string, unknown> = {},
+	signal?: AbortSignal,
+): Promise<CoreResponse> {
 	const bin = resolveCoreBin();
 	if (!bin) {
 		return missingCoreResponse();
 	}
 
+	if (signal?.aborted) {
+		return {
+			content: [{ type: "text", text: "Context Guard core cancelled" }],
+			isError: true,
+		};
+	}
+
 	return new Promise((resolvePromise) => {
-		const child = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"] });
+		const child = spawn(bin, [], {
+			stdio: ["pipe", "pipe", "pipe"],
+			detached: process.platform !== "win32",
+		});
 		let stdout = "";
 		let stderr = "";
+		let settled = false;
+		let cancelled = false;
+
+		const settle = (response: CoreResponse) => {
+			if (settled) return;
+			settled = true;
+			signal?.removeEventListener("abort", abortListener);
+			resolvePromise(response);
+		};
+		const killChild = (killSignal: NodeJS.Signals) => {
+			try {
+				if (process.platform !== "win32" && child.pid) {
+					process.kill(-child.pid, killSignal);
+					return;
+				}
+			} catch {
+				// Fall back to terminating the direct child.
+			}
+			child.kill(killSignal);
+		};
+		const abortListener = () => {
+			cancelled = true;
+			killChild("SIGTERM");
+			setTimeout(() => killChild("SIGKILL"), 500).unref?.();
+			settle({
+				content: [{ type: "text", text: "Context Guard core cancelled" }],
+				isError: true,
+			});
+		};
+
+		signal?.addEventListener("abort", abortListener, { once: true });
 
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
@@ -100,14 +145,21 @@ export async function invokeCore(command: string, params: Record<string, unknown
 			stderr += chunk;
 		});
 		child.on("error", (err) => {
-			resolvePromise({
+			settle({
 				content: [{ type: "text", text: `Context Guard core error: ${err.message}` }],
 				isError: true,
 			});
 		});
 		child.on("close", (code) => {
+			if (cancelled || signal?.aborted) {
+				settle({
+					content: [{ type: "text", text: "Context Guard core cancelled" }],
+					isError: true,
+				});
+				return;
+			}
 			if (code !== 0) {
-				resolvePromise({
+				settle({
 					content: [{ type: "text", text: `Context Guard core exited ${code}: ${stderr.trim()}`.trim() }],
 					isError: true,
 				});
@@ -115,9 +167,9 @@ export async function invokeCore(command: string, params: Record<string, unknown
 			}
 
 			try {
-				resolvePromise(JSON.parse(stdout) as CoreResponse);
+				settle(JSON.parse(stdout) as CoreResponse);
 			} catch (err) {
-				resolvePromise({
+				settle({
 					content: [
 						{
 							type: "text",

@@ -48,12 +48,16 @@ Installed extensions:
 - `fileops/` — replaces the built-in local file workflow with `read`, `search`, `find`, `write`, and a configurable `edit` tool. Default edit mode is hashline.
 - `prompt-storage/` — local prompt stash/history. Shortcuts: `alt+s` stash current draft, `ctrl+alt+s` pop a stash, `ctrl+r` search previous prompts.
 - `vim/` — replaces the editor with Vim-style modal editing. Remove it from `settings.json`'s `extensions` list, then reinstall/reload Pi, to disable it.
-- `skillful/` — supports `$skill-name` references with autocomplete/highlighting/caching and registers a `skill` tool while keeping `/skill:<name>` commands available.
+- `skillful/` — supports `$skill-name` references with autocomplete/highlighting and registers a `skill` tool that reads current instructions on every invocation while keeping `/skill:<name>` commands available.
 - `system-prompt/` — renders a tested Mustache system prompt from active tools, context files, skills, cwd, date, and timezone.
 - `token-burden/` — reports prompt/session token categories, tool burden, and skill burden.
 - `tui/` — owns Pi footer/editor chrome for cwd, git, model/thinking, context, tokens, cost, and local `/usage-bars [on|off|toggle]` rendering.
 - `spawn/` — provides `/spawn`, `spawn_lane`, `spawn_list`, and `spawn_map` for bounded Pi/shell/command lanes.
 - `git-tool/` — repo-configured Git workflow prompt guidance and skill resources. Set with `git config agents.git-tool graphite`, `git-spice`, `main`, or `none`.
+
+Available but not enabled by default:
+
+- `codex-native/` — OpenAI native compaction for `openai-codex` and compatible Responses API providers. This initial vertical slice is opt-in and does not change provider, model, authentication, or compaction defaults.
 
 Retired local extension names:
 

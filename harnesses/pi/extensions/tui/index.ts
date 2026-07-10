@@ -8,7 +8,6 @@ import {
 	advanceWorkingAnimationFrame,
 	type EditorSessionIdentity,
 	installEditorComposition,
-	setCachedSkillNames,
 	setEditorChromeProvider,
 	setEditorSessionIdentityProvider,
 	setWorkingAnimationState,
@@ -135,7 +134,6 @@ export default function (pi: ExtensionAPI) {
 	const contextPulseDeadlines = new Map<number, number>();
 	let disposed = false;
 	let uiGeneration = 0;
-	let unsubscribeSkillfulCache: (() => void) | undefined;
 	let editorSessionIdentity: EditorSessionIdentity | undefined;
 
 	const isStaleCtxError = (error: unknown) =>
@@ -529,9 +527,6 @@ export default function (pi: ExtensionAPI) {
 		disposed = true;
 		uiGeneration++;
 		requestFooterRender = undefined;
-		unsubscribeSkillfulCache?.();
-		unsubscribeSkillfulCache = undefined;
-		setCachedSkillNames([]);
 		setEditorChromeProvider(undefined);
 		setEditorSessionIdentityProvider(undefined);
 		editorSessionIdentity = undefined;
@@ -584,15 +579,6 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_compact", async (_event, ctx) => {
 		if (!syncStateIfCurrent(ctx)) return;
 		scheduleProjectRefresh(ctx);
-		refresh();
-	});
-
-	unsubscribeSkillfulCache = pi.events.on("skillful:cache", (data) => {
-		const names =
-			data && typeof data === "object" && Array.isArray((data as { names?: unknown }).names)
-				? (data as { names: unknown[] }).names.filter((name): name is string => typeof name === "string")
-				: [];
-		setCachedSkillNames(names);
 		refresh();
 	});
 }

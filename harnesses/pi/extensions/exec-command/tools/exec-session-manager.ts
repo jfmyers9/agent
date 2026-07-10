@@ -24,7 +24,7 @@ export interface UnifiedExecResult {
 	timed_out?: boolean;
 	cancelled?: boolean;
 	session_error?: string;
-	session_id?: number;
+	process_id?: number;
 	stdin_open?: boolean;
 	original_token_count?: number;
 	output_truncated?: boolean;
@@ -66,7 +66,7 @@ export interface ExecCommandInput {
 }
 
 export interface WriteStdinInput {
-	session_id: number;
+	process_id: number;
 	chars?: string;
 	yield_time_ms?: number;
 }
@@ -728,7 +728,7 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 			result.output_truncated = true;
 		}
 		if (isRunning(session)) {
-			result.session_id = session.id;
+			result.process_id = session.id;
 			result.stdin_open = session.interactive;
 		} else {
 			addTerminalState(result, session);
@@ -751,7 +751,7 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 			result.original_token_count = approxTokenCount(session.buffer);
 		}
 		if (isRunning(session)) {
-			result.session_id = session.id;
+			result.process_id = session.id;
 			result.stdin_open = session.interactive;
 		} else {
 			addTerminalState(result, session);
@@ -949,9 +949,9 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 			}
 		},
 		write: async (input) => {
-			const session = sessions.get(input.session_id);
+			const session = sessions.get(input.process_id);
 			if (!session || session.hidden) {
-				throw new Error(`Unknown process id ${input.session_id}`);
+				throw new Error(`Unknown process id ${input.process_id}`);
 			}
 			if (input.chars && input.chars.length > 0) {
 				if (!session.interactive) {

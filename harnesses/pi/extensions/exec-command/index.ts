@@ -5,7 +5,7 @@ import {
 	type ExtensionContext,
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Key, matchesKey, Text } from "@earendil-works/pi-tui";
 import { resolveCoreBin } from "../context-guard/pi/core.ts";
 import { isExecCommandContextGuardEnabled } from "../context-guard/pi/index.ts";
 import { defineExtensionTui, registerExtensionMessageRenderer, setOrderedAboveEditorWidget } from "../shared/tui";
@@ -235,7 +235,7 @@ interface BackgroundTerminalStatusUi {
 }
 
 interface BackgroundTerminalFinishedDetails {
-	session_id: number;
+	process_id: number;
 	command: string;
 	output: string;
 	exit_code?: number;
@@ -260,6 +260,7 @@ function backgroundTerminalDetailsToUnifiedResult(details: BackgroundTerminalFin
 		session_error: details.session_error,
 		original_token_count: details.original_token_count,
 		output_truncated: details.output_truncated,
+		process_id: details.process_id,
 	};
 }
 
@@ -278,6 +279,11 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 	let backgroundTerminalWidgetTui: { requestRender(): void } | undefined;
 	let backgroundTerminalWidgetTimer: ReturnType<typeof setInterval> | undefined;
 	const completionMessageSessions = new Set<number>();
+	const pendingCompletionMessages = new Map<number, ReturnType<typeof setTimeout>>();
+	let agentTurnActive = false;
+	const foregroundExecToolCalls = new Set<string>();
+	let uninstallForegroundExecInterrupt: (() => void) | undefined;
+	const BACKGROUND_TERMINAL_COMPLETION_HOLD_MS = 200;
 
 	const renderBackgroundTerminalFinishedMessage = (
 		message: { details?: BackgroundTerminalFinishedDetails },
@@ -321,6 +327,42 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 		renderBackgroundTerminalFinishedMessage,
 	);
 
+	function cancelBackgroundTerminalCompletionMessage(processId: number): void {
+		const timer = pendingCompletionMessages.get(processId);
+		if (!timer) return;
+		clearTimeout(timer);
+		pendingCompletionMessages.delete(processId);
+	}
+
+	function clearPendingBackgroundTerminalCompletionMessages(): void {
+		for (const timer of pendingCompletionMessages.values()) clearTimeout(timer);
+		pendingCompletionMessages.clear();
+	}
+
+	function isTerminalExecResult(result: UnifiedExecResult): boolean {
+		return (
+			result.terminal_state !== undefined ||
+			result.exit_code !== undefined ||
+			result.timed_out === true ||
+			result.cancelled === true ||
+			typeof result.session_error === "string"
+		);
+	}
+
+	function scheduleBackgroundTerminalCompletionMessage(
+		processId: number,
+		message: unknown,
+		options: { deliverAs: "followUp"; triggerTurn: true },
+	): void {
+		cancelBackgroundTerminalCompletionMessage(processId);
+		const timer = setTimeout(() => {
+			pendingCompletionMessages.delete(processId);
+			(pi as any).sendMessage?.(message, options);
+		}, BACKGROUND_TERMINAL_COMPLETION_HOLD_MS);
+		timer.unref?.();
+		pendingCompletionMessages.set(processId, timer);
+	}
+
 	const syncToolPolicy = () => {
 		if (shuttingDown) return;
 		const active = pi.getActiveTools();
@@ -360,9 +402,7 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 	const renderBackgroundTerminalWidget = (theme: RenderTheme, width: number): string[] => {
 		const runningRecords = sessions.listSessions().filter((record) => record.running);
 		if (runningRecords.length === 0) return [];
-		const lines = runningRecords
-			.slice(0, 4)
-			.map((record) => renderBackgroundTerminalWidgetLine(record, theme, width));
+		const lines = runningRecords.slice(0, 4).map((record) => renderBackgroundTerminalWidgetLine(record, theme, width));
 		const omitted = runningRecords.length - lines.length;
 		if (omitted > 0) {
 			lines.push(theme.fg("dim", `… ${omitted} more background terminal${omitted === 1 ? "" : "s"}`));
@@ -443,6 +483,27 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 		lastBackgroundTerminalStatus = undefined;
 	};
 
+	function installForegroundExecInterrupt(ctx: ExtensionContext): void {
+		uninstallForegroundExecInterrupt?.();
+		const onTerminalInput = ctx.ui?.onTerminalInput;
+		if (!onTerminalInput) {
+			uninstallForegroundExecInterrupt = undefined;
+			return;
+		}
+		uninstallForegroundExecInterrupt = onTerminalInput((data) => {
+			if (foregroundExecToolCalls.size === 0 || !matchesKey(data, Key.escape)) return undefined;
+			ctx.abort();
+			ctx.ui.notify("Interrupting foreground exec_command...", "info");
+			return { consume: true };
+		});
+	}
+
+	function clearForegroundExecInterrupt(): void {
+		uninstallForegroundExecInterrupt?.();
+		uninstallForegroundExecInterrupt = undefined;
+		foregroundExecToolCalls.clear();
+	}
+
 	registerExecCommandTool(pi, tracker, sessions, {
 		rewriteCommand: async (command, ctx) => {
 			const decision = await computeRtkRewriteDecision(pi, command, rtk.enabled);
@@ -456,23 +517,27 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 			};
 		},
 		onResult: (_input, result) => {
-			if (result.session_id !== undefined) {
-				completionMessageSessions.add(result.session_id);
+			if (result.process_id !== undefined) {
+				completionMessageSessions.add(result.process_id);
 			}
 		},
-		contextGuardEnabled: () =>
-			contextGuard.enabled && isExecCommandContextGuardEnabled() && resolveCoreBin() !== null,
+		contextGuardEnabled: () => contextGuard.enabled && isExecCommandContextGuardEnabled() && resolveCoreBin() !== null,
 	});
-	registerWriteStdinTool(pi, sessions);
+	registerWriteStdinTool(pi, sessions, {
+		onResult: (input, result) => {
+			if (isTerminalExecResult(result)) cancelBackgroundTerminalCompletionMessage(input.process_id);
+		},
+	});
 	sessions.onSessionExit((sessionId, command) => {
 		const snapshot = sessions.getSessionSnapshot(sessionId);
 		tracker.recordSessionFinished(sessionId);
 		const shouldEmitCompletionMessage = completionMessageSessions.has(sessionId);
 		completionMessageSessions.delete(sessionId);
 		if (!shouldEmitCompletionMessage) return;
+		if (agentTurnActive) return;
 		if (!snapshot) return;
 		const details: BackgroundTerminalFinishedDetails = {
-			session_id: sessionId,
+			process_id: sessionId,
 			command,
 			output: snapshot.output,
 			exit_code: snapshot.exitCode,
@@ -486,7 +551,8 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 		if (snapshot.originalTokenCount !== undefined) {
 			details.original_token_count = snapshot.originalTokenCount;
 		}
-		(pi as any).sendMessage?.(
+		scheduleBackgroundTerminalCompletionMessage(
+			sessionId,
 			{
 				customType:
 					snapshot.terminalState === "session_error"
@@ -594,22 +660,35 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 
 	pi.on("session_start", (event, ctx) => {
 		shuttingDown = false;
+		agentTurnActive = false;
 		const reason = (event as { reason?: string } | undefined)?.reason;
 		if (reason === "resume" || reason === "new" || reason === "fork") {
 			clearBackgroundTerminalStatus();
 			sessions.shutdown();
 		}
+		installForegroundExecInterrupt(ctx);
 		setBackgroundTerminalStatusUi(ctx);
 		tracker.clear();
 		completionMessageSessions.clear();
+		clearPendingBackgroundTerminalCompletionMessages();
 		syncToolPolicy();
 	});
 	pi.on("session_tree", () => {
+		agentTurnActive = false;
 		tracker.clear();
 		completionMessageSessions.clear();
+		clearPendingBackgroundTerminalCompletionMessages();
 		syncToolPolicy();
 	});
 	pi.on("model_select", () => {
+		syncToolPolicy();
+	});
+	pi.on("agent_start", () => {
+		agentTurnActive = true;
+		syncToolPolicy();
+	});
+	pi.on("agent_end", () => {
+		agentTurnActive = false;
 		syncToolPolicy();
 	});
 	pi.on("before_agent_start", () => {
@@ -634,11 +713,15 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 			tracker.resetExplorationGroup();
 			return;
 		}
+		foregroundExecToolCalls.add(event.toolCallId);
 		const command = getCommandArg(event.args);
 		if (command) tracker.recordStart(event.toolCallId, command);
 	});
 	pi.on("tool_execution_end", (event) => {
-		if (event.toolName === "exec_command") tracker.recordEnd(event.toolCallId);
+		if (event.toolName === "exec_command") {
+			foregroundExecToolCalls.delete(event.toolCallId);
+			tracker.recordEnd(event.toolCallId);
+		}
 	});
 	pi.on("tool_result", (event) => {
 		const content = truncateTextToolResultContent(event.content);
@@ -669,7 +752,10 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 	});
 	pi.on("session_shutdown", () => {
 		shuttingDown = true;
+		agentTurnActive = false;
 		completionMessageSessions.clear();
+		clearPendingBackgroundTerminalCompletionMessages();
+		clearForegroundExecInterrupt();
 		clearBackgroundTerminalStatus();
 		tracker.clear();
 		sessions.shutdown();

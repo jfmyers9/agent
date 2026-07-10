@@ -157,12 +157,7 @@ function prepareExecCommandArguments(args: unknown): ExecCommandParams {
 
 	const record = args as Record<string, unknown>;
 	const prepared: Record<string, unknown> = { ...record };
-	if (
-		typeof prepared.mode !== "string" &&
-		!("cmd" in prepared) &&
-		!("command" in prepared) &&
-		"commands" in prepared
-	) {
+	if (typeof prepared.mode !== "string" && !("cmd" in prepared) && !("command" in prepared) && "commands" in prepared) {
 		prepared.mode = "batch";
 	}
 	if (!("cmd" in prepared) && "command" in prepared) {
@@ -641,7 +636,7 @@ const renderExecCommandResultWithOptionalContext: any = (
 	}
 
 	const details = isUnifiedExecResult(result.details) ? result.details : undefined;
-	if (details?.session_id !== undefined || renderInfo.sessionId !== undefined) {
+	if (details?.process_id !== undefined || renderInfo.sessionId !== undefined) {
 		return createEmptyResultComponent();
 	}
 	const content = result.content.find((item) => item.type === "text");
@@ -730,8 +725,8 @@ export function registerExecCommandTool(
 						}
 					: undefined,
 			);
-			if (result.session_id !== undefined) {
-				tracker.recordPersistentSession(toolCallId, result.session_id);
+			if (result.process_id !== undefined) {
+				tracker.recordPersistentSession(toolCallId, result.process_id);
 			}
 			const resultOptions = options.onResult?.(typedParams, result, ctx);
 			return {

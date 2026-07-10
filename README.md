@@ -13,6 +13,19 @@ Code, Pi, and Codex.
 ./install.sh all      # install all adapters
 ```
 
+Installer lifecycle commands:
+
+```sh
+./install.sh dry-run pi  # report changes and conflicts without writing
+./install.sh doctor pi   # check sources, tools, and symlink support
+./install.sh validate pi # verify installed links and configuration
+./install.sh unlink pi   # remove only links owned by this checkout
+```
+
+Installation preflights every destination before writing. Existing files and
+foreign symlinks are rejected and left untouched. Codex's mutable
+`config.toml` is copied only when absent and preserved thereafter.
+
 Environment overrides:
 
 - `CLAUDE_CONFIG_DIR` — default `~/.claude`
@@ -26,10 +39,24 @@ Environment overrides:
 - `git`
 - Graphite CLI (`gt`) for stacked branch / PR workflow
 - GitHub CLI (`gh`) for PR and issue metadata
+- Node.js for config validation and Pi extensions
 - Python 3 for Claude statusline only
 - macOS Keychain only for Claude quota statusline enrichment
 - Codex CLI (`codex`) for the Codex adapter
 - Rust/Cargo for the Pi Context Guard core
+- [mise](https://mise.jdx.dev/) for the pinned Bun toolchain
+- [just](https://just.systems/) for local development commands
+
+## Development
+
+```sh
+mise install
+bun install --frozen-lockfile
+just check
+```
+
+`just check` is non-mutating. It validates shell syntax, Biome lint rules,
+TypeScript, Rust formatting and lints, and the Rust and Bun tests.
 
 ## Layout
 
@@ -131,10 +158,10 @@ Installed by `./install.sh codex` into `~/.codex` and `~/.agents`:
 - links shared `rules/` as `$HOME/.agents/rules`
 - installs `blueprint` to `~/.local/bin`
 
-If `~/.codex/config.toml` already exists as a real file, the Codex
-installer backs it up before copying the baseline config. Codex may append
-local runtime state such as project trust, hook trust hashes, and UI notices to
-the installed copy; those tables are intentionally not checked into this repo.
+If `~/.codex/config.toml` already exists as a real file, the installer preserves
+it. Codex may append local runtime state such as project trust, hook trust
+hashes, and UI notices to the installed copy; those tables are intentionally
+not checked into this repo.
 
 Codex reads repository `AGENTS.md` files automatically. Shared skills are
 installed through Codex's user skill path and can be invoked with

@@ -41,7 +41,7 @@ export interface ExecCell {
 	contextGuardWrapped?: boolean;
 	outputBlock?: ExecCellOutputBlock;
 	writeStdin?: {
-		sessionId: number | string;
+		processId: number | string;
 		input?: string;
 		stdinOpen?: boolean;
 	};
@@ -234,17 +234,12 @@ function renderExecCellHeader(cell: ExecCell, theme: RenderTheme): string {
 				cell.contextGuardWrapped,
 			);
 		case "spawned-background-terminal":
-			return renderSpawnedBackgroundTerminalCall(
-				cell.command ?? "",
-				theme,
-				cell.rtkWrapped,
-				cell.contextGuardWrapped,
-			);
+			return renderSpawnedBackgroundTerminalCall(cell.command ?? "", theme, cell.rtkWrapped, cell.contextGuardWrapped);
 		case "user-command":
 			return renderUserExecCommandCall(cell.command ?? "", cell.status, theme, cell.failed, cell.elapsedMs);
 		case "write-stdin":
 			return renderWriteStdinCall(
-				cell.writeStdin?.sessionId ?? "?",
+				cell.writeStdin?.processId ?? "?",
 				cell.writeStdin?.input,
 				cell.command,
 				theme,

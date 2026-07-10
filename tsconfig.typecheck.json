@@ -4,6 +4,7 @@
     "harnesses/pi/extensions/*.ts",
     "harnesses/pi/extensions/agents-local/**/*.ts",
     "harnesses/pi/extensions/ask/**/*.ts",
+    "harnesses/pi/extensions/codex-native/**/*.ts",
     "harnesses/pi/extensions/context-guard/**/*.ts",
     "harnesses/pi/extensions/exec-command/**/*.ts",
     "harnesses/pi/extensions/fileops/**/*.ts",

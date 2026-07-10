@@ -1,5 +1,16 @@
 import type { UnifiedExecResult } from "./exec-session-manager.ts";
 
+function isProcessStillRunning(result: UnifiedExecResult): boolean {
+	return (
+		result.process_id !== undefined &&
+		result.exit_code === undefined &&
+		result.terminal_state === undefined &&
+		result.timed_out !== true &&
+		result.cancelled !== true &&
+		result.session_error === undefined
+	);
+}
+
 export function formatUnifiedExecResult(result: UnifiedExecResult, command?: string): string {
 	const sections: string[] = [];
 
@@ -23,8 +34,8 @@ export function formatUnifiedExecResult(result: UnifiedExecResult, command?: str
 	if (result.session_error) {
 		sections.push(`Session error: ${result.session_error}`);
 	}
-	if (result.session_id !== undefined) {
-		sections.push(`Process running with session ID ${result.session_id}`);
+	if (isProcessStillRunning(result)) {
+		sections.push(`Process running with process ID ${result.process_id}`);
 		if (result.stdin_open) {
 			sections.push("TTY: yes");
 		}

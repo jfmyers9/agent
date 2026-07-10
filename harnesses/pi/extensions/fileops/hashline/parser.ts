@@ -46,24 +46,6 @@ function tryParseLiteralAsRepeat(text: string): ParsedRange | null {
 	return { start: { line: start }, end: { line: end } };
 }
 
-const SMALL_EXPANDING_REPLACEMENT_LINE_LIMIT = 20;
-
-function literalPayloadLineCount(payloads: readonly PayloadRow[]): number {
-	let count = 0;
-	for (const payload of payloads) {
-		if (payload.kind === "literal") count++;
-	}
-	return count;
-}
-
-function payloadsHaveRepeats(payloads: readonly PayloadRow[]): boolean {
-	return payloads.some((payload) => payload.kind === "repeat");
-}
-
-function payloadsContainStandaloneClosingDelimiter(payloads: readonly PayloadRow[]): boolean {
-	return payloads.some((payload) => payload.kind === "literal" && /^[\s\t]*[}\])]+;?$/.test(payload.text));
-}
-
 function rangeLineCount(range: ParsedRange): number {
 	return range.end.line - range.start.line + 1;
 }
@@ -579,22 +561,7 @@ export class Executor {
 			);
 		}
 
-		const targetLineCount = rangeLineCount(target.range);
-		const literalLineCount = literalPayloadLineCount(payloads);
-		if (
-			targetLineCount >= 3 &&
-			targetLineCount <= SMALL_EXPANDING_REPLACEMENT_LINE_LIMIT &&
-			literalLineCount > targetLineCount &&
-			!payloadsHaveRepeats(payloads) &&
-			payloadsContainStandaloneClosingDelimiter(payloads)
-		) {
-			throw new Error(
-				`line ${lineNum}: small replacement ${target.range.start.line} ${target.range.end.line} expands around standalone closing delimiters without repeat rows. ` +
-					"Use BEFORE/AFTER for insertion, include & repeat rows to preserve surrounding lines, or expand the range to the full replaced block.",
-			);
-		}
-
-		if (payloadsAreOnlyRepeats(payloads) && repeatPayloadLineCount(payloads) < targetLineCount) {
+		if (payloadsAreOnlyRepeats(payloads) && repeatPayloadLineCount(payloads) < rangeLineCount(target.range)) {
 			throw new Error(
 				`line ${lineNum}: repeat-only replacement ${target.range.start.line} ${target.range.end.line} would delete omitted lines. ` +
 					"Use DELETE for deletes, or include literal payload rows for the final desired replacement.",
