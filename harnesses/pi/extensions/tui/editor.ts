@@ -36,6 +36,7 @@ globalPatchState.__agentsPolishedTuiState ??= {};
 const patchState = globalPatchState.__agentsPolishedTuiState;
 let workingActive = false;
 let workingFrame = 0;
+let workingStartedAt = 0;
 let editorSessionIdentityProvider: (() => EditorSessionIdentity | undefined) | undefined;
 
 const WORKING_WORD = "Working";
@@ -53,7 +54,9 @@ export function setEditorTheme(uiTheme: Theme): void {
 	patchState.currentUiTheme = uiTheme;
 }
 
-export function setWorkingAnimationState(active: boolean, frame = workingFrame): void {
+export function setWorkingAnimationState(active: boolean, frame = workingFrame, startedAt = Date.now()): void {
+	if (active && !workingActive) workingStartedAt = startedAt;
+	if (!active) workingStartedAt = 0;
 	workingActive = active;
 	workingFrame = frame;
 }
@@ -62,8 +65,8 @@ export function advanceWorkingAnimationFrame(): void {
 	workingFrame++;
 }
 
-export function setWorkingAnimationForTest(active: boolean, frame = 0): void {
-	setWorkingAnimationState(active, frame);
+export function setWorkingAnimationForTest(active: boolean, frame = 0, startedAt = Date.now()): void {
+	setWorkingAnimationState(active, frame, startedAt);
 }
 
 export function setEditorChromeProvider(provider: EditorChromeProvider | undefined): void {
@@ -209,10 +212,23 @@ function renderWorkingWord(uiTheme: Theme, color: string, frame: number): string
 		.join("");
 }
 
+function formatWorkingDuration(elapsedMs: number): string {
+	const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+	const seconds = totalSeconds % 60;
+	const minutes = Math.floor(totalSeconds / 60) % 60;
+	const hours = Math.floor(totalSeconds / 3600);
+	const parts: string[] = [];
+	if (hours > 0) parts.push(`${hours}h`);
+	if (hours > 0 || minutes > 0) parts.push(`${minutes}m`);
+	parts.push(`${seconds}s`);
+	return parts.join(" ");
+}
+
 function workingHeaderSegment(uiTheme: Theme, color: string): string {
 	if (!workingActive) return "";
 	const label = renderWorkingWord(uiTheme, color, workingFrame);
-	return `${label}${rgbFg(scaleRgb(colorRgb(uiTheme, color), 0.85))}…${ANSI_RESET}`;
+	const duration = uiTheme.fg("dim", ` (${formatWorkingDuration(Date.now() - workingStartedAt)})`);
+	return `${label}${rgbFg(scaleRgb(colorRgb(uiTheme, color), 0.85))}…${ANSI_RESET}${duration}`;
 }
 
 function cleanIdentityPart(value: string | undefined): string | undefined {

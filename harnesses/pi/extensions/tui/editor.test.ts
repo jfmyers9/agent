@@ -62,8 +62,22 @@ describe("polished TUI editor", () => {
 			rgbTheme,
 		);
 
-		expect(stripAnsi(lines[0] ?? "")).toContain("Working…");
+		expect(stripAnsi(lines[0] ?? "")).toContain("Working… (0s)");
 		expect(lines.every((line) => visibleWidth(line) <= 40)).toBe(true);
+	});
+
+	test("formats working durations with hours", () => {
+		setWorkingAnimationForTest(true, 3, Date.now() - 3_665_000);
+
+		const lines = renderPolishedEditorForTest(
+			editor({ getMode: () => "insert" }),
+			48,
+			() => ["> hello", ""],
+			28,
+			rgbTheme,
+		);
+
+		expect(stripAnsi(lines[0] ?? "")).toContain("Working… (1h 1m 5s)");
 	});
 
 	test("renders session identity before animated working text", () => {
@@ -78,7 +92,7 @@ describe("polished TUI editor", () => {
 			rgbTheme,
 		);
 
-		expect(stripAnsi(lines[0] ?? "")).toContain("Spawn mosaic refactor · Working…");
+		expect(stripAnsi(lines[0] ?? "")).toContain("Spawn mosaic refactor · Working… (0s)");
 		expect(lines.every((line) => visibleWidth(line) <= 48)).toBe(true);
 	});
 
@@ -100,7 +114,7 @@ describe("polished TUI editor", () => {
 	});
 
 	test("truncates long session identity before working status", () => {
-		setWorkingAnimationForTest(true, 3);
+		setWorkingAnimationForTest(true, 3, Date.now() - 65_000);
 		setEditorSessionIdentityProvider(() => ({ name: "A very long named session that should shrink first" }));
 
 		const lines = renderPolishedEditorForTest(
@@ -111,7 +125,7 @@ describe("polished TUI editor", () => {
 			rgbTheme,
 		);
 
-		expect(stripAnsi(lines[0] ?? "")).toContain("… · Working…");
+		expect(stripAnsi(lines[0] ?? "")).toContain("… · Working… (1m 5s)");
 		expect(lines.every((line) => visibleWidth(line) <= 34)).toBe(true);
 	});
 
