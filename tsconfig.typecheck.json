@@ -7,6 +7,7 @@
     "harnesses/pi/extensions/context-guard/**/*.ts",
     "harnesses/pi/extensions/exec-command/**/*.ts",
     "harnesses/pi/extensions/fileops/**/*.ts",
+    "harnesses/pi/extensions/apply-patch/**/*.ts",
     "harnesses/pi/extensions/pretty/**/*.ts",
     "harnesses/pi/extensions/prompt-storage/**/*.ts",
     "harnesses/pi/extensions/shared/**/*.ts",
