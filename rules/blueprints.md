@@ -2,7 +2,7 @@
 
 Blueprints are opt-in durable documents. Create one only when the user
 explicitly invokes an artifact skill: `context`, `research`, `review`,
-`diagnose`, `acceptance`, `simplify`, `report`, or `archive`.
+`diagnose`, `simplify`, `report`, or `archive`.
 
 Ordinary questions, coding, debugging, PR work, and branch management do not
 create blueprints. They may consume an existing blueprint when the user names

@@ -171,7 +171,7 @@ installed through Codex's user skill path and can be invoked with
 ## Portability status
 
 Manual artifact skills: `context`, `research`, `review`, `diagnose`,
-`acceptance`, `simplify`, `report`, and `archive`.
+`simplify`, `report`, and `archive`.
 
 Direct workflows may consume artifacts but do not require or create trackers:
 `implement`, `fix`, `debug`, `pr-plan`, `respond`, `split-commit`, `vibe`, and

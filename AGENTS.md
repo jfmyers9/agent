@@ -27,7 +27,7 @@
 ## Durable Artifacts
 
 Blueprints are opt-in. Create them only when I explicitly invoke `context`,
-`research`, `review`, `diagnose`, `acceptance`, `simplify`, `report`, or
+`research`, `review`, `diagnose`, `simplify`, `report`, or
 `archive`.
 
 - Proposals: `blueprint create proposal "<topic>"`

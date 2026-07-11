@@ -10,7 +10,6 @@ const artifactSkills = [
   "research",
   "review",
   "diagnose",
-  "acceptance",
   "simplify",
   "report",
   "archive",
@@ -46,7 +45,6 @@ describe("opt-in routing", () => {
   test("named artifact skills persist the requested artifact", () => {
     expect(read("skills/research/SKILL.md")).toContain("blueprint create proposal");
     expect(read("skills/review/SKILL.md")).toContain("blueprint create review");
-    expect(read("skills/acceptance/SKILL.md")).toContain("blueprint create review");
     for (const skill of ["context", "diagnose", "simplify", "report"]) {
       expect(read(`skills/${skill}/SKILL.md`)).toContain("blueprint create report");
     }
