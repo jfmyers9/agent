@@ -1,8 +1,9 @@
 ---
 name: start
 description: >
-  Create a clean, empty Graphite branch when the user explicitly asks to start
-  a new branch for work. Triggers: /start, "start new branch", "begin work on".
+  Create a clean, empty Graphite branch only when the user explicitly invokes
+  /start or asks to use Graphite branch creation. Triggers: /start,
+  "Graphite branch", "Graphite start".
 allowed-tools: Bash
 argument-hint: "<branch-name>"
 ---

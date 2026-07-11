@@ -2,8 +2,6 @@
 
 ## Workflow
 
-- I use Graphite for branch management
-- Use the submit workflow to sync and create PRs
 - Use conventional commits for commit messages
 
 ## Conciseness

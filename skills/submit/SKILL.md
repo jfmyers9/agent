@@ -1,9 +1,10 @@
 ---
 name: submit
 description: >
-  Restack Graphite branches and create or update their pull requests when the
-  user asks to submit, push, or create a PR. Leaves new PRs in draft by default.
-  Triggers: /submit, "submit PR", "push branch", "create PR".
+  Restack Graphite branches and create or update pull requests only when the
+  user explicitly invokes /submit or asks to use Graphite/stack submission.
+  Leaves new PRs in draft by default. Triggers: /submit, "Graphite submit",
+  "stack submit".
 allowed-tools: Bash
 argument-hint: "[--stack] [--sync-only] [--ready]"
 ---

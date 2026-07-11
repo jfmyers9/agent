@@ -2,7 +2,7 @@
 name: commit
 description: >
   Create a Conventional Commit when the user explicitly asks to commit changes.
-  Generate the message when omitted; optionally push only in non-Graphite repos.
+  Generate the message when omitted; optionally push after committing.
   Triggers: /commit, "commit this".
 allowed-tools: Bash
 argument-hint: >
@@ -21,7 +21,7 @@ Create one accurate Conventional Commit from the intended changes.
 - `[message]` — complete commit message; generate it when omitted
 - `--amend` — replace the current commit with the staged result
 - `--fixup <commit>` — create a fixup commit targeting `<commit>`
-- `--push` — push after committing, only in a non-Graphite repository
+- `--push` — push after committing
 - `--as <identity>` — set both author and committer
 - `--author <identity>` — set only the author
 - `--committer <identity>` — set only the committer
@@ -39,7 +39,6 @@ name from the email local-part. Quote every user-derived shell argument.
 - Ask how to split clearly unrelated changes instead of combining them.
 - Never pull, rebase, force-push, or retry with a force option as part of this
   skill.
-- Refuse `--push` in a Graphite repository and direct the user to `$submit`.
 - If `--amend` and `--push` are combined, explain that the remote update may
   require a history rewrite and stop before committing.
 
@@ -144,10 +143,6 @@ data, workflow, or compatibility changes. Preserve relevant trailers such as
 6. **Report and optionally push**
    - Show `git log -1 --oneline`. When identity was overridden, show
      `git log -1 --format='%h %an <%ae> committed-by %cn <%ce> %s'`.
-   - For `--push`, first check whether the path from
-     `git rev-parse --git-path .graphite_repo_config` exists. Do not use
-     `gt trunk` as a detector; it initializes unconfigured repositories. If
-     Graphite is configured, skip the push and recommend `$submit`.
-   - Otherwise run `git push` when an upstream exists, or
+   - For `--push`, run `git push` when an upstream exists, or
      `git push --set-upstream origin HEAD` when it does not and `origin` exists.
      On failure, report the error without pulling, rebasing, or forcing.

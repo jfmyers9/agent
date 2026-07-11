@@ -38,7 +38,7 @@ Environment overrides:
 ## Prerequisites
 
 - `git`
-- Graphite CLI (`gt`) for stacked branch / PR workflow
+- Graphite CLI (`gt`) for explicit stacked branch / PR skills
 - GitHub CLI (`gh`) for PR and issue metadata
 - Node.js for config validation and Pi extensions
 - Python 3 for Claude statusline only
@@ -182,7 +182,7 @@ Direct workflows may consume artifacts but do not require or create trackers:
 - `rules/style.md` — simple readable code
 - `rules/comment-quality.md` — comments explain what code cannot
 - `rules/test-quality.md` — tests must catch realistic bugs
-- `rules/pr-workflow.md` — Graphite-first PR workflow
+- `rules/pr-workflow.md` — PR and push workflow safety
 - `rules/context-budget.md` — conserve context window
 - `rules/skill-editing.md` — keep skills cohesive
 - `rules/blueprints.md` — portable blueprint convention

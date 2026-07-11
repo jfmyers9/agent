@@ -40,7 +40,8 @@ Give a concise, evidence-backed handoff for the current workstream.
    - address valid unresolved review feedback;
    - finish incomplete implementation or tests;
    - inspect and commit a coherent dirty worktree;
-   - run `$submit`, using `--ready` only when explicitly requested;
+   - push or submit only when explicitly requested, using raw `git push` for
+     generic push requests and `$submit` for explicit Graphite/stack submission;
    - wait when an external review or check is the only blocker.
 
 Do not edit files, switch branches, post comments, submit PRs, or create/update
