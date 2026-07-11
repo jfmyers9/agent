@@ -31,11 +31,46 @@ esac
 SOURCES=()
 DESTINATIONS=()
 KINDS=()
+CLEAN_SOURCE_DIRS=()
+CLEAN_DESTINATION_DIRS=()
 
 add_link() {
 	SOURCES+=("$1")
 	DESTINATIONS+=("$2")
 	KINDS+=("link")
+}
+
+add_clean_dir() {
+	CLEAN_SOURCE_DIRS+=("$1")
+	CLEAN_DESTINATION_DIRS+=("$2")
+}
+
+add_link_once() {
+	local destination existing
+	destination="$2"
+	for existing in "${DESTINATIONS[@]}"; do
+		[ "$existing" = "$destination" ] && return
+	done
+	add_link "$1" "$2"
+}
+
+pi_configured_extensions() {
+	local settings="$1"
+	if ! command -v node >/dev/null 2>&1; then
+		if [ "$ACTION" = "doctor" ]; then
+			return 0
+		fi
+		echo "Error: node is required to read Pi extension settings." >&2
+		exit 1
+	fi
+	node -e '
+const fs = require("fs");
+const settings = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+for (const extension of settings.extensions ?? []) {
+	if (typeof extension !== "string") continue;
+	console.log(extension);
+}
+' "$settings"
 }
 
 add_seed() {
@@ -70,11 +105,26 @@ plan_pi() {
 		[ -f "$SCRIPT_DIR/harnesses/pi/$config" ] || continue
 		add_link "$SCRIPT_DIR/harnesses/pi/$config" "$dir/$config"
 	done
-	local extension
-	for extension in "$SCRIPT_DIR/harnesses/pi/extensions/"*; do
-		[ -e "$extension" ] || continue
-		add_link "$extension" "$dir/extensions/$(basename "$extension")"
-	done
+	local extension extension_name
+	while IFS= read -r extension; do
+		[ -n "$extension" ] || continue
+		case "$extension" in
+		"extensions/"*".."*)
+			echo "Invalid Pi extension path: $extension" >&2
+			exit 1
+			;;
+		"extensions/"*) ;;
+		*)
+			echo "Invalid Pi extension path: $extension" >&2
+			exit 1
+			;;
+		esac
+		extension_name="${extension#extensions/}"
+		extension_name="${extension_name%%/*}"
+		add_link_once "$SCRIPT_DIR/harnesses/pi/extensions/$extension_name" "$dir/extensions/$extension_name"
+	done < <(pi_configured_extensions "$SCRIPT_DIR/harnesses/pi/settings.json")
+	add_link_once "$SCRIPT_DIR/harnesses/pi/extensions/shared" "$dir/extensions/shared"
+	add_clean_dir "$SCRIPT_DIR/harnesses/pi/extensions" "$dir/extensions"
 	add_link "$SCRIPT_DIR/node_modules" "$dir/node_modules"
 	add_link "$SCRIPT_DIR/target/release/context-guard" "$HOME/.local/bin/context-guard"
 }
@@ -113,6 +163,81 @@ build_plan() {
 
 is_owned_link() {
 	[ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]
+}
+
+is_planned_destination() {
+	local candidate="$1"
+	local destination
+	for destination in "${DESTINATIONS[@]}"; do
+		[ "$destination" = "$candidate" ] && return 0
+	done
+	return 1
+}
+
+is_cleanable_link() {
+	local source_dir="$1"
+	local link="$2"
+	local target
+	[ -L "$link" ] || return 1
+	target="$(readlink "$link")"
+	case "$target" in
+	"$source_dir"/*) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+print_stale_links() {
+	local index source_dir destination_dir entry
+	for ((index = 0; index < ${#CLEAN_SOURCE_DIRS[@]}; index++)); do
+		source_dir="${CLEAN_SOURCE_DIRS[$index]}"
+		destination_dir="${CLEAN_DESTINATION_DIRS[$index]}"
+		[ -d "$destination_dir" ] && [ ! -L "$destination_dir" ] || continue
+		for entry in "$destination_dir"/*; do
+			[ -e "$entry" ] || [ -L "$entry" ] || continue
+			is_planned_destination "$entry" && continue
+			if is_cleanable_link "$source_dir" "$entry"; then
+				echo "Would remove stale: $entry -> $(readlink "$entry")"
+			fi
+		done
+	done
+}
+
+remove_stale_links() {
+	local label="$1"
+	local index source_dir destination_dir entry target
+	for ((index = 0; index < ${#CLEAN_SOURCE_DIRS[@]}; index++)); do
+		source_dir="${CLEAN_SOURCE_DIRS[$index]}"
+		destination_dir="${CLEAN_DESTINATION_DIRS[$index]}"
+		[ -d "$destination_dir" ] && [ ! -L "$destination_dir" ] || continue
+		for entry in "$destination_dir"/*; do
+			[ -e "$entry" ] || [ -L "$entry" ] || continue
+			is_planned_destination "$entry" && continue
+			if is_cleanable_link "$source_dir" "$entry"; then
+				target="$(readlink "$entry")"
+				rm "$entry"
+				echo "$label: $entry -> $target"
+			fi
+		done
+	done
+}
+
+validate_no_stale_links() {
+	local failed=0
+	local index source_dir destination_dir entry
+	for ((index = 0; index < ${#CLEAN_SOURCE_DIRS[@]}; index++)); do
+		source_dir="${CLEAN_SOURCE_DIRS[$index]}"
+		destination_dir="${CLEAN_DESTINATION_DIRS[$index]}"
+		[ -d "$destination_dir" ] && [ ! -L "$destination_dir" ] || continue
+		for entry in "$destination_dir"/*; do
+			[ -e "$entry" ] || [ -L "$entry" ] || continue
+			is_planned_destination "$entry" && continue
+			if is_cleanable_link "$source_dir" "$entry"; then
+				echo "Invalid install: stale owned link remains at $entry -> $(readlink "$entry")" >&2
+				failed=1
+			fi
+		done
+	done
+	[ "$failed" -eq 0 ]
 }
 
 preflight_targets() {
@@ -277,6 +402,7 @@ validate_install() {
 			failed=1
 		fi
 	done
+	validate_no_stale_links || failed=1
 	[ "$failed" -eq 0 ]
 }
 
@@ -344,16 +470,21 @@ install)
 	preflight_targets
 	prepare_install
 	preflight_sources
+	remove_stale_links "Removed stale"
 	apply_plan
 	validate_install
 	;;
 dry-run)
 	preflight_targets
+	print_stale_links
 	print_plan
 	;;
 doctor) doctor ;;
 validate) validate_install ;;
-unlink) unlink_plan ;;
+unlink)
+	remove_stale_links "Unlinked stale"
+	unlink_plan
+	;;
 esac
 
 echo "Done"

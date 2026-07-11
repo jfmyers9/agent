@@ -53,12 +53,6 @@ Installed extensions:
 - `token-burden/` — reports prompt/session token categories, tool burden, and skill burden.
 - `tui/` — owns Pi footer/editor chrome for cwd, git, model/thinking, context, tokens, cost, and local `/usage-bars [on|off|toggle]` rendering.
 - `spawn/` — provides `/spawn`, `spawn_lane`, `spawn_list`, and `spawn_map` for bounded Pi/shell/command lanes.
-- `git-tool/` — repo-configured Git workflow prompt guidance and skill resources. Set with `git config agents.git-tool graphite`, `git-spice`, `main`, or `none`.
-
-Available but not enabled by default:
-
-- `codex-native/` — OpenAI native compaction for `openai-codex` and compatible Responses API providers. This initial vertical slice is opt-in and does not change provider, model, authentication, or compaction defaults.
-
 Retired local extension names:
 
 - `skill-dollar/` is replaced by `skillful/`.

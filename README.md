@@ -23,8 +23,9 @@ Installer lifecycle commands:
 ```
 
 Installation preflights every destination before writing. Existing files and
-foreign symlinks are rejected and left untouched. Codex's mutable
-`config.toml` is copied only when absent and preserved thereafter.
+foreign symlinks are rejected and left untouched. Pi installs prune stale
+extension links owned by this checkout. Codex's mutable `config.toml` is copied
+only when absent and preserved thereafter.
 
 Environment overrides:
 
@@ -132,7 +133,7 @@ Installed by `./install.sh pi` into `~/.pi/agent`:
 - links `AGENTS.md`, `rules/`, `skills/`
 - links `harnesses/pi/settings.json` as `settings.json`
 - links Pi `keybindings.json`, `tui.json`, and `effort.json` when present
-- links `harnesses/pi/extensions/*` into `~/.pi/agent/extensions/`
+- links Pi extensions named in `settings.json`, plus shared extension support, and prunes stale owned extension links
 - installs `blueprint` to `~/.local/bin`
 - builds `crates/context-guard` and links `context-guard` to `~/.local/bin`
 

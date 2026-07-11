@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -11,6 +11,7 @@ function workspace() {
 	return {
 		home,
 		claude: join(home, "claude config"),
+		pi: join(home, "pi config"),
 		codex: join(home, "codex config"),
 		agents: join(home, "agents config"),
 	};
@@ -18,7 +19,7 @@ function workspace() {
 
 function install(
 	action: "install" | "dry-run" | "validate" | "unlink",
-	harness: "claude" | "codex",
+	harness: "claude" | "pi" | "codex",
 	paths: ReturnType<typeof workspace>,
 ) {
 	return spawnSync("bash", [join(root, "install.sh"), action, harness], {
@@ -28,6 +29,7 @@ function install(
 			...process.env,
 			HOME: paths.home,
 			CLAUDE_CONFIG_DIR: paths.claude,
+			PI_CONFIG_DIR: paths.pi,
 			CODEX_CONFIG_DIR: paths.codex,
 			CODEX_AGENTS_DIR: paths.agents,
 		},
@@ -89,6 +91,30 @@ describe("installer safety", () => {
 		expect(install("unlink", "claude", paths).status).toBe(0);
 		expect(readFileSync(join(paths.claude, "runtime.json"), "utf8")).toBe("runtime\n");
 		expect(() => readFileSync(join(paths.claude, "AGENTS.md"))).toThrow();
+	});
+
+	test("Pi cleanup prunes stale owned extension links", () => {
+		const paths = workspace();
+		const extensions = join(paths.pi, "extensions");
+		mkdirSync(extensions, { recursive: true });
+
+		const stale = join(extensions, "old-extension");
+		symlinkSync(join(root, "harnesses/pi/extensions/old-extension"), stale);
+		const foreignTarget = join(paths.home, "foreign-extension");
+		mkdirSync(foreignTarget);
+		const foreign = join(extensions, "foreign-extension");
+		symlinkSync(foreignTarget, foreign);
+
+		const dryRun = install("dry-run", "pi", paths);
+		expect(dryRun.status).toBe(0);
+		expect(dryRun.stdout).toContain(`Would remove stale: ${stale}`);
+		expect(lstatSync(stale).isSymbolicLink()).toBe(true);
+
+		const unlink = install("unlink", "pi", paths);
+		expect(unlink.status).toBe(0);
+		expect(unlink.stdout).toContain(`Unlinked stale: ${stale}`);
+		expect(existsSync(stale)).toBe(false);
+		expect(lstatSync(foreign).isSymbolicLink()).toBe(true);
 	});
 
 	test("Codex mutable config is seeded once and preserved", () => {
