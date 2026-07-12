@@ -1,7 +1,7 @@
 // Port of OpenAI Codex's apply_patch file-operation grammar and matching behavior.
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 export type ApplyPatchChangeType = "add" | "update" | "delete" | "move";
 
@@ -179,11 +179,8 @@ export function parseApplyPatch(input: string): Operation[] {
 	throw new Error("apply_patch payload is missing *** End Patch.");
 }
 
-function absoluteInside(cwd: string, path: string): string {
-	const target = resolve(cwd, path);
-	const rel = relative(resolve(cwd), target);
-	if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return target;
-	throw new Error(`Refusing to modify path outside cwd: ${path}`);
+function absolutePath(cwd: string, path: string): string {
+	return resolve(cwd, path);
 }
 
 function snapshotFromRaw(raw: string): Snapshot {
@@ -306,7 +303,7 @@ export async function runLocalApplyPatch(
 	const diffs: string[] = [];
 
 	const load = async (path: string): Promise<VirtualFile> => {
-		const absolute = absoluteInside(cwd, path);
+		const absolute = absolutePath(cwd, path);
 		if (virtual.has(absolute)) {
 			const value = virtual.get(absolute);
 			if (!value) throw new Error(`File does not exist: ${path}`);
@@ -319,7 +316,7 @@ export async function runLocalApplyPatch(
 		return value;
 	};
 	const mark = (path: string) => {
-		const absolute = absoluteInside(cwd, path);
+		const absolute = absolutePath(cwd, path);
 		touched.add(absolute);
 		return absolute;
 	};
@@ -340,7 +337,7 @@ export async function runLocalApplyPatch(
 		if (operation.type === "delete") {
 			const file = await load(operation.path);
 			mark(operation.path);
-			virtual.set(absoluteInside(cwd, operation.path), undefined);
+			virtual.set(absolutePath(cwd, operation.path), undefined);
 			changes.push({ path: operation.path, type: "delete", additions: 0, deletions: lineCount(file.text) });
 			diffs.push(unifiedDiff(operation.path, file.text, ""));
 			continue;
@@ -367,7 +364,7 @@ export async function runLocalApplyPatch(
 				operation.expected,
 			);
 			mark(operation.path);
-			virtual.set(absoluteInside(cwd, operation.path), { ...file, text: after });
+			virtual.set(absolutePath(cwd, operation.path), { ...file, text: after });
 			changes.push({
 				path: operation.path,
 				type: "update",

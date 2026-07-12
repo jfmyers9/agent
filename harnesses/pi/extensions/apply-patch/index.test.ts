@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { parseApplyPatch, runLocalApplyPatch } from "./backend";
 import applyPatchExtension from "./index";
 
@@ -75,6 +75,28 @@ describe("apply_patch backend", () => {
 			),
 		).rejects.toThrow("File does not exist: missing.txt");
 		expect(await readFile(join(directory, "file.txt"), "utf8")).toBe("one\n");
+	});
+
+	test("allows patching a sibling directory", async () => {
+		const directory = await temporaryDirectory();
+		const sibling = await temporaryDirectory();
+		await writeFile(join(sibling, "file.txt"), "one\n", "utf8");
+		const siblingPath = relative(directory, sibling);
+
+		await runLocalApplyPatch(
+			directory,
+			`*** Begin Patch
+*** Update File: ${siblingPath}/file.txt
+@@ lines 1-1
+-one
++ONE
+*** Add File: ${siblingPath}/added.txt
++created
+*** End Patch`,
+		);
+
+		expect(await readFile(join(sibling, "file.txt"), "utf8")).toBe("ONE\n");
+		expect(await readFile(join(sibling, "added.txt"), "utf8")).toBe("created\n");
 	});
 });
 
