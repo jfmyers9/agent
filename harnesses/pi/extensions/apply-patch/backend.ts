@@ -2,6 +2,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { createTwoFilesPatch } from "diff";
 
 export type ApplyPatchChangeType = "add" | "update" | "delete" | "move";
 
@@ -273,15 +274,15 @@ function lineCount(text: string): number {
 
 function unifiedDiff(path: string, before: string, after: string, newPath = path): string {
 	if (before === after && path === newPath) return "";
-	const oldLines = before ? before.split("\n") : [];
-	const newLines = after ? after.split("\n") : [];
-	return `${[
-		`--- ${before ? `a/${path}` : "/dev/null"}`,
-		`+++ ${after ? `b/${newPath}` : "/dev/null"}`,
-		`@@ -1,${oldLines.length} +1,${newLines.length} @@`,
-		...oldLines.map((line) => `-${line}`),
-		...newLines.map((line) => `+${line}`),
-	].join("\n")}\n`;
+	return createTwoFilesPatch(
+		before ? `a/${path}` : "/dev/null",
+		after ? `b/${newPath}` : "/dev/null",
+		before,
+		after,
+		undefined,
+		undefined,
+		{ context: 3 },
+	);
 }
 
 function summary(change: ApplyPatchChange): string {

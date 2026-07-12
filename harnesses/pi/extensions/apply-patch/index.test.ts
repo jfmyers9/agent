@@ -98,6 +98,32 @@ describe("apply_patch backend", () => {
 		expect(await readFile(join(sibling, "file.txt"), "utf8")).toBe("ONE\n");
 		expect(await readFile(join(sibling, "added.txt"), "utf8")).toBe("created\n");
 	});
+
+	test("generates compact unified diff hunks for updates", async () => {
+		const directory = await temporaryDirectory();
+		const original = Array.from({ length: 20 }, (_, index) => `line-${index + 1}`).join("\n") + "\n";
+		await writeFile(join(directory, "file.txt"), original, "utf8");
+
+		const result = await runLocalApplyPatch(
+			directory,
+			`*** Begin Patch
+*** Update File: file.txt
+@@ lines 2
+-line-2
++updated-2
+@@ lines 19
+-line-19
++updated-19
+*** End Patch`,
+			{ dryRun: true },
+		);
+
+		expect(result.diff).toContain("@@ -1,5 +1,5 @@");
+		expect(result.diff).toContain("@@ -16,5 +16,5 @@");
+		expect(result.diff).toContain("-line-2\n+updated-2");
+		expect(result.diff).toContain("-line-19\n+updated-19");
+		expect(result.diff).not.toContain("line-10");
+	});
 });
 
 describe("apply_patch tool policy", () => {
