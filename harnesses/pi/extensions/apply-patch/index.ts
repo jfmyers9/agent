@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { buildHighlightedDiffRows, type DiffRenderRow, EditDiffView, type RenderTheme } from "../fileops/diff-render";
 import { textComponent } from "../shared/tui";
 import { type ApplyPatchResult, runLocalApplyPatch } from "./backend.ts";
 
@@ -9,9 +10,18 @@ const applyPatchSchema = Type.Object({
 });
 
 type ModelLike = { id?: string; provider?: string };
+type ApplyPatchToolDetails = {
+	diff?: string;
+	changes?: ApplyPatchResult["changes"];
+	filesChanged?: number;
+	highlightedDiffRows?: DiffRenderRow[];
+	error?: boolean;
+	message?: string;
+};
+
 type ApplyPatchToolResult = {
 	content: [{ type: "text"; text: string }];
-	details: Record<string, unknown>;
+	details: ApplyPatchToolDetails;
 };
 
 function isGptModel(model: ModelLike | undefined): boolean {
@@ -20,10 +30,11 @@ function isGptModel(model: ModelLike | undefined): boolean {
 	return id.startsWith("gpt-") || (provider.includes("openai") && id.includes("gpt"));
 }
 
-function formatResult(result: ApplyPatchResult): ApplyPatchToolResult {
+async function formatResult(result: ApplyPatchResult): Promise<ApplyPatchToolResult> {
+	const highlightedDiffRows = result.diff ? await buildHighlightedDiffRows(result.diff) : undefined;
 	return {
 		content: [{ type: "text", text: result.stdout || "(no changes)" }],
-		details: { diff: result.diff, changes: result.changes, filesChanged: result.changes.length },
+		details: { diff: result.diff, changes: result.changes, filesChanged: result.changes.length, highlightedDiffRows },
 	};
 }
 
@@ -34,6 +45,27 @@ function errorResult(error: unknown): ApplyPatchToolResult {
 
 function isSameTools(left: string[], right: string[]): boolean {
 	return left.length === right.length && left.every((tool, index) => tool === right[index]);
+}
+
+function renderApplyPatchResult(
+	result: ApplyPatchToolResult,
+	options: { expanded?: boolean; isPartial?: boolean },
+	theme: RenderTheme,
+) {
+	if (options.isPartial) return textComponent(theme.fg("warning", "Applying patch..."));
+	const text = result.content.find((part) => part.type === "text")?.text ?? "";
+	if (result.details.error || text.startsWith("Error:")) return textComponent(theme.fg("error", text));
+	if (!result.details.diff) return textComponent(theme.fg("toolTitle", `apply_patch: ${text}`));
+	return new EditDiffView(
+		result.details.diff,
+		result.details.highlightedDiffRows,
+		options.expanded ?? false,
+		theme,
+		(filePath, firstChangedLine, renderTheme) => {
+			const line = firstChangedLine === undefined ? "" : `:${firstChangedLine}`;
+			return `${renderTheme.fg("toolTitle", renderTheme.bold("Patch:"))} ${renderTheme.fg("accent", `${filePath}${line}`)}`;
+		},
+	);
 }
 
 function applyGptToolPolicy(
@@ -87,18 +119,12 @@ export default function applyPatchExtension(pi: ExtensionAPI) {
 		renderCall() {
 			return textComponent("apply_patch");
 		},
-		renderResult(result, _options, theme) {
-			const text = result.content.find((part) => part.type === "text")?.text ?? "";
-			const details = result.details as { filesChanged?: number } | undefined;
-			const suffix = details?.filesChanged
-				? ` (${details.filesChanged} file${details.filesChanged === 1 ? "" : "s"})`
-				: "";
-			const role = text.startsWith("Error:") ? "error" : "toolTitle";
-			return textComponent(theme.fg(role, `apply_patch${suffix}: ${text.split("\n")[0] ?? ""}`));
+		renderResult(result, options, theme) {
+			return renderApplyPatchResult(result as ApplyPatchToolResult, options, theme as unknown as RenderTheme);
 		},
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			try {
-				return formatResult(await runLocalApplyPatch(ctx.cwd, params.input, { signal }));
+				return await formatResult(await runLocalApplyPatch(ctx.cwd, params.input, { signal }));
 			} catch (error) {
 				return errorResult(error);
 			}

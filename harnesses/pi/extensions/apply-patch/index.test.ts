@@ -132,3 +132,43 @@ describe("apply_patch tool policy", () => {
 		expect(activeTools).toEqual(["read", "edit", "write"]);
 	});
 });
+
+describe("apply_patch rendering", () => {
+	test("renders successful patches as expandable diffs", () => {
+		let registeredTool: any;
+		applyPatchExtension({
+			registerTool(definition: any) {
+				if (definition.name === "apply_patch") registeredTool = definition;
+			},
+			getActiveTools() {
+				return [];
+			},
+			setActiveTools() {},
+			on() {},
+		} as never);
+
+		const theme = {
+			fg(_role: string, text: string) {
+				return text;
+			},
+			bold(text: string) {
+				return text;
+			},
+		};
+		const component = registeredTool.renderResult(
+			{
+				content: [{ type: "text", text: "M example.ts\n" }],
+				details: {
+					diff: "--- a/example.ts\n+++ b/example.ts\n@@ -1,1 +1,1 @@\n-old\n+new\n",
+					filesChanged: 1,
+				},
+			},
+			{ expanded: true },
+			theme,
+		);
+
+		const rendered = component.render(80).join("\n");
+		expect(rendered).toContain("- old");
+		expect(rendered).toContain("+ new");
+	});
+});
