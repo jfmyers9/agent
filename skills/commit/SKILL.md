@@ -33,6 +33,9 @@ name from the email local-part. Quote every user-derived shell argument.
 ## Guardrails
 
 - Act without prompting when one coherent, non-sensitive change set is clear.
+- Treat tracked changes made by the agent during the current task as intended
+  commit candidates by default. Do not ask whether to stage them merely because
+  they are unstaged or because the index already contains related changes.
 - Never stage untracked files automatically.
 - Stop for confirmation when staged or candidate files appear to contain
   credentials, secrets, `.env` data, or private keys.
@@ -90,6 +93,8 @@ data, workflow, or compatibility changes. Preserve relevant trailers such as
    - Inspect the meaningful staged hunks with
      `git diff --cached --no-ext-diff`; target relevant paths when the diff is
      large instead of dumping or truncating it.
+   - Inspect meaningful unstaged tracked hunks with `git diff --no-ext-diff` so
+     the candidate change set is complete before preparing the index.
    - For `--amend`, also inspect the current message and commit with
      `git log -1 --format='%B'` and `git show --stat --format=fuller HEAD`.
      Evaluate the amended commit as the existing commit plus staged changes.
@@ -101,9 +106,13 @@ data, workflow, or compatibility changes. Preserve relevant trailers such as
      not empty, ask whether those changes belong before continuing. For a
      confirmed tree-preserving amend, skip the remaining index-preparation
      bullets.
-   - If the index is empty and tracked files changed, stage tracked changes with
-     `git add -u`, subject to the sensitive/unrelated-change guardrails and the
-     tree-preserving exception above.
+   - For a normal commit, stage tracked changes that are clearly part of the
+     same coherent change set, including when the index already contains
+     related changes. Use path-limited or patch-based staging when needed to
+     preserve unrelated work; do not ask for confirmation solely because those
+     changes are unstaged. `git add -u` is acceptable when all modified tracked
+     files belong to the change set, subject to the sensitive/unrelated-change
+     guardrails and the tree-preserving exception above.
    - If only untracked files changed, list them and ask which should be added.
    - When tracked and untracked changes coexist, leave untracked files unstaged
      and report them. Ask before continuing if they are required for a coherent
