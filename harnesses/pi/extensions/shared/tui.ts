@@ -25,6 +25,7 @@ type TuiSessionContext = {
 };
 
 type MessageRenderer = (...args: any[]) => unknown;
+type EntryRenderer = (...args: any[]) => unknown;
 type WidgetContent = undefined | string[] | ((tui: TUI, theme: RenderTheme) => Component & { dispose?: () => void });
 type WidgetOptions = { placement?: "aboveEditor" | "belowEditor" };
 type OrderedWidgetTarget =
@@ -76,6 +77,11 @@ export function registerExtensionMessageRenderer(
 	renderer: MessageRenderer,
 ): void {
 	pi.registerMessageRenderer?.(customType, renderer);
+}
+
+export function registerExtensionEntryRenderer(pi: object, customType: string, renderer: EntryRenderer): void {
+	const api = pi as { registerEntryRenderer?: (customType: string, renderer: EntryRenderer) => void };
+	api.registerEntryRenderer?.(customType, renderer);
 }
 
 export function padToVisibleWidth(text: string, width: number): string {

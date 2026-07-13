@@ -2,6 +2,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { terminalRows } from "../shared/terminal";
+import { registerExtensionEntryRenderer } from "../shared/tui";
 import { ensureConfigExists, loadConfig, type PolishedTuiConfig, saveConfig } from "./config";
 import { installFocusCursor } from "./cursor-focus";
 import {
@@ -23,6 +24,7 @@ import {
 } from "./footer";
 import { readGitStatus } from "./git";
 import { readRuntimeInfo } from "./runtime";
+import { renderTurnDurationEntry, TURN_DURATION_ENTRY_TYPE, TurnDurationTimer } from "./turn-duration";
 import { detectUsageProvider, fetchUsageForProvider, USAGE_REFRESH_INTERVAL, type UsageSnapshot } from "./usage";
 
 type UsageTotals = { input: number; output: number; cost: number };
@@ -135,6 +137,7 @@ export default function (pi: ExtensionAPI) {
 	let disposed = false;
 	let uiGeneration = 0;
 	let editorSessionIdentity: EditorSessionIdentity | undefined;
+	const turnDurationTimer = new TurnDurationTimer();
 
 	const isStaleCtxError = (error: unknown) =>
 		(error instanceof Error ? error.message : String(error)).includes("ctx is stale");
@@ -517,6 +520,10 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	registerExtensionEntryRenderer(pi, TURN_DURATION_ENTRY_TYPE, (entry, _options, theme) =>
+		renderTurnDurationEntry(entry.data, theme),
+	);
+
 	pi.on("session_start", async (_event, ctx) => {
 		disposed = false;
 		uiGeneration++;
@@ -534,14 +541,18 @@ export default function (pi: ExtensionAPI) {
 		stopRefreshTimer();
 		stopContextPulse();
 		stopWorkingAnimation();
+		turnDurationTimer.reset();
 	});
 
 	pi.on("agent_start", async (_event, ctx) => {
+		turnDurationTimer.start();
 		if (!syncStateIfCurrent(ctx)) return;
 		startWorkingAnimation();
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
+		const turnDuration = turnDurationTimer.finish();
+		if (turnDuration) pi.appendEntry(TURN_DURATION_ENTRY_TYPE, turnDuration);
 		if (!syncStateIfCurrent(ctx)) return;
 		setWorkingAnimationState(false, 0);
 		stopWorkingAnimation();

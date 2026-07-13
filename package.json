@@ -18,7 +18,7 @@
     "test:pi-apply-patch": "bun test harnesses/pi/extensions/apply-patch/index.test.ts",
     "test:pi-skillful": "bun test harnesses/pi/extensions/skillful/index.test.ts",
     "test:pi-system": "bun test harnesses/pi/extensions/system-prompt/index.test.ts",
-    "test:pi-tui": "bun test harnesses/pi/extensions/tui/editor.test.ts harnesses/pi/extensions/tui/footer.test.ts harnesses/pi/extensions/tui/cursor-focus.test.ts harnesses/pi/extensions/tui/git.test.ts",
+    "test:pi-tui": "bun test harnesses/pi/extensions/tui/editor.test.ts harnesses/pi/extensions/tui/footer.test.ts harnesses/pi/extensions/tui/cursor-focus.test.ts harnesses/pi/extensions/tui/git.test.ts harnesses/pi/extensions/tui/turn-duration.test.ts",
     "test:pi-token": "bun test harnesses/pi/extensions/token-burden/parser.test.ts harnesses/pi/extensions/token-burden/tool-toggles.test.ts harnesses/pi/extensions/token-burden/report-view.test.ts harnesses/pi/extensions/token-burden/index.test.ts",
     "test:pi-spawn": "bun test harnesses/pi/extensions/spawn/index.test.ts",
     "test:pi-vim": "bun test harnesses/pi/extensions/vim/index.test.ts"
