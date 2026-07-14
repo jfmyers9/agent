@@ -243,7 +243,7 @@ fn run_command_can_background_on_timeout_and_continue_side_effects() {
 #[test]
 fn run_shell_command_shields_large_stdout() {
     let response = call_core(
-        br#"{"command":"run","params":{"language":"shell","code":"perl -e 'print \"x\" x 25000'"}}"#,
+        br#"{"command":"run","params":{"language":"shell","code":"perl -e 'print \"x\" x 262144'","timeout":1000}}"#,
     );
 
     assert_eq!(response["ok"], true);

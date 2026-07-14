@@ -9,7 +9,11 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::process::ExitStatus;
 use std::process::{Command, Output, Stdio};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+    mpsc,
+};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -744,19 +748,28 @@ fn run_with_timeout(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| format!("failed to spawn process: {err}"))?;
+    let capture_output = Arc::new(AtomicBool::new(true));
+    let stdout_reader = drain_output(
+        child.stdout.take().expect("stdout was piped"),
+        Arc::clone(&capture_output),
+    );
+    let stderr_reader = drain_output(
+        child.stderr.take().expect("stderr was piped"),
+        Arc::clone(&capture_output),
+    );
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
 
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                return child
-                    .wait_with_output()
-                    .map_err(|err| format!("failed to collect process output: {err}"));
+            Ok(Some(status)) => {
+                return collect_output(status, stdout_reader, stderr_reader);
             }
             Ok(None) if Instant::now() >= deadline => {
                 if background {
+                    capture_output.store(false, Ordering::Relaxed);
                     return Ok(backgrounded_output(timeout_ms));
                 }
+                capture_output.store(false, Ordering::Relaxed);
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!("timed out after {timeout_ms}ms"));
@@ -765,6 +778,53 @@ fn run_with_timeout(
             Err(err) => return Err(format!("failed to wait for process: {err}")),
         }
     }
+}
+
+fn drain_output<R: Read + Send + 'static>(
+    mut reader: R,
+    capture_output: Arc<AtomicBool>,
+) -> thread::JoinHandle<io::Result<Vec<u8>>> {
+    thread::spawn(move || {
+        let mut output = Vec::new();
+        let mut buffer = [0; 8 * 1024];
+
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => return Ok(output),
+                Ok(bytes_read) => {
+                    if capture_output.load(Ordering::Relaxed) {
+                        output.extend_from_slice(&buffer[..bytes_read]);
+                    }
+                }
+                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                Err(err) => return Err(err),
+            }
+        }
+    })
+}
+
+fn collect_output(
+    status: ExitStatus,
+    stdout_reader: thread::JoinHandle<io::Result<Vec<u8>>>,
+    stderr_reader: thread::JoinHandle<io::Result<Vec<u8>>>,
+) -> Result<Output, String> {
+    let stdout = join_output_reader("stdout", stdout_reader)?;
+    let stderr = join_output_reader("stderr", stderr_reader)?;
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn join_output_reader(
+    stream_name: &str,
+    reader: thread::JoinHandle<io::Result<Vec<u8>>>,
+) -> Result<Vec<u8>, String> {
+    reader
+        .join()
+        .map_err(|_| format!("{stream_name} reader panicked"))?
+        .map_err(|err| format!("failed to collect process {stream_name}: {err}"))
 }
 
 #[cfg(unix)]
