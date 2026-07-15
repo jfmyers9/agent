@@ -54,6 +54,7 @@ Installed extensions:
 - `token-burden/` — reports prompt/session token categories, tool burden, and skill burden.
 - `tui/` — owns Pi footer/editor chrome for cwd, git, model/thinking, context, tokens, cost, and local `/usage-bars [on|off|toggle]` rendering.
 - `spawn/` — provides `/spawn`, `spawn_lane`, `spawn_list`, and `spawn_map` for bounded Pi/shell/command lanes.
+- `fork-split.ts` — keeps the current session in place when `/fork` is used and opens the selected fork in a new tmux split.
 Retired local extension names:
 
 - `skill-dollar/` is replaced by `skillful/`.

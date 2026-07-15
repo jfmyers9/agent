@@ -52,6 +52,7 @@
     "extensions/system-prompt/index.ts",
     "extensions/token-burden/index.ts",
     "extensions/tui/index.ts",
-    "extensions/spawn/index.ts"
+    "extensions/spawn/index.ts",
+    "extensions/fork-split.ts"
   ]
 }
