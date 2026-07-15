@@ -19,6 +19,7 @@ const directSkills = [
   "refine",
   "submit",
   "improve-rust-tests",
+  "vibe",
 ];
 
 const allSkillFiles = readdirSync(resolve(root, "skills"), { withFileTypes: true })
@@ -121,8 +122,20 @@ describe("workflow contracts", () => {
     expect(submit).toContain("deprecated compatibility alias");
   });
 
+  test("vibe composes the full workflow behind one explicit invocation", () => {
+    const body = read("skills/vibe/SKILL.md");
+    expect(body).toContain("disable-model-invocation: true");
+    expect(body).toContain("user-invocable: true");
+    for (const stage of ["$gt create", "$implement", "$fix", "$commit", "$submit"]) {
+      expect(body).toContain(stage);
+    }
+    expect(body).toContain("--dry-run");
+    expect(body).toContain("Review the complete diff in session");
+    expect(body).toContain("Submission defaults to a draft pull request");
+  });
+
   test("retired wrappers are absent", () => {
-    for (const skill of ["archive", "pr-plan", "report", "simplify", "start", "vibe"]) {
+    for (const skill of ["archive", "pr-plan", "report", "simplify", "start"]) {
       expect(existsSync(resolve(root, "skills", skill, "SKILL.md"))).toBe(false);
     }
   });

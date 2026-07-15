@@ -146,6 +146,7 @@ Pi uses `/skill:<name>` commands, for example:
 ```text
 /skill:commit
 /skill:submit
+/skill:vibe <change>
 /skill:research
 /skill:review
 ```
@@ -170,14 +171,16 @@ not checked into this repo.
 
 Codex reads repository `AGENTS.md` files automatically. Shared skills are
 installed through Codex's user skill path and can be invoked with
-`$commit`, `$submit`, `$research`, `$review`, and other skill names.
+`$vibe <change>`, `$commit`, `$submit`, `$research`, `$review`, and other skill
+names.
 
 ## Portability status
 
 Manual artifact skills: `context`, `research`, `review`, and `diagnose`.
 
 Direct workflows may consume artifacts but do not require or create trackers:
-`implement`, `fix`, `debug`, `respond`, `split-commit`, and `resume-work`.
+`implement`, `fix`, `debug`, `respond`, `split-commit`, `resume-work`, and
+`vibe`.
 
 ## Rules
 
