@@ -11,6 +11,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { parseFrontmatter as parseYamlFrontmatter } from "@earendil-works/pi-coding-agent";
+
 import { DisableMode } from "./enums.js";
 import { estimateTokens } from "./parser.js";
 import type { Settings, SkillInfo } from "./types.js";
@@ -25,50 +27,28 @@ interface FrontmatterResult {
 	disableModelInvocation: boolean;
 }
 
+interface SkillFrontmatter extends Record<string, unknown> {
+	name?: unknown;
+	description?: unknown;
+	"disable-model-invocation"?: unknown;
+}
+
 export function parseFrontmatter(content: string, fallbackName: string): FrontmatterResult {
-	if (!content.startsWith("---")) {
+	try {
+		const { frontmatter } = parseYamlFrontmatter<SkillFrontmatter>(content);
+
+		return {
+			name: typeof frontmatter.name === "string" && frontmatter.name ? frontmatter.name : fallbackName,
+			description: typeof frontmatter.description === "string" ? frontmatter.description : "",
+			disableModelInvocation: frontmatter["disable-model-invocation"] === true,
+		};
+	} catch {
 		return {
 			name: fallbackName,
 			description: "",
 			disableModelInvocation: false,
 		};
 	}
-
-	const endIndex = content.indexOf("\n---", 3);
-	if (endIndex === -1) {
-		return {
-			name: fallbackName,
-			description: "",
-			disableModelInvocation: false,
-		};
-	}
-
-	const frontmatter = content.slice(4, endIndex);
-	let name = fallbackName;
-	let description = "";
-	let disableModelInvocation = false;
-
-	for (const line of frontmatter.split("\n")) {
-		const colonIndex = line.indexOf(":");
-		if (colonIndex === -1) {
-			continue;
-		}
-
-		const key = line.slice(0, colonIndex).trim();
-		const value = line.slice(colonIndex + 1).trim();
-
-		if (key === "name") {
-			name = value;
-		}
-		if (key === "description") {
-			description = value;
-		}
-		if (key === "disable-model-invocation") {
-			disableModelInvocation = value.toLowerCase() === "true";
-		}
-	}
-
-	return { name, description, disableModelInvocation };
 }
 
 // ---------------------------------------------------------------------------

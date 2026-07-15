@@ -7,8 +7,7 @@ disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 argument-hint: >
-  <topic> | --continue [slug] | --discard [slug]
-  [--depth <medium|high|max>] [--auto]
+  <topic> | --continue [slug] [--depth <medium|high|max>] [--auto]
 ---
 
 # Research
@@ -19,38 +18,28 @@ Research one decision and write one proposal with one approval boundary.
 @rules/harness-compat.md, and @rules/artifact-readability.md apply.
 
 Keep generated frontmatter intact and write the body below its closing `---`.
-Immediately before each non-deletion commit, run `blueprint validate "$file"`
-and inspect the entire blueprint repository. Stop if its index is nonempty or
-the current project has changes outside `$file`: `blueprint commit` stages the
-project subtree and commits the existing index.
 
 ## Arguments
 
 - `<topic>` — decision to research.
 - `--continue [slug]` — revise the latest or matching proposal.
-- `--discard [slug]` — delete the latest or matching proposal, commit the
-  deletion, and stop.
 - `--depth <medium|high|max>` — evidence depth; default `medium`.
 - `--auto` — approve the resulting proposal without waiting for a separate
   approval response.
 
-Treat `--continue` and `--discard` as mutually exclusive. Require a topic for
-new work.
+Require a topic for new work. Use `blueprint archive` for lifecycle cleanup;
+research never deletes a proposal.
 
 ## Workflow
 
 ### 1. Resolve The Mode
 
-- Continue or discard a named proposal with
+- Continue a named proposal with
   `blueprint find --type proposal --match <slug>`. With no slug, resolve the
-  latest proposal. Confirm one unambiguous result, store its path in `file`,
-  and derive its artifact slug before changing it.
+  latest proposal. Store its path in `file`; explicit matches must resolve
+  unambiguously before changing it.
 - For `--continue`, read the full proposal and preserve still-valid decisions,
   evidence, and implementation notes.
-- For `--discard`, validate and preflight the resolved proposal, then remove
-  only that file, run `blueprint commit proposal <slug>`, report the deletion,
-  and stop. Validation is not possible after deletion. Never discard source
-  changes.
 - For new work, do not create the proposal until the research is ready to
   write. Existing legacy specs and plans may be evidence; never create one.
 
@@ -64,6 +53,11 @@ keep raw command output out of the artifact. Do not modify product code or
 target-system remote state during research; proposal persistence is the sole
 authorized external write.
 
+When continuing in response to simplification feedback, identify redundant
+interfaces, avoidable phases, speculative abstractions, and nonessential public
+surface. Revise the same proposal so its goals and acceptance criteria remain
+the single source of truth; do not create a separate simplification report.
+
 Depth controls breadth:
 
 - `medium` — key paths and primary tradeoffs.
@@ -72,7 +66,7 @@ Depth controls breadth:
   risks.
 
 For non-trivial architecture or flow, put a small diagram and its evidence
-trace under `## Evidence`; otherwise state why a diagram is unnecessary.
+trace under `## Evidence` when it is clearer than prose.
 
 ### 3. Write One Proposal
 
@@ -112,7 +106,8 @@ sections so the proposal contains:
 <empty before implementation; preserve existing notes when continuing>
 ```
 
-Commit each body revision with `blueprint commit proposal <slug>`. When
+Validate and commit each body revision with
+`blueprint commit proposal "$file"`. When
 `--auto` advances an existing draft, commit the body revision first, then run
 `blueprint status "$file" approved` and commit that status change separately.
 Stop and show any commit error.

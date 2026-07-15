@@ -24,6 +24,11 @@
 		"lineWidth": 120
 	},
 	"files": {
-		"includes": ["harnesses/pi/extensions/**/*.ts", "!**/node_modules/**/*", "!!**/node_modules"]
+		"includes": [
+			"harnesses/pi/extensions/**/*.ts",
+			"bin/**/*.ts",
+			"!**/node_modules/**/*",
+			"!!**/node_modules"
+		]
 	}
 }

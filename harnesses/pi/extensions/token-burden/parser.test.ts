@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildSystemPrompt } from "../system-prompt";
 import { parseSystemPrompt } from "./parser";
+import { parseFrontmatter } from "./skills";
 
 const skill = {
 	name: "tdd",
@@ -96,5 +97,42 @@ describe("token-burden system prompt parser", () => {
 				tokens: expect.any(Number),
 			},
 		]);
+	});
+});
+
+describe("token-burden skill frontmatter parser", () => {
+	test("folds multiline descriptions and parses the disable flag", () => {
+		const parsed = parseFrontmatter(
+			[
+				"---",
+				"name: durable-review",
+				"description: >",
+				"  Review a change and preserve",
+				"  verified findings.",
+				"disable-model-invocation: true",
+				"---",
+				"# Durable review",
+			].join("\n"),
+			"fallback",
+		);
+
+		expect(parsed).toEqual({
+			name: "durable-review",
+			description: "Review a change and preserve verified findings.\n",
+			disableModelInvocation: true,
+		});
+	});
+
+	test("preserves literal multiline descriptions", () => {
+		const parsed = parseFrontmatter(
+			["---", "description: |-", "  First line.", "  Second line.", "---"].join("\r\n"),
+			"literal-skill",
+		);
+
+		expect(parsed).toEqual({
+			name: "literal-skill",
+			description: "First line.\nSecond line.",
+			disableModelInvocation: false,
+		});
 	});
 });

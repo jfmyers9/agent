@@ -27,12 +27,11 @@
 ## Durable Artifacts
 
 Blueprints are opt-in. Create them only when I explicitly invoke `context`,
-`research`, `review`, `diagnose`, `simplify`, `report`, or
-`archive`.
+`research`, `review`, or `diagnose`.
 
 - Proposals: `blueprint create proposal "<topic>"`
 - Reviews: `blueprint create review "<topic>"`
-- Reports: `blueprint create report "<topic>"`
+- Context/diagnosis reports: `blueprint create report "<topic>" --kind <kind>`
 
 Ordinary Q&A, coding, debugging, and PR work use chat and the working tree.
 Existing blueprints may be optional inputs.

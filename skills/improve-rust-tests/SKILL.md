@@ -19,14 +19,13 @@ coverage or coupling tests to implementation details.
 
 ### 1. Establish Scope And Baseline
 
-- Read repository instructions, the Cargo workspace layout, toolchain files,
-  test configuration, and current dev-dependencies.
+- Read repository instructions, the Cargo workspace layout, pinned toolchain or
+  MSRV, test configuration, and current dev-dependencies.
 - Inspect the working tree and preserve unrelated changes.
 - Discover source and tests with `rg`; use optional navigation tools only when
   they are available and provide a documented fallback.
 - Run the narrowest project-standard baseline test command. Use Cargo's built-in
-  test command when no project runner is configured, and include doctests when
-  the selected runner omits them.
+  test command when no runner is configured.
 - Record pre-existing failures before editing. Do not attribute them to the
   change without reproducing that causality.
 
@@ -42,29 +41,25 @@ Look for evidence-backed improvement opportunities:
 - tautologies, getter tests, type-system facts, and coverage-only execution;
 - assertions that duplicate the production algorithm;
 - tests coupled to private structure when a public contract is clearer;
-- oversized or inline test modules that violate `@rules/rust.md`;
+- test placement that conflicts with the crate's established convention;
 - unnamed properties, opaque fixtures, brittle snapshots, and excessive mocks;
   and
 - slow duplicated setup or nondeterministic filesystem, clock, or concurrency
   behavior.
 
-Every proposed test must name the realistic bug or invariant it would protect.
-Apply the deletion test from `@rules/test-quality.md` and remove redundant tests.
+Every proposed test must name the realistic bug, contract, or invariant it
+would protect. Apply the deletion heuristic from `@rules/test-quality.md`
+without removing deliberate cross-layer coverage.
 
-### 3. Present Candidates
+### 3. Select The Work
 
-Before editing, present a numbered list of substantial candidates. For each,
-include:
+Choose the smallest coherent set of high-confidence improvements. Briefly state
+the selected behaviors and verification before editing. Continue without an
+approval round when they stay within the requested test scope.
 
-- files and behavior involved;
-- the concrete coverage or readability problem;
-- tests to add, move, rewrite, or delete;
-- production seams, if any, that must change;
-- optional tooling and why it earns its dependency cost; and
-- the focused and final verification commands.
-
-Proceed immediately when the user requested an automatic pass or already chose
-candidates. Otherwise ask which numbered candidates to implement.
+Ask before proceeding only when alternatives materially change public behavior,
+require a new production seam or dependency, or expand beyond the requested
+scope. Explain that decision with the concrete tradeoff.
 
 ### 4. Implement Vertically
 
@@ -76,29 +71,27 @@ For each selected behavior:
 4. Demonstrate RED when fixing an existing bug or changing behavior. Preserve
    GREEN for organization-only refactors and new coverage of correct behavior;
    never break production code merely to manufacture RED.
-5. Change production code only when required by the selected behavior or a
-   necessary test seam.
+5. Change production code only when explicitly authorized by the request. Stop
+   before adding a new test seam that changes production structure.
 6. Run the focused test, then the required Clippy check for the implementation
    slice.
 7. Delete tests made redundant, misleading, or implementation-coupled.
 
-Use real owned collaborators. Mock only external boundaries such as networks,
-clocks, and third-party services. Three or more mocks usually indicate a design
-seam worth simplifying before adding more tests.
+Prefer real owned collaborators. Mock external or nondeterministic boundaries
+such as networks, clocks, and third-party services. Several mocks are a signal
+to reassess the seam, not an automatic reason to redesign production code.
 
 ### 5. Place Tests Deliberately
 
 - Put public crate behavior in `tests/*.rs` when it needs only public APIs.
 - Test executable contracts at the CLI boundary.
-- Keep private-behavior tests beside their module but in separate files, using
-  the sibling or directory convention required by `@rules/rust.md`. Do not add
-  inline `mod tests { ... }` bodies.
+- Keep private-behavior tests beside their module using the crate's established
+  inline, sibling, or directory convention. Extract large inline suites only
+  when doing so materially improves navigation.
 - Use doctests for stable user-facing examples, not internal edge cases.
 - Keep shared helpers small, explicit, and behavior-neutral.
 
-When touching an inline module, extract it incrementally. Proactively split
-test bodies over roughly 200 lines and use one convention consistently per
-crate.
+Avoid reorganizing unaffected tests merely to impose a preferred layout.
 
 ### 6. Select Tooling Conservatively
 
@@ -108,25 +101,17 @@ spaces, `assert_cmd` for CLI contracts, and `tempfile` or `assert_fs` for
 filesystem boundaries. Use `insta` only when snapshots already form part of the
 contract or the user explicitly requested them.
 
-Before adding a crate, inspect existing dependencies and use `cargo search` to
-verify the current version as required by `@rules/rust.md`. Avoid overlapping
-tools and remove a dependency when its last use disappears.
+Before adding a crate, inspect workspace dependencies, the lockfile, MSRV, and
+current crate metadata. Select a compatible version rather than automatically
+choosing the newest release. Avoid overlapping tools and remove a dependency
+when its last use disappears.
 
 ### 7. Verify And Report
 
-Format only files changed by this workflow while editing. Do not run a
-mutating workspace-wide formatter when unrelated dirty Rust files exist. Use
-the repository's configured feature sets and commands; enable all features
-only when the project supports that combination. Unless project instructions
-require a different equivalent, finish with:
-
-```sh
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- \
-  -D warnings -W clippy::all
-cargo test --workspace
-cargo build --workspace
-```
+Format only files changed by this workflow while editing. Do not run a mutating
+workspace-wide formatter when unrelated dirty Rust files exist. Use the
+repository's configured feature sets and final checks. When none are defined,
+finish with the defaults in `@rules/rust.md`.
 
 Run the configured nextest command as well when the project standardizes on it.
 Do not hide warnings with `#[allow(...)]`. Report behaviors and properties now

@@ -14,8 +14,8 @@ Add a Mermaid diagram when the work involves any of these:
 - root-cause hypotheses that depend on path or timing
 
 Do not add a diagram for trivial single-file changes, linear prose that is
-clearer than a graphic, or flows you cannot support with evidence. In those
-cases write `Diagram omitted: <reason>`.
+clearer than a graphic, or flows you cannot support with evidence. Omit the
+diagram section entirely unless its absence would itself be surprising.
 
 ## Mermaid Rules
 
@@ -26,7 +26,8 @@ cases write `Diagram omitted: <reason>`.
 - Quote labels in brackets: `API["POST /v1/items"]`.
 - Avoid reserved words as IDs. Prefer `DoneNode` over `End`.
 - Put diagrams near the section they explain, not only in an appendix.
-- Back every diagram with a trace table or evidence table.
+- Back a diagram with a trace or evidence table when later work must map its
+  nodes to exact code or configuration.
 
 ### System Map Example
 
@@ -78,18 +79,18 @@ sparingly and explain the missing evidence.
 
 ## Standard Sections
 
-When relevant, use these sections consistently:
+Use only the sections that improve the artifact:
 
 ```markdown
 ## Human-Readable Map
 
 ### System Map
 
-<Mermaid flowchart or omitted reason>
+<Mermaid flowchart>
 
 ### Request / Data Flow
 
-<Mermaid sequence diagram or omitted reason>
+<Mermaid sequence diagram>
 
 ### Flow Trace
 

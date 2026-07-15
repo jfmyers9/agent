@@ -7,7 +7,7 @@ description: >
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash, Read, Write, Glob, Grep
-argument-hint: "[--local] [file-pattern] [branch|PR] [--proposal <slug-or-path>]"
+argument-hint: "[--local|branch|PR] [--path <glob>] [--proposal <slug-or-path>]"
 ---
 
 # Review
@@ -19,16 +19,12 @@ blueprint.
 @rules/artifact-readability.md apply.
 
 Keep generated frontmatter intact and write the body below its closing `---`.
-Immediately before committing, run `blueprint validate "$file"` and inspect the
-entire blueprint repository. Stop if its index is nonempty or the current
-project has changes outside `$file`: `blueprint commit` stages the project
-subtree and commits the existing index.
 
 ## Arguments
 
 - `--local` — review staged and unstaged changes.
-- `[file-pattern]` — restrict review to matching changed files.
 - `[branch|PR]` — review a branch diff or pull request.
+- `--path <glob>` — restrict the resolved change set to matching files.
 - `--proposal <slug-or-path>` — compare the implementation with a named source
   decision and its acceptance criteria.
 
@@ -41,11 +37,15 @@ subtree and commits the existing index.
   falling back to trunk. Check it out only when explicitly asked.
 - `--local`: review staged and unstaged changes.
 - No target: review the current branch, or local changes when on trunk.
-- File pattern: apply it after resolving the change set.
+- `--path`: apply the glob after resolving the change set. Treat a legacy
+  positional path containing a directory separator or glob metacharacter as a
+  path filter only when it cannot name a branch.
 
-Include untracked files only when explicitly named. Exclude generated files,
-build output, coverage, binaries, and routine lockfile churn unless they are
-material to the change.
+For `--local`, include relevant untracked source and test files after inspecting
+their names and contents; never read likely secret files implicitly. For branch
+or PR targets, include untracked files only when explicitly named. Exclude
+generated files, build output, coverage, binaries, and routine lockfile churn
+unless they are material to the change.
 
 ### 2. Gather Bounded Context
 
@@ -56,13 +56,14 @@ findings and the call paths needed to verify them.
 Store an explicitly supplied proposal path in `source_file`, or resolve an
 explicit proposal slug to one unambiguous `source_file`, then read it.
 Otherwise, derive a branch/PR slug with `blueprint slug`, then use
-`blueprint find --type proposal,spec,plan --match <slug>` only when the result
-clearly matches the change; store that result in `source_file`. Absence is
-normal.
+`blueprint find --type proposal,spec,plan --match <slug> --all` and select a
+source only when exactly one candidate clearly matches the change. Absence or
+multiple weak candidates are normal; do not guess.
 
 ### 3. Apply Review Lenses
 
-Read the checklists in `skills/review/perspectives/` and apply:
+Read the checklists in `perspectives/`, resolved relative to this skill, and
+apply:
 
 - **Core:** correctness and compatibility, design and maintainability, tests.
 - **Conditional:** security and operations when trust, persistence,
@@ -103,11 +104,6 @@ risk.
 - Lenses: <applied lenses>
 - Findings: <count>
 - Deferred: <count>
-
-## Human-Readable Map
-
-<diagram, trace, and cross-reference for a multi-boundary finding, or
-`Diagram omitted: <reason>`>
 
 ## Findings
 
@@ -162,9 +158,9 @@ source_slug=$(basename "$source_file" .md)
 blueprint link "$file" "$source_slug"
 ```
 
-Write the complete body, then run `blueprint commit review <slug>`. Stop and
-show any commit error. Reviews are complete when generated; later finding
-outcomes belong in `## Resolutions`.
+Write the complete body, run `blueprint validate "$file"`, then run
+`blueprint commit review "$file"`. Stop on any error. Reviews are complete when
+generated; later finding outcomes belong in `## Resolutions`.
 
 ### 6. Report
 

@@ -1,9 +1,9 @@
 ---
 name: implement
 description: >
-  Implement requested code changes from freeform instructions or a named
-  proposal, review, report, or legacy blueprint. Use when the user asks to build
-  or change code.
+  Implement a requested feature or behavior change from freeform instructions
+  or a named proposal, report, or legacy blueprint. Use debug for unexplained
+  failures, fix for supplied findings, and refine for behavior-preserving cleanup.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 argument-hint: "[instructions|blueprint-slug-or-path]"
 ---
@@ -19,17 +19,17 @@ optional inputs, never prerequisites.
 ## Inputs
 
 - Freeform request — use the conversation as the execution source.
-- Explicitly named artifact path — store it in `file`, derive its artifact
-  slug, and read that proposal, review, report, or legacy blueprint.
+- Explicitly named artifact path — store it in `file` and read that proposal,
+  report, or legacy blueprint.
 - Slug — resolve one unambiguous file with
-  `blueprint find --type proposal,review,report,spec,plan --match <slug>`, then
-  store its path in `file` and derive its artifact slug.
+  `blueprint find --type proposal,report,spec,plan --match <slug>`, then
+  store its path in `file`.
 - No artifact — proceed directly; do not search for or create one.
 
 Explicitly invoking this skill with a draft proposal authorizes it. Set the
 proposal to `approved` and commit before source edits, using the artifact safety
-checks in step 3. Reviews and legacy artifacts require no particular status;
-explicit implementation is sufficient authorization.
+checks in step 3. Legacy artifacts require no particular status; explicit
+implementation is sufficient authorization. Use `fix` for a review artifact.
 
 ## Workflow
 
@@ -37,8 +37,7 @@ explicit implementation is sufficient authorization.
 
 Read applicable repository instructions and inspect `git status --short` before
 editing. Preserve unrelated work. Read the named artifact and relevant source,
-then extract scope, constraints, acceptance criteria, and verification. For a
-review, revalidate and implement only actionable unresolved findings. For
+then extract scope, constraints, acceptance criteria, and verification. For
 freeform work, derive the smallest safe execution sequence.
 
 ### 2. Implement
@@ -62,29 +61,24 @@ report artifact.
   `## Implementation Notes`; set it to `complete` only after all acceptance
   criteria pass. Leave a partial implementation `approved`. Commit the notes
   first, then change and commit status separately.
-- Review: leave finding resolution updates to `fix`, unless implementation was
-  explicitly invoked on that review; then add/update its resolution table.
 - Legacy spec/plan: append implementation notes and preserve readable legacy
   status behavior.
 
-Preserve artifact frontmatter and write below the closing `---`. Immediately
-before each artifact commit, run `blueprint validate "$file"` and inspect the
-entire blueprint repository. Stop if its index is nonempty or the current
-project has changes outside `$file`: `blueprint commit` stages the project
-subtree and commits the existing index. Then run
-`blueprint commit <type> <slug>` and stop on failure. This does not authorize a
+Preserve artifact frontmatter and write below the closing `---`. Before each
+artifact commit, run `blueprint validate "$file"`, then
+`blueprint commit <type> "$file"`. The CLI refuses a pre-existing blueprint
+index and stages only the exact file. Stop on failure. This does not authorize a
 source-code commit.
 
 ### 4. Report
 
 Return the outcome, files changed, verification commands and results, and any
 remaining work or risk. Suggest `$review` or `$commit` only when useful.
-Generate a report artifact only when the user explicitly invokes `$report`.
 
 ## Rules
 
 - Freeform implementation requires no blueprint.
-- A named proposal or review constrains scope but does not replace source
+- A named proposal or report constrains scope but does not replace source
   inspection.
 - Revalidate findings before changing code.
 - Preserve unrelated working-tree changes and never stage or commit them.

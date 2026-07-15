@@ -159,6 +159,7 @@ build_plan() {
 		;;
 	esac
 	add_link "$SCRIPT_DIR/bin/blueprint" "$HOME/.local/bin/blueprint"
+	add_link "$SCRIPT_DIR/bin/git-surgeon.ts" "$HOME/.local/bin/git-surgeon"
 }
 
 is_owned_link() {
@@ -409,7 +410,7 @@ validate_install() {
 doctor() {
 	local failed=0
 	local command
-	for command in git node; do
+	for command in git node bun; do
 		if ! command -v "$command" >/dev/null 2>&1; then
 			echo "Missing required command: $command" >&2
 			failed=1

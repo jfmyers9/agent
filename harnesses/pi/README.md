@@ -109,20 +109,22 @@ core-backed tools remain unavailable until the binary is installed.
 `ct` is different: it is Luan's broader Rust CLI. This config no longer requires
 `ct` for `edit` or TUI usage bars.
 
-Non-auto review gates use blueprint files plus explicit chat approval. Agents report the blueprint path and status, then wait while the user reviews locally and replies with approval or feedback.
+Blueprints are opt-in durable artifacts, not default workflow trackers:
 
-Long-running workflows use blueprints as the durable tracker and execution plan:
+- `/skill:research` creates a proposal.
+- `/skill:review` creates a review.
+- `/skill:context` and `/skill:diagnose` create typed reports.
+- `blueprint archive <exact-target>` archives one durable artifact.
 
-- `/skill:research` writes `spec/` blueprints
-- `/skill:implement` consumes `spec/`, `plan/`, or `review/` blueprints
-- `/skill:review` writes `review/` blueprints
-- `/skill:fix` writes `plan/` blueprints
-- `/skill:vibe` tracks pipeline state in a `plan/` blueprint
+Ordinary implementation, debugging, fixes, and PR work such as `/skill:respond`
+use chat and the working tree. `/skill:implement` can consume an explicitly
+named proposal, report, or legacy spec/plan, but does not create a tracker.
 
 Validation:
 
 ```sh
 bun install
+bun run check:skills
 bun run typecheck
 bun run test:pi-low-risk
 bun run test:pi-skillful

@@ -1,8 +1,8 @@
 ---
 name: split-commit
 description: >
-  Rewrite a multi-commit topic branch into clean, tested, vertical Conventional
-  Commits when the user explicitly asks to reorganize branch history.
+  Split or reorganize one or more topic-branch commits into clean, tested,
+  vertical Conventional Commits when the user explicitly requests a history rewrite.
 argument-hint: "[base-branch] [--test='<command>'] [--auto] [blueprint-slug-or-path]"
 user-invocable: true
 allowed-tools: [Bash, Read, Glob, Grep]
@@ -36,7 +36,8 @@ Repackage local branch history without creating a tracker or changing remotes.
    - Record Graphite children. If any exist, include the required descendant
      restack and its history impact in the approval; never strand descendants
      on the original tip.
-   - Count `<base>..HEAD`. For zero or one commit, stop and suggest `$commit`.
+   - Count `<base>..HEAD`. Stop only when the range is empty. A single commit is
+     a valid input when the user wants to split it.
    - Record the original tip hash and whether the branch has a remote or open
      PR so the plan states the recovery point and remote-history impact.
 
@@ -67,12 +68,19 @@ Repackage local branch history without creating a tracker or changing remotes.
      rewrite until the revision is approved.
 
 5. **Rebuild the commits**
-   - After approval, read `skills/git-surgeon/SKILL.md` before partial staging.
+   - After approval, require the installed `git-surgeon` CLI before partial
+     staging. Use fresh hunk IDs; never reconstruct selective patches manually.
+   - Before moving the branch, create a unique backup ref under
+     `refs/backup/split-commit/` pointing to the original tip. Stop if the ref
+     cannot be created. Use `git check-ref-format` before
+     `git update-ref <backup-ref> <original-tip>`, and include its exact name in
+     every recovery report.
    - Reset the branch to the base with the original tree preserved as unstaged
      changes. Never use `--hard`.
-   - For each approved group, stage only its named files or fresh hunk patches,
-     inspect the cached diff, and commit with the approved message. Never use
-     `git add .` as a shortcut.
+   - For each approved group, stage complete named files with `git add --` or
+     modified-text hunks with `git-surgeon stage <id>...`, then inspect the
+     cached diff and commit with the approved message. Never use `git add .` as
+     a shortcut.
    - Verify that exact commit in a detached temporary worktree, then remove the
      temporary worktree. Do not test it in the primary worktree: unstaged later
      groups would contaminate the result.
@@ -90,8 +98,9 @@ Repackage local branch history without creating a tracker or changing remotes.
      rebuilt `HEAD` and the recorded original tip.
    - When descendants were restacked, verify their stack shape and report their
      rewritten local tips.
-   - Show `<base>..HEAD`, report every test result, and identify any skipped
-     check. Do not push, force-push, submit, or update a blueprint.
+   - Show `<base>..HEAD`, report every test result, identify any skipped check,
+     and report the retained backup ref plus its optional deletion command. Do
+     not push, force-push, submit, or update a blueprint.
 
 Do not create or update a blueprint. Never rewrite history before approval
 unless `--auto` was explicitly supplied.

@@ -20,10 +20,10 @@ Resolve evidence-backed feedback while preserving unrelated work.
 
 - Explicit feedback: use it directly.
 - Review path or slug: resolve one unambiguous file with
-  `blueprint find --type review --match <slug>`, then store its path in `file`
-  and derive its artifact slug for later updates.
-- No argument: use a clearly relevant recent review when one exists. Ask for
-  the intended feedback when none exists or multiple reviews are plausible.
+  `blueprint find --type review --match <slug>`, then store its path in `file`.
+- No argument: use concrete feedback already supplied in the current
+  conversation. Otherwise ask for the intended feedback; do not discover or
+  mutate a recent review implicitly.
 
 Do not create a fix plan. Existing proposals or legacy plans may be context,
 not required trackers.
@@ -65,10 +65,9 @@ Use the review's stable finding IDs. Outcomes are `fixed`, `already resolved`,
 `not reproducible`, or `declined`. Preserve existing resolution rows and update
 the same review rather than creating another artifact. Preserve its
 frontmatter and write below the closing `---`. Immediately before committing,
-run `blueprint validate "$file"` and inspect the entire blueprint repository.
-Stop if its index is nonempty or the current project has changes outside
-`$file`: `blueprint commit` stages the project subtree and commits the existing
-index. Then run `blueprint commit review <slug>` and stop on any error.
+run `blueprint validate "$file"`, then `blueprint commit review "$file"`. The
+CLI refuses a pre-existing blueprint index and stages only that review. Stop on
+any error.
 
 ### 5. Report
 

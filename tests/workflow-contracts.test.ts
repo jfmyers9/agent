@@ -1,30 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 
-const artifactSkills = [
-  "context",
-  "research",
-  "review",
-  "diagnose",
-  "simplify",
-  "report",
-  "archive",
-];
+const artifactSkills = ["context", "research", "review", "diagnose"];
 
 const directSkills = [
   "implement",
   "fix",
   "debug",
-  "pr-plan",
   "respond",
   "split-commit",
-  "vibe",
   "resume-work",
+  "commit",
+  "gt",
+  "refine",
+  "submit",
+  "improve-rust-tests",
 ];
+
+const allSkillFiles = readdirSync(resolve(root, "skills"), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && existsSync(resolve(root, "skills", entry.name, "SKILL.md")))
+  .map((entry) => `skills/${entry.name}/SKILL.md`);
 
 describe("opt-in routing", () => {
   test("manual artifact skills require explicit invocation metadata", () => {
@@ -45,10 +44,8 @@ describe("opt-in routing", () => {
   test("named artifact skills persist the requested artifact", () => {
     expect(read("skills/research/SKILL.md")).toContain("blueprint create proposal");
     expect(read("skills/review/SKILL.md")).toContain("blueprint create review");
-    for (const skill of ["context", "diagnose", "simplify", "report"]) {
-      expect(read(`skills/${skill}/SKILL.md`)).toContain("blueprint create report");
-    }
-    expect(read("skills/archive/SKILL.md")).toContain("blueprint archive");
+    expect(read("skills/context/SKILL.md")).toContain("--kind context");
+    expect(read("skills/diagnose/SKILL.md")).toContain("--kind diagnosis");
   });
 });
 
@@ -90,8 +87,7 @@ describe("workflow contracts", () => {
       "rules/blueprints.md",
       "rules/harness-compat.md",
       "rules/human-approval.md",
-      ...artifactSkills.map((skill) => `skills/${skill}/SKILL.md`),
-      ...directSkills.map((skill) => `skills/${skill}/SKILL.md`),
+      ...allSkillFiles,
     ];
     const content = files.map(read).join("\n");
     for (const retiredTerm of [
@@ -101,6 +97,33 @@ describe("workflow contracts", () => {
       "automatic" + " report",
     ]) {
       expect(content).not.toContain(retiredTerm);
+    }
+  });
+
+  test("consolidated workflows retain explicit side-effect modes", () => {
+    const respond = read("skills/respond/SKILL.md");
+    expect(respond).toContain("--plan");
+    expect(respond).toContain("--fix");
+    expect(respond).toContain("--post");
+    expect(respond).toContain("three modes are mutually exclusive");
+    expect(respond).toMatch(/when\s+intent is\s+unclear, use `--plan`/);
+
+    const graphite = read("skills/gt/SKILL.md");
+    expect(graphite).toContain("`create`");
+    expect(graphite).not.toContain("jm/");
+    expect(graphite).toContain("second explicit user confirmation");
+    expect(graphite).toContain("`--force`/`-f`");
+    expect(graphite).toContain("`--delete-all`/`-d`");
+
+    const submit = read("skills/submit/SKILL.md");
+    expect(submit).toContain("--dry-run");
+    expect(submit).toContain("--restack-only");
+    expect(submit).toContain("deprecated compatibility alias");
+  });
+
+  test("retired wrappers are absent", () => {
+    for (const skill of ["archive", "pr-plan", "report", "simplify", "start", "vibe"]) {
+      expect(existsSync(resolve(root, "skills", skill, "SKILL.md"))).toBe(false);
     }
   });
 });

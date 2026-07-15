@@ -2,8 +2,8 @@
 name: refine
 description: >
   Simplify code and improve comments only within uncommitted code changes. Use
-  for requests to refine, clean up, or simplify the current diff; use simplify
-  for a read-only design or blueprint simplification report.
+  for requests to refine, clean up, or simplify the current diff; use research
+  feedback to simplify a durable proposal.
 allowed-tools: Bash, Read, Edit, Glob, Grep
 argument-hint: "[file-pattern]"
 ---
@@ -12,6 +12,8 @@ argument-hint: "[file-pattern]"
 
 Improve the clarity of uncommitted code without changing behavior or expanding
 scope.
+
+@rules/comment-quality.md and @rules/style.md apply.
 
 ## Arguments
 
@@ -52,14 +54,9 @@ handling, dependencies, or speculative extensibility.
 
 ### 4. Improve Comments
 
-- Remove comments that merely narrate syntax or repeat the code.
-- Remove contextless TODOs introduced by the change.
-- Preserve explanations of intent, business rules, edge cases, invariants,
-  security constraints, and non-obvious performance decisions.
-- Update inaccurate comments instead of deleting useful context.
-- Preserve doc comments by default because tools and IDEs consume them. Remove
-  one only when it is empty or adds nothing beyond the signature.
-- Do not add comments to unchanged code.
+Apply `@rules/comment-quality.md` only within eligible hunks. Preserve useful
+doc comments and update inaccurate explanations rather than deleting context.
+Do not add comments to unchanged code.
 
 ### 5. Verify
 
@@ -70,10 +67,14 @@ any unrelated formatting churn. If verification fails because of a refinement,
 correct it or revert only that refinement edit; never discard the user's
 pre-existing hunk.
 
+When refining a staged hunk, leave the refinement unstaged and report the
+index/worktree divergence. Do not silently rewrite the user's staged snapshot.
+
 ### 6. Report
 
 Return the files and simplifications, comment changes, and verification results.
 Do not stage, commit, or create a blueprint.
 
-For a design document, blueprint, or plan that should remain unchanged, use the
-explicit `simplify` artifact skill instead.
+For a durable proposal, use `$research --continue` so simplification feedback
+updates the same source of truth. Review other design documents in chat unless
+the user explicitly requests a durable proposal.

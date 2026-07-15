@@ -56,8 +56,9 @@ bun install --frozen-lockfile
 just check
 ```
 
-`just check` is non-mutating. It validates shell syntax, Biome lint rules,
-TypeScript, Rust formatting and lints, and the Rust and Bun tests.
+`just check` is non-mutating. It validates shell syntax, skill frontmatter and
+references, Biome lint rules, TypeScript, Rust formatting and lints, and the
+Rust and Bun tests.
 
 ## Layout
 
@@ -66,6 +67,8 @@ AGENTS.md                  # shared global instructions
 CLAUDE.md                  # Claude compatibility entrypoint
 install.sh                 # harness-aware installer
 bin/blueprint              # portable blueprint state CLI
+bin/git-surgeon.ts         # deterministic selective-hunk Git CLI
+bin/validate-skills.ts     # repository skill schema/reference validator
 Cargo.toml                  # Rust workspace for vendored helper binaries
 crates/context-guard/       # Pi Context Guard Rust core
 rules/                     # shared coding/workflow rules
@@ -102,9 +105,9 @@ skills. Ordinary coding and PR workflows do not create them:
 ```sh
 blueprint create proposal "topic"
 blueprint create review "topic"
-blueprint create report "topic"
-blueprint find --type proposal,review,report
-blueprint archive <slug>
+blueprint create report "topic" --kind context
+blueprint find --type proposal,review,report --all
+blueprint archive <exact-or-unique-target>
 ```
 
 New `spec` and `plan` creation is rejected. Existing files remain findable and
@@ -117,6 +120,7 @@ Installed by `./install.sh claude` into `~/.claude`:
 - links `CLAUDE.md`, `AGENTS.md`, `rules/`, `skills/`
 - links `harnesses/claude/settings.json` as `settings.json`
 - links Claude statusline and hooks
+- installs `blueprint` and `git-surgeon` to `~/.local/bin`
 
 Claude-specific features retained outside shared skills:
 
@@ -134,7 +138,7 @@ Installed by `./install.sh pi` into `~/.pi/agent`:
 - links `harnesses/pi/settings.json` as `settings.json`
 - links Pi `keybindings.json`, `tui.json`, and `effort.json` when present
 - links Pi extensions named in `settings.json`, plus shared extension support, and prunes stale owned extension links
-- installs `blueprint` to `~/.local/bin`
+- installs `blueprint` and `git-surgeon` to `~/.local/bin`
 - builds `crates/context-guard` and links `context-guard` to `~/.local/bin`
 
 Pi uses `/skill:<name>` commands, for example:
@@ -157,7 +161,7 @@ Installed by `./install.sh codex` into `~/.codex` and `~/.agents`:
 - links `AGENTS.md` and `rules/` into `~/.codex` as reference files
 - links shared `skills/` as `$HOME/.agents/skills`
 - links shared `rules/` as `$HOME/.agents/rules`
-- installs `blueprint` to `~/.local/bin`
+- installs `blueprint` and `git-surgeon` to `~/.local/bin`
 
 If `~/.codex/config.toml` already exists as a real file, the installer preserves
 it. Codex may append local runtime state such as project trust, hook trust
@@ -170,12 +174,10 @@ installed through Codex's user skill path and can be invoked with
 
 ## Portability status
 
-Manual artifact skills: `context`, `research`, `review`, `diagnose`,
-`simplify`, `report`, and `archive`.
+Manual artifact skills: `context`, `research`, `review`, and `diagnose`.
 
 Direct workflows may consume artifacts but do not require or create trackers:
-`implement`, `fix`, `debug`, `pr-plan`, `respond`, `split-commit`, `vibe`, and
-`resume-work`.
+`implement`, `fix`, `debug`, `respond`, `split-commit`, and `resume-work`.
 
 ## Rules
 

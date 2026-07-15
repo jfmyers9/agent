@@ -6,8 +6,10 @@ paths:
 
 # Test Quality
 
-Every test must answer: **"What bug would this catch?"**
-If there's no realistic bug scenario, delete the test.
+Every test should answer: **"What bug would this catch?"**
+If there is no realistic bug scenario or distinct diagnostic value, do not add
+it. Remove existing tests only after confirming they protect no separate layer,
+contract, or failure signal.
 
 ## Banned Patterns
 
@@ -37,13 +39,14 @@ Mocks are a last resort:
 - Mock external services (network, filesystem, clock,
   third-party APIs)
 - Do NOT mock the thing you're testing
-- Do NOT mock collaborators you own — use the real
-  implementation
-- 3+ mocks in one test means the design is too coupled —
-  simplify first
+- Prefer real owned collaborators. Mock one only when the boundary itself is
+  the contract or the real integration would be unsafe or nondeterministic.
+- Several mocks in one test are a coupling signal. Prefer a simpler seam when
+  it reduces setup without weakening the exercised contract.
 
 ## The Deletion Test
 
-After writing a test, ask: "If I delete this test and introduce
-a bug, will any other test catch it?" If yes, this test is
-redundant — delete it.
+After writing a test, ask: "If I delete this test and introduce a bug, will any
+other test fail with an equally local and useful signal?" If yes, consider
+removing it. Keep deliberate overlap across unit, integration, and acceptance
+boundaries when each layer diagnoses a different contract.

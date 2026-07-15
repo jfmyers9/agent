@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const root = resolve(import.meta.dir, "..");
@@ -18,9 +18,10 @@ function workspace() {
 }
 
 function install(
-	action: "install" | "dry-run" | "validate" | "unlink",
+	action: "install" | "dry-run" | "doctor" | "validate" | "unlink",
 	harness: "claude" | "pi" | "codex",
 	paths: ReturnType<typeof workspace>,
+	environment: NodeJS.ProcessEnv = {},
 ) {
 	return spawnSync("bash", [join(root, "install.sh"), action, harness], {
 		cwd: root,
@@ -32,6 +33,7 @@ function install(
 			PI_CONFIG_DIR: paths.pi,
 			CODEX_CONFIG_DIR: paths.codex,
 			CODEX_AGENTS_DIR: paths.agents,
+			...environment,
 		},
 	});
 }
@@ -127,5 +129,16 @@ describe("installer safety", () => {
 		expect(readFileSync(config, "utf8")).toBe("runtime = true\n");
 		expect(install("unlink", "codex", paths).status).toBe(0);
 		expect(readFileSync(config, "utf8")).toBe("runtime = true\n");
+	});
+
+	test("doctor requires Bun for the installed CLI", () => {
+		const paths = workspace();
+		const node = spawnSync("node", ["-p", "process.execPath"], { encoding: "utf8" }).stdout.trim();
+		const result = install("doctor", "claude", paths, {
+			PATH: `${dirname(node)}:/usr/bin:/bin`,
+		});
+
+		expect(result.status).not.toBe(0);
+		expect(result.stderr).toContain("Missing required command: bun");
 	});
 });

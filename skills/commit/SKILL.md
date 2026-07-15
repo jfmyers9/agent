@@ -36,7 +36,10 @@ name from the email local-part. Quote every user-derived shell argument.
 - Treat tracked changes made by the agent during the current task as intended
   commit candidates by default. Do not ask whether to stage them merely because
   they are unstaged or because the index already contains related changes.
-- Never stage untracked files automatically.
+- Stage an untracked file without prompting only when it was created by the
+  agent during the current task, is required for the coherent change, and has
+  been inspected for sensitive content. Treat every other untracked file as
+  user-owned and ask before staging it.
 - Stop for confirmation when staged or candidate files appear to contain
   credentials, secrets, `.env` data, or private keys.
 - Ask how to split clearly unrelated changes instead of combining them.
@@ -113,10 +116,11 @@ data, workflow, or compatibility changes. Preserve relevant trailers such as
      changes are unstaged. `git add -u` is acceptable when all modified tracked
      files belong to the change set, subject to the sensitive/unrelated-change
      guardrails and the tree-preserving exception above.
-   - If only untracked files changed, list them and ask which should be added.
-   - When tracked and untracked changes coexist, leave untracked files unstaged
-     and report them. Ask before continuing if they are required for a coherent
-     commit.
+   - If only untracked files changed, stage inspected files known to have been
+     created for the current task. Otherwise list them and ask which to add.
+   - When tracked and untracked changes coexist, include inspected task-created
+     files required for coherence. Leave all other untracked files unstaged and
+     report them.
    - Allow an empty index for `--amend` only when the user supplied a new
      message or identity. Otherwise report that there is nothing to commit.
    - A fixup commit always requires staged changes.
@@ -133,8 +137,10 @@ data, workflow, or compatibility changes. Preserve relevant trailers such as
    - Otherwise generate the smallest message that remains useful without this
      chat context. Use imperative mood, no trailing period, and the body/footer
      rules above.
-   - Before committing, verify type, scope, subject, body decision, trailers,
-     and breaking-change notation against the staged result.
+   - Before committing, run `git diff --cached --check` and verify type, scope,
+     subject, body decision, trailers, and breaking-change notation against the
+     staged result. Stop on whitespace errors unless they are intentional and
+     documented by the project.
 
 5. **Commit safely**
    - Use `git commit --fixup <commit>` for a fixup.
@@ -150,7 +156,8 @@ data, workflow, or compatibility changes. Preserve relevant trailers such as
    - If the commit fails, report the error and leave the index intact.
 
 6. **Report and optionally push**
-   - Show `git log -1 --oneline`. When identity was overridden, show
+   - Show `git log -1 --oneline` and `git status --short`. When identity was
+     overridden, show
      `git log -1 --format='%h %an <%ae> committed-by %cn <%ce> %s'`.
    - For `--push`, run `git push` when an upstream exists, or
      `git push --set-upstream origin HEAD` when it does not and `origin` exists.

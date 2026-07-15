@@ -1,9 +1,9 @@
 ---
 name: writing-skills
 description: >
-  Create or update repository Agent Skills with precise routing metadata,
-  portable tools, cohesive workflows, and verification. Use when asked to add,
-  rewrite, or improve a skill under `skills/`.
+  Create or edit Agent Skills in this repository with precise routing,
+  portable tools, cohesive workflows, and repository validation. Use for actual
+  changes under `skills/`, not for general advice about skill design.
 argument-hint: "<skill-name-or-path> [description]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
@@ -51,7 +51,9 @@ workflow.
 
 ### 3. Design Frontmatter
 
-Use only fields the repository supports:
+Use only fields the repository supports. This repository intentionally permits
+adapter-supported invocation fields beyond the smallest generic Agent Skills
+schema; `bun run check:skills` is authoritative.
 
 ```markdown
 ---
@@ -107,10 +109,9 @@ Keep ordinary workflows in chat and the working tree. Only skills explicitly
 invoked for durable artifacts may create blueprints; when one does, follow
 `@rules/blueprints.md` and `@rules/human-approval.md`. Do not add artifact side
 effects to unrelated skills. Make artifact workflows preserve and validate
-frontmatter, derive link targets from the source file's full stem, and inspect
-the whole blueprint repository before committing. They must stop on an existing
-index or unrelated project changes because `blueprint commit` stages the
-project subtree and commits the existing index.
+frontmatter and derive link targets from the source file's full stem. Commit by
+exact file path; `blueprint commit` must refuse an existing index and stage only
+the resolved artifact.
 
 ### 5. Verify The Result
 
@@ -129,3 +130,10 @@ Read the final file top to bottom and check:
 Inspect the final diff and report files changed, key routing or workflow
 decisions, and validation results. Do not create a blueprint unless the user
 explicitly invoked an artifact skill.
+
+Run at least:
+
+```sh
+bun run check:skills
+bun test tests/workflow-contracts.test.ts tests/skill-validator.test.ts
+```

@@ -12,7 +12,7 @@ argument-hint: "[error-description|blueprint-slug-or-path]"
 
 Resolve a failure from reproducible evidence without creating a tracker.
 
-@rules/harness-compat.md applies.
+@rules/context-budget.md and @rules/harness-compat.md apply.
 
 ## Workflow
 
@@ -21,8 +21,9 @@ Resolve a failure from reproducible evidence without creating a tracker.
    artifact when none was named.
 2. Read applicable repository instructions, inspect the working tree, and
    preserve unrelated changes.
-3. Reproduce the failure with the narrowest known command. Capture the exact
-   expected behavior, actual behavior, and baseline failures before editing.
+3. Reproduce the failure with the narrowest known command. Bound logs at their
+   source and capture the exact expected behavior, actual behavior, and baseline
+   failures before editing.
 4. Trace the relevant control/data flow and recent changes. Form competing
    root-cause hypotheses and falsify them with source evidence or focused
    probes; do not patch a merely correlated symptom.

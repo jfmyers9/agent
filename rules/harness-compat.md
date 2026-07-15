@@ -16,10 +16,10 @@ Shared instructions and skills must be portable across harnesses.
 | ---- | --------- |
 | proposal | `blueprint create proposal <topic>` |
 | review | `blueprint create review <topic>` |
-| report | `blueprint create report <topic>` |
-| discovery | `blueprint find --type ... [--match ...]` |
+| report | `blueprint create report <topic> --kind <context|diagnosis>` |
+| discovery | `blueprint find --type ... [--match ...|--exact ...]` |
 | linkage | `blueprint link <file> <source-slug>` |
-| archival | `blueprint archive [slug]` |
+| archival | `blueprint archive <exact-or-unique-target>` |
 
 ## Tools And Paths
 
@@ -29,3 +29,8 @@ Avoid harness-specific config paths except in adapter documentation.
 
 Skill directories must match `name`, use lowercase letters/numbers/hyphens,
 and keep descriptions specific enough to avoid routing ordinary questions.
+
+Shared frontmatter may also use `argument-hint`, `user-invocable`, and
+`disable-model-invocation`, which the installed adapters understand even though
+some generic Agent Skills validators reject extension fields. Use
+`bun run check:skills` as this repository's authoritative schema check.
