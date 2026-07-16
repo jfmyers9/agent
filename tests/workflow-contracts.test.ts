@@ -71,14 +71,41 @@ describe("workflow contracts", () => {
     expect(body).toContain("Do not create a fix plan");
     expect(body).toContain("## Resolutions");
     expect(body).toContain("blueprint commit review");
+    expect(body).toContain("NO-GO / replace");
+    expect(body).toMatch(/Ignore all\s+deferred/);
+    expect(body).toContain("Process only unresolved `F` IDs");
+    expect(body).toContain("preserve every row already marked");
+    expect(body).toContain("every affected path and hunk");
+    expect(body).toContain("basis-drift check");
+    expect(body).toContain("$review --verify <review>");
   });
 
-  test("review defines focused lenses and stable finding IDs", () => {
+  test("review defines a decisive and convergent review lifecycle", () => {
     const body = read("skills/review/SKILL.md");
+    const approach = read("skills/review/perspectives/intent-approach.md");
     expect(body).toContain("correctness and compatibility");
     expect(body).toContain("design and maintainability");
     expect(body).toContain("stable sequential IDs");
     expect(body).toContain("## Resolutions");
+    expect(body).toContain("Verdict: GO | NO-GO");
+    expect(body).toContain("Recommendation: proceed | fix | replace");
+    expect(body).toContain("Do not merge this changeset");
+    expect(body).toMatch(/Every `F`\s+finding\s+blocks/);
+    expect(body).toContain("Never add a deferred observation during");
+    expect(body).toContain("--verify <review-slug-or-path>");
+    expect(body).toContain("closure pass, not another review");
+    expect(body).toContain("Preserve the original reviewed snapshot");
+    expect(body).toContain("## Review Basis");
+    expect(body).toContain("per-hunk fingerprints");
+    expect(body).toContain("changed PR base or Graphite parent");
+    expect(body).toContain("Decision scope: full changeset | partial paths");
+    expect(body).toContain("only when the approach is `sound`");
+    expect(body).toContain("fresh review");
+    expect(approach).toContain("sound`, `salvageable`, or `misguided");
+    expect(read("skills/review/perspectives/design-maintainability.md")).toContain("Apply only when");
+    expect(read("skills/review/perspectives/tests.md")).toContain("named regression path");
+    expect(read("skills/review/perspectives/security-operations.md")).toContain("only activated subsections");
+    expect(existsSync(resolve(root, "skills/review/perspectives/proposal-coherence.md"))).toBe(false);
   });
 
   test("active workflow docs contain no retired approval states", () => {
@@ -131,6 +158,9 @@ describe("workflow contracts", () => {
     }
     expect(body).toContain("--dry-run");
     expect(body).toContain("Review the complete diff in session");
+    expect(body).toContain("$review --local");
+    expect(body).toMatch(/zero\s+unresolved `F` findings/);
+    expect(body).toMatch(/On `NO-GO \/ replace`, stop\s+submission/);
     expect(body).toContain("Submission defaults to a draft pull request");
   });
 

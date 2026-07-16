@@ -28,11 +28,23 @@ Resolve evidence-backed feedback while preserving unrelated work.
 Do not create a fix plan. Existing proposals or legacy plans may be context,
 not required trackers.
 
+When the source review says `NO-GO / replace`, do not patch around a misguided
+approach. Stop and request explicit replacement instructions. Ignore all
+deferred `D` observations; they are outside the review closure loop.
+
 ### 2. Revalidate
 
-Inspect repository instructions and the working tree before editing. For each
-finding, read the cited code plus relevant callers and tests, then classify it
-with evidence:
+Inspect repository instructions and the working tree before editing. For a
+source review, require the current repository and branch to match its recorded
+target and require the reviewed commit to be in its history. Do not switch
+branches or edit an unrelated worktree implicitly. Before editing, apply the
+review's basis-drift check: the recorded base must be unchanged and every
+current difference from the reviewed or last-verified snapshot must already map
+to an existing resolution row. Stop for a fresh review on any unmapped drift.
+
+Process only unresolved `F` IDs and preserve every row already marked
+`verified`. For each unresolved finding, read the cited code plus relevant
+callers and tests, then classify it with evidence:
 
 - `valid` — current code exhibits the issue;
 - `already resolved` — current code contains the required correction;
@@ -56,20 +68,29 @@ When feedback came from a review, update that same file:
 ```markdown
 ## Resolutions
 
-| Finding | Outcome | Change | Verification |
-| ------- | ------- | ------ | ------------ |
-| F001 | fixed | `<path>` — summary | `<command>` — pass |
+| Finding | Resolution | Verification | Change / Evidence |
+| ------- | ---------- | ------------ | ----------------- |
+| F001 | fixed | pending | `<path>` — summary; `<command>` — pass |
 ```
 
-Use the review's stable finding IDs. Outcomes are `fixed`, `already resolved`,
-`not reproducible`, or `declined`. Preserve existing resolution rows and update
-the same review rather than creating another artifact. Preserve its
-frontmatter and write below the closing `---`. Immediately before committing,
-run `blueprint validate "$file"`, then `blueprint commit review "$file"`. The
-CLI refuses a pre-existing blueprint index and stages only that review. Stop on
-any error.
+Use the review's stable `F` IDs. Resolutions are `fixed`, `already resolved`,
+`not reproducible`, or `declined`. Use `pending` verification for the first
+three and `unresolved` for `declined`; only `$review --verify <review>` may mark
+a resolution `verified` or `failed` and change the review decision to `GO`.
+For each code change, record every affected path and hunk or line range so the
+verification pass can reject edits unrelated to that finding.
+
+Preserve existing rows and migrate an older outcome table without losing its
+evidence. Do not remove findings or change their IDs. Update the same review
+rather than creating another artifact. Preserve its frontmatter and write below
+the closing `---`. Immediately before committing, run
+`blueprint validate "$file"`, then `blueprint commit review "$file"`. The CLI
+refuses a pre-existing blueprint index and stages only that review. Stop on any
+error.
 
 ### 5. Report
 
-Return each finding's outcome, files changed, commands and results, and any
-remaining risk. No new blueprint is created.
+Return each finding's resolution, files changed, commands and results, and any
+remaining risk. For a review with a persisted basis, direct the user to
+`$review --verify <review>`; a legacy review requires a fresh review. No new
+blueprint is created.

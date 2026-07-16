@@ -27,8 +27,10 @@ pipeline artifact.
 - `--stack` — submit descendants with the current Graphite branch.
 
 Invocation authorizes the bounded `$gt create`, `$implement`, `$fix`, `$commit`,
-and `$submit` actions below. It does not authorize Graphite sync, force-pushes,
-unrelated changes, or publishing without `--ready`.
+and `$submit` actions below. A durable `$review` and its verification are
+authorized only when the user explicitly includes `$review`. Vibe does not
+authorize Graphite sync, force-pushes, unrelated changes, or publishing without
+`--ready`.
 
 ## Workflow
 
@@ -45,9 +47,16 @@ unrelated changes, or publishing without `--ready`.
    named artifact. Do not create a proposal unless the user also explicitly
    invokes `$research`; when invoked, use its `--auto` mode.
 5. Review the complete diff in session for correctness, compatibility, security,
-   reliability, tests, and maintainability. Revalidate actionable findings,
-   apply `$fix`, and re-review affected paths. Create a durable review only when
-   the user also explicitly invokes `$review`.
+   reliability, tests, and maintainability, using the review decision and
+   materiality contract. Revalidate actionable findings and apply `$fix`. When
+   the user explicitly requested a durable review, create it with
+   `$review --local`, then close that same review with `$review --verify` after
+   fixes; otherwise leave any artifact untouched and recheck only the fixes and
+   affected paths in session. On `NO-GO / replace`, stop submission; discard or
+   reimplement the approach, then perform a fresh review. On `NO-GO / fix`,
+   continue the bounded fix/verification loop or stop with the unresolved IDs.
+   Do not proceed until a full-scope decision is `GO / proceed` with zero
+   unresolved `F` findings.
 6. Run focused checks during implementation and the repository's required final
    checks afterward. Do not commit with known relevant failures.
 7. Apply `$commit`, staging only paths changed by this run. Require a clean

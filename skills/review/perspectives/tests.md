@@ -1,14 +1,18 @@
-# Tests
+# Tests And Verification
 
-Apply to changed behavior and changed tests.
+Apply when observable behavior or tests changed, or when a finding needs
+regression proof.
 
-- Confirm important success, failure, edge, and compatibility behavior is
-  exercised at the right boundary.
-- Detect tautological assertions, implementation mirroring, excessive mocking,
-  coverage-only execution, and tests coupled to private details.
-- Prefer realistic owned components; mock external boundaries only.
+- Require a named regression path before reporting missing coverage. Do not
+  demand exhaustive success, failure, and edge-case tests by default.
+- Flag tautological assertions, implementation mirroring, mocks, nondeterminism,
+  or private-detail coupling only when they can mask that regression, create
+  realistic flakiness, or block ordinary behavior-preserving change.
+- Judge mocks by whether they preserve the contract under test, not by whether
+  the collaborator is internally or externally owned.
 - For a gap, provide a concrete setup -> action -> assertion recipe.
 - Do not flag a gap when existing coverage would fail for the same regression.
 
-For each candidate, return the bug the test would catch and evidence that
-coverage is absent or misleading.
+Fold a test gap into its underlying functional finding. Return a standalone
+candidate only when the tests themselves provide false confidence or the
+claimed behavior otherwise has no credible verification.

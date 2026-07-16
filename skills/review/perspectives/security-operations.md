@@ -1,14 +1,16 @@
 # Security And Operations
 
-Apply only when trust boundaries, secrets, persistence, concurrency,
-deployment, resource use, or production dependencies changed.
+Apply only activated subsections. Record which trigger applies before review:
 
-- Check authorization, validation, injection, traversal, disclosure, and unsafe
-  deserialization at boundaries.
-- Check races, atomicity, idempotency, retries, timeouts, and partial failure.
-- Check rollout and rollback compatibility, observability, resource bounds,
-  dependency failure, and incident diagnosability.
+- **Trust and input:** authorization, validation, injection, traversal, secrets,
+  disclosure, and unsafe deserialization.
+- **State and concurrency:** persistence, races, atomicity, idempotency, retries,
+  timeouts, and partial failure.
+- **Delivery and resources:** rollout/rollback compatibility, observability,
+  resource bounds, dependency failure, and incident diagnosability.
 - Distinguish realistic introduced risk from generic hardening advice.
+
+Do not inspect an inactive subsection merely because another trigger applies.
 
 For each candidate, return the exploit or failure path, blast radius, evidence,
 and mitigation.

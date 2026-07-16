@@ -1,13 +1,16 @@
 # Design And Maintainability
 
-Apply to all introduced code.
+Apply only when the change adds or moves responsibilities, ownership,
+abstractions, public surface, dependencies, or nontrivial control flow.
 
 - Check responsibility placement, cohesion, coupling, and boundary clarity.
-- Prefer local, linear flow over unnecessary indirection or public API surface.
-- Check naming, error context, mutation ownership, and readability under
-  maintenance pressure.
-- Reject speculative abstraction and unrelated refactoring.
-- Flag complexity only when a simpler approach reduces concrete risk.
+- Check mutation ownership, dependency direction, lifecycle, and whether a
+  boundary can preserve its invariants.
+- Flag indirection, public surface, or coupling only when it creates a concrete
+  compatibility, ownership, failure, or known change-cost risk.
+- Reject speculative abstraction and unrelated refactoring as proposed fixes.
+- Leave whole-change strategy to the intent and approach gate.
 
-For each candidate, return its location, maintenance impact, evidence, and a
-scoped alternative.
+Do not report naming, formatting, readability taste, or a merely cleaner
+alternative. For each candidate, return its location, concrete maintenance
+risk, evidence, and the smallest bounded correction.
