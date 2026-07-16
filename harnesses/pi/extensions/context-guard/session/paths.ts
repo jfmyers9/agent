@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync, renameSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 let _wtCache: { projectDir: string; envSuffix: string | undefined; suffix: string } | undefined;
 
@@ -86,7 +86,13 @@ export function hashProjectDirLegacy(projectDir: string): string {
 }
 
 export function hashProjectDirCanonical(projectDir: string): string {
-	const normalized = normalizeWorktreePath(projectDir);
+	let canonical = resolve(projectDir);
+	try {
+		canonical = realpathSync.native(canonical);
+	} catch {
+		// Preserve a stable absolute path for projects that do not exist yet.
+	}
+	const normalized = normalizeWorktreePath(canonical);
 	const folded = process.platform === "darwin" || process.platform === "win32" ? normalized.toLowerCase() : normalized;
 	return createHash("sha256").update(folded).digest("hex").slice(0, 16);
 }

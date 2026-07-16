@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
@@ -100,6 +100,18 @@ fn serve_http_once_delayed(body: &'static str, delay_ms: u64) -> String {
         stream
             .write_all(response.as_bytes())
             .expect("write delayed response");
+    });
+    format!("http://{addr}")
+}
+
+fn serve_http_stalled(delay_ms: u64) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind stalled test server");
+    let addr = listener.local_addr().expect("stalled local addr");
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept stalled request");
+        let mut request = [0_u8; 1024];
+        let _ = stream.read(&mut request);
+        thread::sleep(std::time::Duration::from_millis(delay_ms));
     });
     format!("http://{addr}")
 }
@@ -215,9 +227,63 @@ fn run_command_honors_timeout() {
 }
 
 #[test]
+fn run_command_returns_partial_output_on_timeout() {
+    let response = call_core(
+        br#"{"command":"run","params":{"language":"shell","code":"printf diagnostic; sleep 2","timeout":50}}"#,
+    );
+    let text = response_text(&response);
+
+    assert_eq!(response["ok"], false);
+    assert!(text.contains("timed out after 50ms"));
+    assert!(text.contains("partial stdout:\ndiagnostic"));
+}
+
+#[test]
+fn completed_parent_does_not_wait_for_descendant_output_handles() {
+    let request = serde_json::json!({
+        "command": "run",
+        "params": {
+            "language": "python",
+            "code": "import os, time\nif os.fork() == 0:\n    time.sleep(1)\n    os._exit(0)",
+            "timeout": 500
+        }
+    });
+    let started = Instant::now();
+    let response = call_core(request.to_string().as_bytes());
+
+    assert_eq!(response["ok"], true);
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(500),
+        "reader collection waited for a detached descendant: {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn timeout_terminates_descendants_before_they_can_mutate_files() {
+    let marker_path = temp_file_path("timeout-descendant", "txt");
+    let code = format!(
+        "(sleep 0.2; printf leaked > '{}') & wait",
+        marker_path.to_string_lossy()
+    );
+    let request = serde_json::json!({
+        "command": "run",
+        "params": { "language": "shell", "code": code, "timeout": 30 }
+    });
+    let response = call_core(request.to_string().as_bytes());
+
+    assert_eq!(response["ok"], false);
+    thread::sleep(std::time::Duration::from_millis(350));
+    assert!(!marker_path.exists(), "timed-out descendant survived");
+}
+
+#[test]
 fn run_command_can_background_on_timeout_and_continue_side_effects() {
     let marker_path = temp_file_path("run-background", "txt");
-    let code = format!("sleep 0.1; printf done > {}", marker_path.to_string_lossy());
+    let code = format!(
+        "sleep 0.1; printf delayed-output; printf done > {}",
+        marker_path.to_string_lossy()
+    );
     let request = serde_json::json!({
         "command": "run",
         "params": {
@@ -250,8 +316,8 @@ fn run_shell_command_shields_large_stdout() {
     let text = response["content"][0]["text"]
         .as_str()
         .expect("text response");
-    assert!(text.contains("Output exceeded 20000 bytes"));
-    assert!(text.len() < 1000);
+    assert!(text.contains("Context Guard omitted"));
+    assert!(text.len() <= 20_000);
 }
 
 #[test]
@@ -558,7 +624,7 @@ fn batch_isolates_timed_out_commands_and_keeps_fast_results_searchable() {
     let response = call_core(request.to_string().as_bytes());
     let text = response["content"][0]["text"].as_str().expect("batch text");
 
-    assert_eq!(response["ok"], true);
+    assert_eq!(response["ok"], false);
     assert!(text.contains("Executed 2 commands"));
     assert!(text.contains("fast-cmd"));
     assert!(text.contains("fastneedle"));
@@ -585,13 +651,49 @@ fn batch_uses_a_shared_timeout_budget_when_concurrency_is_one() {
     let response = call_core(request.to_string().as_bytes());
     let text = response["content"][0]["text"].as_str().expect("batch text");
 
-    assert_eq!(response["ok"], true);
+    assert_eq!(response["ok"], false);
     assert!(text.contains("Executed 2 commands"));
     assert!(text.contains("slow-cmd"));
     assert!(text.contains("timed out after 50ms"));
     assert!(text.contains("after-timeout"));
     assert!(text.contains("shared batch timeout exhausted"));
     assert!(text.contains("No results found."));
+}
+
+#[test]
+fn batch_bounds_returned_output_but_keeps_full_capture_searchable() {
+    let db_path = temp_db_path("batch-output-bound");
+    let request = serde_json::json!({
+        "command": "batch",
+        "params": {
+            "dbPath": db_path,
+            "commands": [{
+                "label": "large-command",
+                "command": "perl -e 'print \"x\" x 100000; print \" searchabletailneedle\"'"
+            }]
+        }
+    });
+    let response = call_core(request.to_string().as_bytes());
+    let text = response_text(&response);
+
+    assert_eq!(response["ok"], true);
+    assert!(text.contains("Context Guard omitted"));
+    assert!(text.len() < 25_000);
+    assert!(
+        response["details"]["results"][0]["output"]
+            .as_str()
+            .expect("bounded detail output")
+            .len()
+            < 25_000
+    );
+
+    let search = serde_json::json!({
+        "command": "search",
+        "params": { "dbPath": db_path, "queries": ["searchabletailneedle"] }
+    });
+    let search_response = call_core(search.to_string().as_bytes());
+    assert_eq!(search_response["ok"], true);
+    assert!(response_text(&search_response).contains("searchabletailneedle"));
 }
 
 #[test]
@@ -829,6 +931,33 @@ fn fetch_does_not_collide_cache_entries_for_different_urls_sharing_a_source_labe
 }
 
 #[test]
+fn inline_source_labels_cannot_accidentally_impersonate_fetch_cache_entries() {
+    let db_path = temp_db_path("fetch-cache-namespace");
+    let url = serve_http_once("body fetched despite inline label collision");
+    let legacy_cache_label = format!("shared-docs::{url}");
+    let index = serde_json::json!({
+        "command": "index",
+        "params": {
+            "dbPath": db_path,
+            "source": legacy_cache_label,
+            "content": "inline content must not satisfy a fetch"
+        }
+    });
+    assert_eq!(call_core(index.to_string().as_bytes())["ok"], true);
+
+    let fetch = serde_json::json!({
+        "command": "fetch",
+        "params": { "dbPath": db_path, "url": url, "source": "shared-docs" }
+    });
+    let response = call_core(fetch.to_string().as_bytes());
+    let text = response_text(&response);
+
+    assert_eq!(response["ok"], true);
+    assert!(text.contains("body fetched despite inline label collision"));
+    assert!(!text.contains("[cache] shared-docs"));
+}
+
+#[test]
 fn fetch_refetches_when_the_cached_entry_is_older_than_the_ttl_window() {
     let db_path = temp_db_path("fetch-cache-ttl");
     let url = serve_http_once("fresh body");
@@ -843,11 +972,10 @@ fn fetch_refetches_when_the_cached_entry_is_older_than_the_ttl_window() {
     assert_eq!(call_core(request.to_string().as_bytes())["ok"], true);
 
     let conn = Connection::open(&db_path).expect("open fetch db");
-    conn.execute(
-        "UPDATE sources SET indexed_at = '2000-01-01 00:00:00' WHERE label = ?1",
-        rusqlite::params![format!("ttl-source::{url}")],
-    )
-    .expect("age cached source row");
+    let updated = conn
+        .execute("UPDATE sources SET indexed_at = '2000-01-01 00:00:00'", [])
+        .expect("age cached source row");
+    assert_eq!(updated, 1);
 
     let expired = serde_json::json!({
         "command": "fetch",
@@ -952,6 +1080,26 @@ fn fetch_rejects_non_http_schemes() {
 
     assert_eq!(response["ok"], false);
     assert!(text.contains("URL scheme `file` not allowed"));
+}
+
+#[test]
+fn fetch_honors_request_timeout() {
+    let db_path = temp_db_path("fetch-timeout");
+    let request = serde_json::json!({
+        "command": "fetch",
+        "params": {
+            "dbPath": db_path,
+            "url": serve_http_stalled(1_000),
+            "source": "stalled-source",
+            "timeout": 100
+        }
+    });
+    let started = Instant::now();
+    let response = call_core(request.to_string().as_bytes());
+
+    assert_eq!(response["ok"], false);
+    assert!(response_text(&response).contains("fetch failed"));
+    assert!(started.elapsed() < std::time::Duration::from_millis(750));
 }
 
 #[test]
@@ -1224,7 +1372,53 @@ fn search_timeline_merges_current_session_prior_session_and_auto_memory() {
 }
 
 #[test]
-fn search_reports_stale_refresh_and_progressively_throttles_results() {
+fn timeline_search_avoids_other_project_memory_and_handles_unicode_snippets() {
+    let db_path = temp_db_path("timeline-memory-isolation");
+    let project_dir = temp_file_path("timeline-project", "dir");
+    let config_dir = temp_file_path("timeline-config", "dir");
+    std::fs::create_dir_all(config_dir.join("memory").join("project-b"))
+        .expect("create other project memory");
+    std::fs::write(
+        config_dir
+            .join("memory")
+            .join("project-b")
+            .join("private.md"),
+        "OTHER_PROJECT_SECRET_NEEDLE",
+    )
+    .expect("write other project memory");
+    std::fs::write(
+        config_dir.join("memory").join("unicode.md"),
+        format!("{} unicodeglobalneedle", "é".repeat(400)),
+    )
+    .expect("write unicode memory");
+
+    let index = serde_json::json!({
+        "command": "index",
+        "params": { "dbPath": db_path, "content": "timeline seed", "source": "seed" }
+    });
+    assert_eq!(call_core(index.to_string().as_bytes())["ok"], true);
+    let search = serde_json::json!({
+        "command": "search",
+        "params": {
+            "dbPath": db_path,
+            "projectDir": project_dir,
+            "configDir": config_dir,
+            "sort": "timeline",
+            "queries": ["OTHER_PROJECT_SECRET_NEEDLE", "unicodeglobalneedle"],
+            "limit": 5
+        }
+    });
+    let response = call_core(search.to_string().as_bytes());
+    let text = response_text(&response);
+
+    assert_eq!(response["ok"], true);
+    assert!(!text.contains("belongs only to project"));
+    assert!(!text.contains("memory/project-b/private.md"));
+    assert!(text.contains("unicodeglobalneedle"));
+}
+
+#[test]
+fn search_reports_stale_refresh_and_honors_requested_limit_repeatedly() {
     let db_path = temp_db_path("search-throttle");
     let file_path = temp_file_path("search-throttle", "md");
     std::fs::write(&file_path, "# Alpha\n\ncommonneedle first version\n")
@@ -1275,32 +1469,58 @@ fn search_reports_stale_refresh_and_progressively_throttles_results() {
         .as_str()
         .expect("first search text");
     assert_eq!(first["ok"], true);
-    assert!(first_text.contains("auto-refreshed 1 stale file-backed source"));
-    assert_eq!(first_text.matches("--- [current-session").count(), 2);
+    assert!(first_text.contains("updated 1 stale file-backed source"));
+    assert_eq!(first_text.matches("--- [current-session").count(), 3);
 
     let second = call_core(search_request.to_string().as_bytes());
     assert_eq!(second["ok"], true);
     let third = call_core(search_request.to_string().as_bytes());
     assert_eq!(third["ok"], true);
 
-    let fourth = call_core(search_request.to_string().as_bytes());
-    let fourth_text = fourth["content"][0]["text"]
-        .as_str()
-        .expect("fourth search text");
-    assert_eq!(fourth["ok"], true);
-    assert_eq!(fourth_text.matches("--- [current-session").count(), 1);
-
-    for _ in 0..4 {
+    for _ in 0..6 {
         let response = call_core(search_request.to_string().as_bytes());
         assert_eq!(response["ok"], true);
+        assert_eq!(
+            response_text(&response)
+                .matches("--- [current-session")
+                .count(),
+            3
+        );
     }
+}
 
-    let blocked = call_core(search_request.to_string().as_bytes());
-    let blocked_text = blocked["content"][0]["text"]
-        .as_str()
-        .expect("blocked search text");
-    assert_eq!(blocked["ok"], false);
-    assert!(blocked_text.contains("BLOCKED: 9 search calls in"));
+#[test]
+fn search_removes_deleted_file_backed_sources() {
+    let db_path = temp_db_path("search-deleted-source");
+    let file_path = temp_file_path("search-deleted-source", "md");
+    std::fs::write(&file_path, "deletedfilesourceneedle").expect("write indexed source");
+    for params in [
+        serde_json::json!({
+            "dbPath": db_path,
+            "path": file_path,
+            "source": "deleted-source"
+        }),
+        serde_json::json!({
+            "dbPath": db_path,
+            "content": "unrelated retained source",
+            "source": "retained-source"
+        }),
+    ] {
+        let request = serde_json::json!({ "command": "index", "params": params });
+        assert_eq!(call_core(request.to_string().as_bytes())["ok"], true);
+    }
+    std::fs::remove_file(&file_path).expect("delete indexed source");
+
+    let search = serde_json::json!({
+        "command": "search",
+        "params": { "dbPath": db_path, "queries": ["deletedfilesourceneedle"] }
+    });
+    let response = call_core(search.to_string().as_bytes());
+    let text = response_text(&response);
+
+    assert_eq!(response["ok"], true);
+    assert!(text.contains("updated 1 stale file-backed source"));
+    assert!(text.contains("No results found"));
 }
 
 #[test]
@@ -1436,6 +1656,10 @@ fn purge_session_scope_removes_only_target_session_rows() {
         "CREATE TABLE session_events (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            session_id TEXT NOT NULL,\n            type TEXT NOT NULL,\n            category TEXT NOT NULL,\n            priority INTEGER NOT NULL DEFAULT 2,\n            data TEXT NOT NULL,\n            project_dir TEXT NOT NULL DEFAULT '',\n            attribution_source TEXT NOT NULL DEFAULT 'unknown',\n            attribution_confidence REAL NOT NULL DEFAULT 0,\n            bytes_avoided INTEGER NOT NULL DEFAULT 0,\n            bytes_returned INTEGER NOT NULL DEFAULT 0,\n            source_hook TEXT NOT NULL DEFAULT 'test',\n            created_at TEXT NOT NULL DEFAULT (datetime('now')),\n            data_hash TEXT NOT NULL DEFAULT ''\n        );\n        CREATE TABLE session_meta (\n            session_id TEXT PRIMARY KEY,\n            project_dir TEXT NOT NULL,\n            started_at TEXT NOT NULL DEFAULT (datetime('now')),\n            last_event_at TEXT,\n            event_count INTEGER NOT NULL DEFAULT 0,\n            compact_count INTEGER NOT NULL DEFAULT 0\n        );\n        CREATE TABLE session_resume (\n            id INTEGER PRIMARY KEY AUTOINCREMENT,\n            session_id TEXT NOT NULL UNIQUE,\n            snapshot TEXT NOT NULL,\n            event_count INTEGER NOT NULL,\n            created_at TEXT NOT NULL DEFAULT (datetime('now')),\n            consumed INTEGER NOT NULL DEFAULT 0\n        );\n        CREATE TABLE tool_calls (\n            session_id TEXT NOT NULL,\n            tool TEXT NOT NULL,\n            calls INTEGER NOT NULL DEFAULT 0,\n            bytes_returned INTEGER NOT NULL DEFAULT 0,\n            updated_at TEXT NOT NULL DEFAULT (datetime('now')),\n            PRIMARY KEY (session_id, tool)\n        );",
     )
     .expect("create session schema");
+    conn.execute_batch(
+        "CREATE TABLE session_extractor_state (session_id TEXT PRIMARY KEY, state_json TEXT NOT NULL);",
+    )
+    .expect("create extractor state schema");
 
     for session_id in ["session-a", "session-b"] {
         conn.execute(
@@ -1458,6 +1682,11 @@ fn purge_session_scope_removes_only_target_session_rows() {
             rusqlite::params![session_id, "cg_search", 1, 64],
         )
         .expect("insert tool calls");
+        conn.execute(
+            "INSERT INTO session_extractor_state(session_id, state_json) VALUES (?1, ?2)",
+            rusqlite::params![session_id, format!("state for {session_id}")],
+        )
+        .expect("insert extractor state");
     }
 
     let purge_request = serde_json::json!({
@@ -1494,6 +1723,14 @@ fn purge_session_scope_removes_only_target_session_rows() {
         .expect("count remaining session-b rows");
     assert_eq!(remaining_a, 0);
     assert_eq!(remaining_b, 1);
+    let remaining_state_a: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM session_extractor_state WHERE session_id = 'session-a'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count remaining session-a extractor state");
+    assert_eq!(remaining_state_a, 0);
 
     let search_request = serde_json::json!({
         "command": "search",
@@ -1504,6 +1741,209 @@ fn purge_session_scope_removes_only_target_session_rows() {
     });
     let search_response = call_core(search_request.to_string().as_bytes());
     assert_eq!(search_response["ok"], true);
+}
+
+#[test]
+fn session_schema_migration_preserves_generated_hash_events() {
+    let session_db_path = temp_db_path("session-generated-hash-migration");
+    let conn = Connection::open(&session_db_path).expect("open legacy session db");
+    conn.execute_batch(
+        "
+        CREATE TABLE session_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            type TEXT NOT NULL,
+            category TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 2,
+            data TEXT NOT NULL,
+            project_dir TEXT NOT NULL DEFAULT '',
+            attribution_source TEXT NOT NULL DEFAULT 'unknown',
+            attribution_confidence REAL NOT NULL DEFAULT 0,
+            bytes_avoided INTEGER NOT NULL DEFAULT 0,
+            bytes_returned INTEGER NOT NULL DEFAULT 0,
+            source_hook TEXT NOT NULL DEFAULT 'unknown',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            data_hash TEXT GENERATED ALWAYS AS (lower(hex(data))) STORED
+        );
+        INSERT INTO session_events(session_id, type, category, data, project_dir)
+        VALUES ('legacy-session', 'summary', 'decision', 'preserved migration event', '/tmp/project');
+        ",
+    )
+    .expect("create generated-hash fixture");
+    drop(conn);
+
+    let request = serde_json::json!({
+        "command": "session",
+        "params": {
+            "action": "query",
+            "sessionDbPath": session_db_path,
+            "sessionId": "legacy-session",
+            "limit": 10
+        }
+    });
+    let response = call_core(request.to_string().as_bytes());
+    let payload = response_text_json(&response);
+
+    assert_eq!(response["ok"], true);
+    assert_eq!(payload["events"].as_array().expect("events").len(), 1);
+    assert_eq!(payload["events"][0]["data"], "preserved migration event");
+
+    let conn = Connection::open(&session_db_path).expect("reopen migrated session db");
+    let hidden: i64 = conn
+        .query_row(
+            "SELECT hidden FROM pragma_table_xinfo('session_events') WHERE name = 'data_hash'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read migrated data_hash shape");
+    assert_eq!(hidden, 0);
+}
+
+#[test]
+fn session_cleanup_preserves_current_and_recently_active_sessions() {
+    let session_db_path = temp_db_path("session-cleanup-activity");
+    for session_id in ["current", "recent", "stale"] {
+        let init = serde_json::json!({
+            "command": "session",
+            "params": {
+                "action": "init",
+                "sessionDbPath": session_db_path,
+                "sessionId": session_id,
+                "projectDir": "/tmp/project",
+                "maxAgeDays": 7
+            }
+        });
+        assert_eq!(call_core(init.to_string().as_bytes())["ok"], true);
+    }
+    let conn = Connection::open(&session_db_path).expect("open cleanup fixture");
+    conn.execute(
+        "UPDATE session_meta SET started_at = datetime('now', '-30 days')",
+        [],
+    )
+    .expect("age sessions");
+    conn.execute(
+        "UPDATE session_meta SET last_event_at = datetime('now') WHERE session_id = 'recent'",
+        [],
+    )
+    .expect("mark recent activity");
+    drop(conn);
+
+    let reinit = serde_json::json!({
+        "command": "session",
+        "params": {
+            "action": "init",
+            "sessionDbPath": session_db_path,
+            "sessionId": "current",
+            "projectDir": "/tmp/project",
+            "maxAgeDays": 7
+        }
+    });
+    let response = call_core(reinit.to_string().as_bytes());
+    assert_eq!(response["ok"], true);
+    assert_eq!(response_text_json(&response)["cleaned"], 1);
+
+    let conn = Connection::open(&session_db_path).expect("reopen cleanup fixture");
+    let ids: String = conn
+        .query_row(
+            "SELECT group_concat(session_id, ',') FROM (SELECT session_id FROM session_meta ORDER BY session_id)",
+            [],
+            |row| row.get(0),
+        )
+        .expect("remaining session ids");
+    assert_eq!(ids, "current,recent");
+}
+
+#[test]
+fn concurrent_session_writers_do_not_drop_events_to_database_locks() {
+    let session_db_path = temp_db_path("session-concurrent-writers");
+    let init = serde_json::json!({
+        "command": "session",
+        "params": {
+            "action": "init",
+            "sessionDbPath": session_db_path,
+            "sessionId": "concurrent-session",
+            "projectDir": "/tmp/project"
+        }
+    });
+    assert_eq!(call_core(init.to_string().as_bytes())["ok"], true);
+
+    let writers = (0..20)
+        .map(|index| {
+            let session_db_path = session_db_path.clone();
+            thread::spawn(move || {
+                let request = serde_json::json!({
+                    "command": "session",
+                    "params": {
+                        "action": "events",
+                        "sessionDbPath": session_db_path,
+                        "sessionId": "concurrent-session",
+                        "projectDir": "/tmp/project",
+                        "sourceHook": "concurrency-test",
+                        "events": [{
+                            "type": "summary",
+                            "category": "test",
+                            "data": format!("concurrent event {index}"),
+                            "priority": 2
+                        }]
+                    }
+                });
+                call_core(request.to_string().as_bytes())
+            })
+        })
+        .collect::<Vec<_>>();
+    for writer in writers {
+        let response = writer.join().expect("join concurrent writer");
+        assert_eq!(response["ok"], true, "writer failed: {response}");
+    }
+
+    let query = serde_json::json!({
+        "command": "session",
+        "params": {
+            "action": "query",
+            "sessionDbPath": session_db_path,
+            "sessionId": "concurrent-session",
+            "includeEventCount": true,
+            "limit": 25
+        }
+    });
+    let response = call_core(query.to_string().as_bytes());
+    assert_eq!(response_text_json(&response)["eventCount"], 20);
+}
+
+#[test]
+fn project_purge_removes_content_and_session_databases() {
+    let db_path = temp_db_path("purge-project-content");
+    let session_db_path = temp_db_path("purge-project-session");
+    let index_request = serde_json::json!({
+        "command": "index",
+        "params": { "dbPath": db_path, "content": "purge me", "source": "purge-doc" }
+    });
+    assert_eq!(call_core(index_request.to_string().as_bytes())["ok"], true);
+    let init_request = serde_json::json!({
+        "command": "session",
+        "params": {
+            "action": "init",
+            "sessionDbPath": session_db_path,
+            "sessionId": "purge-session",
+            "projectDir": "/tmp/project"
+        }
+    });
+    assert_eq!(call_core(init_request.to_string().as_bytes())["ok"], true);
+
+    let purge = serde_json::json!({
+        "command": "purge",
+        "params": {
+            "dbPath": db_path,
+            "sessionDbPath": session_db_path,
+            "confirm": true,
+            "scope": "project"
+        }
+    });
+    let response = call_core(purge.to_string().as_bytes());
+
+    assert_eq!(response["ok"], true);
+    assert!(!std::path::Path::new(&db_path).exists());
+    assert!(!std::path::Path::new(&session_db_path).exists());
 }
 
 #[test]

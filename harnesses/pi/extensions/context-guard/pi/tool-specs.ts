@@ -1,47 +1,27 @@
 import { z } from "zod";
 
-const LANGUAGE_ENUM = [
-	"javascript",
-	"typescript",
-	"python",
-	"shell",
-	"ruby",
-	"go",
-	"rust",
-	"php",
-	"perl",
-	"r",
-	"elixir",
-	"csharp",
-] as const;
+const LANGUAGE_ENUM = ["shell", "javascript", "typescript", "python"] as const;
 
 export function createPiToolSpecs() {
 	return {
 		processFile: {
 			title: "Execute File Processing",
 			description:
-				"Read a file and process it without loading contents into context. The file is read into a FILE_CONTENT variable inside the sandbox. Only your printed summary enters context.\n\n" +
+				"Read a file and process it without loading contents into context. The file is read into a FILE_CONTENT variable in a subprocess with a sanitized environment; this is not a filesystem or network sandbox. Only printed output enters context.\n\n" +
 				"PREFER THIS OVER Read/cat for: log files, data files, large source files, and any file where you need to extract specific information rather than read the entire content.\n\n" +
 				"Write code against FILE_CONTENT and print only the answer.",
 			inputSchema: z.object({
 				path: z.string().describe("Absolute file path or relative to project root"),
 				language: z.enum(LANGUAGE_ENUM).describe("Runtime language"),
-				code: z
-					.string()
-					.describe(
-						"Code to process FILE_CONTENT (file_content in Elixir). Print summary via console.log/print/echo/IO.puts/Console.WriteLine.",
-					),
+				code: z.string().describe("Code to process FILE_CONTENT. Print summary via console.log/print/echo."),
 				timeout: z.coerce
 					.number()
+					.int()
+					.min(0)
+					.max(600_000)
 					.optional()
 					.describe(
 						"Max execution time in ms. When omitted, no internal timer fires and the caller-side timeout governs.",
-					),
-				intent: z
-					.string()
-					.optional()
-					.describe(
-						"What you're looking for in the output. When provided and output is large (>5KB), returns only matching sections via BM25 search instead of truncated output.",
 					),
 			}),
 		},
@@ -118,6 +98,13 @@ export function createPiToolSpecs() {
 					.default(1)
 					.describe("Max URLs to fetch in parallel (1-8, default: 1)."),
 				force: z.boolean().optional().describe("Skip cache and re-fetch even if content was recently indexed"),
+				timeout: z.coerce
+					.number()
+					.int()
+					.min(100)
+					.max(300_000)
+					.optional()
+					.describe("Max fetch time in ms (100-300000; default: 30000)."),
 			}),
 		},
 		status: {
@@ -135,14 +122,13 @@ export function createPiToolSpecs() {
 		purge: {
 			title: "Purge Knowledge Base",
 			description:
-				"DESTRUCTIVE — permanently delete indexed content. CANNOT be undone.\n\n" +
+				"DESTRUCTIVE — permanently delete Context Guard state. CANNOT be undone.\n\n" +
 				"You MUST specify exactly ONE scope:\n\n" +
 				'  • { confirm: true, sessionId: "<uuid>" }\n' +
-				"      Deletes ONLY that session's events + per-session FTS5 chunks.\n" +
-				"      Preserves stats file and ALL other sessions.\n\n" +
+				"      Removes only that session's state and telemetry.\n" +
+				"      Preserves the project index and all other sessions.\n\n" +
 				'  • { confirm: true, scope: "project" }\n' +
-				"      Wipes the ENTIRE project: FTS5 knowledge base, every session DB row,\n" +
-				"      events markdown, AND resets the stats file.\n\n" +
+				"      Removes this project's index and session database.\n\n" +
 				"REFUSAL / AMBIGUITY RULES:\n" +
 				"  • confirm: false -> purge cancelled\n" +
 				"  • sessionId + scope:'project' -> ambiguous, reject\n" +
@@ -157,7 +143,9 @@ export function createPiToolSpecs() {
 				scope: z
 					.enum(["session", "project"])
 					.optional()
-					.describe("Explicit scope selector. 'session' REQUIRES sessionId. 'project' wipes the entire project."),
+					.describe(
+						"Explicit scope selector. 'session' REQUIRES sessionId. 'project' removes this project's index and session database.",
+					),
 			}),
 		},
 	};

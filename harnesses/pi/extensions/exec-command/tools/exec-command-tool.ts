@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -298,7 +298,7 @@ function normalizeContextGuardQueries(value: unknown): string[] {
 }
 
 function resolveContextGuardProjectDir(workdir: string | undefined, ctx: ExtensionContext): string {
-	return workdir ?? ctx.cwd;
+	return resolve(ctx.cwd, workdir ?? ".");
 }
 
 function resolveContextGuardPaths(projectDir: string): { dbPath: string; sessionDbPath: string } {
@@ -360,6 +360,7 @@ function makeBatchRenderDetails(params: ContextGuardBatchParams, output: string)
 async function executeContextGuardBatch(
 	params: ContextGuardBatchParams,
 	ctx: ExtensionContext,
+	signal?: AbortSignal,
 ): Promise<{
 	toolName: "exec_command.batch";
 	projectDir: string;
@@ -370,14 +371,18 @@ async function executeContextGuardBatch(
 }> {
 	const projectDir = resolveContextGuardProjectDir(params.workdir, ctx);
 	const { dbPath, sessionDbPath } = resolveContextGuardPaths(projectDir);
-	const response = await invokeCore("batch", {
-		dbPath,
-		commands: params.commands,
-		queries: params.queries,
-		timeout: params.timeout,
-		concurrency: params.concurrency,
-		projectDir,
-	});
+	const response = await invokeCore(
+		"batch",
+		{
+			dbPath,
+			commands: params.commands,
+			queries: params.queries,
+			timeout: params.timeout,
+			concurrency: params.concurrency,
+			projectDir,
+		},
+		signal,
+	);
 	return {
 		toolName: "exec_command.batch",
 		projectDir,
@@ -392,6 +397,7 @@ async function executeWrappedCommandWithContextGuard(
 	params: ExecCommandParams,
 	executedCommand: string,
 	ctx: ExtensionContext,
+	signal?: AbortSignal,
 ) {
 	const batch = await executeContextGuardBatch(
 		{
@@ -401,28 +407,29 @@ async function executeWrappedCommandWithContextGuard(
 			timeout: params.timeout,
 		},
 		ctx,
+		signal,
 	);
-	setImmediate(() =>
-		sessionRecordToolTelemetry({
+	setImmediate(() => {
+		void sessionRecordToolTelemetry({
 			sessionDbPath: batch.sessionDbPath,
 			projectDir: batch.projectDir,
 			toolName: batch.toolName,
 			bytesReturned: Buffer.byteLength(batch.responseText),
-		}),
-	);
+		});
+	});
 	return makeWrappedCommandResult(params.cmd, batch.responseText, batch.details, batch.responseIsError);
 }
 
-async function executeExplicitBatch(params: ContextGuardBatchParams, ctx: ExtensionContext) {
-	const batch = await executeContextGuardBatch(params, ctx);
-	setImmediate(() =>
-		sessionRecordToolTelemetry({
+async function executeExplicitBatch(params: ContextGuardBatchParams, ctx: ExtensionContext, signal?: AbortSignal) {
+	const batch = await executeContextGuardBatch(params, ctx, signal);
+	setImmediate(() => {
+		void sessionRecordToolTelemetry({
 			sessionDbPath: batch.sessionDbPath,
 			projectDir: batch.projectDir,
 			toolName: batch.toolName,
 			bytesReturned: Buffer.byteLength(batch.responseText),
-		}),
-	);
+		});
+	});
 	return {
 		content: [{ type: "text", text: batch.responseText }],
 		details: makeBatchRenderDetails(params, batch.responseText),
@@ -692,12 +699,12 @@ export function registerExecCommandTool(
 			}
 			const invocation = parseExecCommandParams(params);
 			if (invocation.kind === "batch") {
-				return executeExplicitBatch(invocation.params, ctx);
+				return executeExplicitBatch(invocation.params, ctx, signal);
 			}
 			const typedParams = invocation.params;
 			if (shouldRouteCommandThroughContextGuard(typedParams, options)) {
 				tracker.recordContextGuardWrapped(toolCallId);
-				return executeWrappedCommandWithContextGuard(typedParams, typedParams.cmd, ctx);
+				return executeWrappedCommandWithContextGuard(typedParams, typedParams.cmd, ctx, signal);
 			}
 			const rewrite = options.rewriteCommand ? await options.rewriteCommand(typedParams.cmd, ctx) : typedParams.cmd;
 			const rewrittenCommand = typeof rewrite === "string" ? rewrite : rewrite.command;

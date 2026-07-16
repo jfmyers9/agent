@@ -15,6 +15,13 @@ export const VERSION: string = (() => {
 			} catch {}
 		}
 	}
+	const cargoToml = resolve(pkgDir, "../../../../../crates/context-guard/Cargo.toml");
+	if (existsSync(cargoToml)) {
+		try {
+			const match = /^version\s*=\s*"([^"]+)"/m.exec(readFileSync(cargoToml, "utf8"));
+			if (match?.[1]) return match[1];
+		} catch {}
+	}
 	return "unknown";
 })();
 
@@ -23,30 +30,22 @@ export type ToolResult = {
 	isError?: boolean;
 };
 
-export function trackResponse(toolName: string, response: ToolResult): ToolResult {
+export function trackResponse(
+	toolName: string,
+	response: ToolResult,
+	indexed?: { bytes: number; source?: string },
+): ToolResult {
 	const bytes = response.content.reduce((sum, c) => sum + Buffer.byteLength(c.text), 0);
-	setImmediate(() =>
-		sessionRecordToolTelemetry({
+	setImmediate(() => {
+		void sessionRecordToolTelemetry({
 			sessionDbPath: getSessionDbPath(),
 			projectDir: getProjectDir(),
 			toolName,
 			bytesReturned: bytes,
-		}),
-	);
+			bytesAvoided: indexed?.bytes,
+			source: indexed?.source,
+		});
+	});
 
 	return response;
-}
-
-export function trackIndexed(bytes: number, source: string = "unknown"): void {
-	if (bytes > 0) {
-		setImmediate(() =>
-			sessionRecordToolTelemetry({
-				sessionDbPath: getSessionDbPath(),
-				projectDir: getProjectDir(),
-				toolName: "cg_index",
-				source,
-				bytesAvoided: bytes,
-			}),
-		);
-	}
 }

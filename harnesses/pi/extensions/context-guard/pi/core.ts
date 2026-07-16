@@ -1,9 +1,14 @@
-import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { accessSync, constants, statSync } from "node:fs";
 import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __pkg_dir = dirname(fileURLToPath(import.meta.url));
+const DEFAULT_CORE_TIMEOUT_MS = 10 * 60_000;
+const MAX_CORE_TIMEOUT_MS = 24 * 60 * 60_000;
+const CORE_TIMEOUT_GRACE_MS = 1_000;
+const SYNC_CORE_TIMEOUT_MS = 2_000;
+const MAX_CORE_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 export type PiToolResponse = {
 	content: Array<{ type: "text"; text: string }>;
@@ -19,15 +24,25 @@ function executableNames(name: string): string[] {
 	return process.platform === "win32" ? [name, `${name}.exe`] : [name];
 }
 
+function isExecutableFile(path: string): boolean {
+	try {
+		if (!statSync(path).isFile()) return false;
+		if (process.platform !== "win32") accessSync(path, constants.X_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function resolveCoreBin(): string | null {
 	const bin = process.env.CONTEXT_GUARD_BIN?.trim();
-	if (bin) return bin;
+	if (bin && isExecutableFile(bin)) return bin;
 
 	if (process.env.CONTEXT_GUARD_SKIP_LOCAL_BIN !== "1") {
 		for (const name of executableNames("context-guard")) {
 			for (const rel of [`../../../../../target/release/${name}`, `../../../../../target/debug/${name}`]) {
 				const candidate = resolve(__pkg_dir, rel);
-				if (existsSync(candidate)) return candidate;
+				if (isExecutableFile(candidate)) return candidate;
 			}
 		}
 	}
@@ -36,7 +51,7 @@ export function resolveCoreBin(): string | null {
 		if (!dir) continue;
 		for (const name of executableNames("context-guard")) {
 			const candidate = resolve(dir, name);
-			if (existsSync(candidate)) return candidate;
+			if (isExecutableFile(candidate)) return candidate;
 		}
 	}
 
@@ -50,12 +65,12 @@ export function buildCoreCheckText(): string {
 	lines.push("");
 	if (resolved) {
 		lines.push(`[OK] Core binary: ${resolved}`);
-		if (envBin) lines.push("[OK] CONTEXT_GUARD_BIN is set");
+		if (envBin && resolved === envBin) lines.push("[OK] CONTEXT_GUARD_BIN is set");
+		else if (envBin) lines.push(`[WARN] Ignoring invalid CONTEXT_GUARD_BIN: ${envBin}`);
 		return lines.join("\n");
 	}
 	lines.push("[FAIL] Core binary: not found");
 	lines.push(`[${envBin ? "FAIL" : "WARN"}] CONTEXT_GUARD_BIN: ${envBin || "not set"}`);
-	lines.push("[WARN] Local Rust workspace: this repo does not include crates/context-guard");
 	lines.push("");
 	lines.push("Context Guard tools are registered but unavailable until a context-guard binary is installed.");
 	lines.push(
@@ -78,6 +93,95 @@ function missingCoreResponse(): CoreResponse {
 		],
 		isError: true,
 	};
+}
+
+interface ProcessInfo {
+	pid: number;
+	ppid: number;
+	pgid: number;
+}
+
+function listProcesses(): ProcessInfo[] {
+	if (process.platform === "win32") return [];
+	try {
+		return execFileSync("ps", ["-axo", "pid=,ppid=,pgid="], {
+			encoding: "utf8",
+			timeout: 1_000,
+			maxBuffer: 4 * 1024 * 1024,
+		})
+			.split("\n")
+			.map((line): ProcessInfo | undefined => {
+				const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)$/);
+				if (!match) return undefined;
+				return { pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]) };
+			})
+			.filter((entry): entry is ProcessInfo => entry !== undefined);
+	} catch {
+		return [];
+	}
+}
+
+function collectProcessTree(rootPid: number): { pids: number[]; pgids: number[] } {
+	const processes = listProcesses();
+	const childrenByParent = new Map<number, ProcessInfo[]>();
+	for (const entry of processes) {
+		const children = childrenByParent.get(entry.ppid) ?? [];
+		children.push(entry);
+		childrenByParent.set(entry.ppid, children);
+	}
+
+	const descendants: ProcessInfo[] = [];
+	const pending = [...(childrenByParent.get(rootPid) ?? [])];
+	while (pending.length > 0) {
+		const entry = pending.pop();
+		if (!entry) continue;
+		descendants.push(entry);
+		pending.push(...(childrenByParent.get(entry.pid) ?? []));
+	}
+
+	return {
+		pids: descendants.map((entry) => entry.pid).reverse(),
+		pgids: [...new Set([rootPid, ...descendants.map((entry) => entry.pgid)])].filter((pgid) => pgid > 0),
+	};
+}
+
+function killPid(pid: number, signal: NodeJS.Signals): void {
+	try {
+		process.kill(pid, signal);
+	} catch {
+		// Process already exited or is not signalable by this user.
+	}
+}
+
+function terminateProcessTree(childPid: number | undefined): void {
+	if (childPid === undefined || childPid <= 0) return;
+	if (process.platform === "win32") {
+		try {
+			execFileSync("taskkill", ["/PID", String(childPid), "/T", "/F"], {
+				stdio: "ignore",
+				timeout: 2_000,
+			});
+		} catch {
+			killPid(childPid, "SIGKILL");
+		}
+		return;
+	}
+
+	const { pids, pgids } = collectProcessTree(childPid);
+	for (const pid of [...pids, childPid]) killPid(pid, "SIGTERM");
+	for (const pgid of pgids) killPid(-pgid, "SIGTERM");
+	setTimeout(() => {
+		for (const pid of [...pids, childPid]) killPid(pid, "SIGKILL");
+		for (const pgid of pgids) killPid(-pgid, "SIGKILL");
+	}, 500).unref?.();
+}
+
+function coreWatchdogTimeout(params: Record<string, unknown>): number {
+	const requested = params.timeout;
+	if (typeof requested !== "number" || !Number.isFinite(requested) || requested < 0) {
+		return DEFAULT_CORE_TIMEOUT_MS;
+	}
+	return Math.min(MAX_CORE_TIMEOUT_MS, requested + CORE_TIMEOUT_GRACE_MS);
 }
 
 export async function invokeCore(
@@ -106,43 +210,62 @@ export async function invokeCore(
 		let stderr = "";
 		let settled = false;
 		let cancelled = false;
+		let outputBytes = 0;
+		const watchdogTimeout = coreWatchdogTimeout(params);
+		let watchdog: ReturnType<typeof setTimeout> | undefined;
 
 		const settle = (response: CoreResponse) => {
 			if (settled) return;
 			settled = true;
+			if (watchdog) clearTimeout(watchdog);
 			signal?.removeEventListener("abort", abortListener);
 			resolvePromise(response);
 		};
-		const killChild = (killSignal: NodeJS.Signals) => {
-			try {
-				if (process.platform !== "win32" && child.pid) {
-					process.kill(-child.pid, killSignal);
-					return;
-				}
-			} catch {
-				// Fall back to terminating the direct child.
-			}
-			child.kill(killSignal);
-		};
 		const abortListener = () => {
 			cancelled = true;
-			killChild("SIGTERM");
-			setTimeout(() => killChild("SIGKILL"), 500).unref?.();
+			terminateProcessTree(child.pid);
 			settle({
 				content: [{ type: "text", text: "Context Guard core cancelled" }],
 				isError: true,
 			});
 		};
+		const appendOutput = (stream: "stdout" | "stderr", chunk: string) => {
+			if (settled) return;
+			outputBytes += Buffer.byteLength(chunk);
+			if (outputBytes > MAX_CORE_OUTPUT_BYTES) {
+				terminateProcessTree(child.pid);
+				settle({
+					content: [
+						{
+							type: "text",
+							text: `Context Guard core output exceeded ${MAX_CORE_OUTPUT_BYTES} bytes`,
+						},
+					],
+					isError: true,
+				});
+				return;
+			}
+			if (stream === "stdout") stdout += chunk;
+			else stderr += chunk;
+		};
 
 		signal?.addEventListener("abort", abortListener, { once: true });
+		watchdog = setTimeout(() => {
+			terminateProcessTree(child.pid);
+			settle({
+				content: [{ type: "text", text: `Context Guard core timed out after ${watchdogTimeout}ms` }],
+				isError: true,
+			});
+		}, watchdogTimeout);
+		watchdog.unref?.();
 
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk) => {
-			stdout += chunk;
+			appendOutput("stdout", chunk);
 		});
 		child.stderr.on("data", (chunk) => {
-			stderr += chunk;
+			appendOutput("stderr", chunk);
 		});
 		child.on("error", (err) => {
 			settle({
@@ -194,9 +317,25 @@ export function invokeCoreSync(command: string, params: Record<string, unknown> 
 	const result = spawnSync(bin, [], {
 		input: JSON.stringify({ command, params }),
 		encoding: "utf8",
+		timeout: SYNC_CORE_TIMEOUT_MS,
+		killSignal: "SIGKILL",
+		maxBuffer: MAX_CORE_OUTPUT_BYTES,
 	});
 
 	if (result.error) {
+		const code = (result.error as NodeJS.ErrnoException).code;
+		if (code === "ETIMEDOUT") {
+			return {
+				content: [{ type: "text", text: `Context Guard core timed out after ${SYNC_CORE_TIMEOUT_MS}ms` }],
+				isError: true,
+			};
+		}
+		if (code === "ENOBUFS") {
+			return {
+				content: [{ type: "text", text: `Context Guard core output exceeded ${MAX_CORE_OUTPUT_BYTES} bytes` }],
+				isError: true,
+			};
+		}
 		return {
 			content: [{ type: "text", text: `Context Guard core error: ${result.error.message}` }],
 			isError: true,

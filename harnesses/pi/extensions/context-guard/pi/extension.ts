@@ -24,7 +24,6 @@ import {
 	sessionInit,
 	sessionPrepareBeforeAgentStart,
 	sessionPrepareBeforeCompact,
-	sessionRecordProviderResponse,
 	sessionWriteEvents,
 } from "../session/core-session.js";
 import { resolveContentStorePath, resolveSessionDbPath } from "../session/paths.js";
@@ -86,6 +85,22 @@ function buildStatsText(projectDir: string): string {
 		cwd: projectDir,
 	});
 	return response.content[0]?.text ?? "context-guard stats unavailable (rust core error)";
+}
+
+function toolResultText(content: unknown): string | undefined {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return undefined;
+	const text = content
+		.filter(
+			(part): part is { type: "text"; text: string } =>
+				typeof part === "object" &&
+				part !== null &&
+				(part as { type?: unknown }).type === "text" &&
+				typeof (part as { text?: unknown }).text === "string",
+		)
+		.map((part) => part.text)
+		.join("\n");
+	return text || undefined;
 }
 
 function resolveCommandContext(argsOrCtx: unknown, ctx: unknown): any {
@@ -241,9 +256,7 @@ export default function piExtension(pi: any): void {
 			const rawToolName = String(event?.toolName ?? event?.tool_name ?? "");
 
 			// Normalize result to string
-			const rawResult = event?.result ?? event?.output;
-			const resultStr =
-				typeof rawResult === "string" ? rawResult : rawResult != null ? JSON.stringify(rawResult) : undefined;
+			const resultStr = toolResultText(event?.content ?? event?.result ?? event?.output);
 
 			// Detect errors
 			const hasError = Boolean(event?.error || event?.isError);
@@ -298,35 +311,6 @@ export default function piExtension(pi: any): void {
 		}
 	});
 
-	// ── 4b. before_provider_response — capture response metadata ───
-	// Pi-2: Register the missing event so providers can record latency,
-	// model, and token usage when Pi exposes them. Best-effort only;
-	// the handler must never throw or modify the response.
-
-	pi.on("before_provider_response", (event: any) => {
-		try {
-			if (!_sessionId) return;
-			const meta = {
-				model: event?.model ?? event?.providerModel,
-				provider: event?.provider,
-				latencyMs: event?.latencyMs ?? event?.latency,
-				tokens: event?.usage ?? event?.tokens,
-			};
-			// Skip when Pi gives us nothing useful — avoids noise in the DB.
-			if (meta.model == null && meta.provider == null && meta.latencyMs == null && meta.tokens == null) {
-				return;
-			}
-			sessionRecordProviderResponse({
-				sessionDbPath,
-				sessionId: _sessionId,
-				projectDir,
-				providerMeta: meta,
-			});
-		} catch {
-			// best effort — never break provider response
-		}
-	});
-
 	// ── 5. session_before_compact — Build resume snapshot ──
 
 	pi.on("session_before_compact", () => {
@@ -372,7 +356,7 @@ export default function piExtension(pi: any): void {
 		return sessionBuildPiCheck({
 			sessionDbPath,
 			sessionId: _sessionId || undefined,
-			dbPath: getDBPath(projectDir),
+			dbPath: getStorePath(projectDir),
 			pluginRoot,
 			projectDir,
 		});

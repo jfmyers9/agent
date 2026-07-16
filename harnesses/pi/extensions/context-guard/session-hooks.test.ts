@@ -75,8 +75,12 @@ describe("Pi session hook delegation", () => {
 		piExtension(pi);
 		pi.hooks.get("session_start")?.({}, { sessionManager: { getSessionFile: () => join(dir, "session.json") } });
 		const blocked = pi.hooks.get("tool_call")?.({ toolName: "bash", input: { command: "curl https://example.com" } });
-		pi.hooks.get("tool_result")?.({ toolName: "read", input: { path: "README.md" }, result: "content" });
-		pi.hooks.get("before_provider_response")?.({ model: "gpt-test", provider: "openai" });
+		pi.hooks.get("tool_result")?.({
+			toolName: "read",
+			input: { path: "README.md" },
+			content: [{ type: "text", text: "content from Pi result" }],
+			isError: false,
+		});
 		const beforeStart = pi.hooks.get("before_agent_start")?.({ prompt: "continue", systemPrompt: "base prompt" });
 		pi.hooks.get("session_before_compact")?.();
 		const check = await pi.commands.get("cg-check")?.handler({});
@@ -89,7 +93,17 @@ describe("Pi session hook delegation", () => {
 		const requests = readFileSync(logPath, "utf8")
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as { command: string; params?: { action?: string; projectDir?: string } });
+			.map(
+				(line) =>
+					JSON.parse(line) as {
+						command: string;
+						params?: {
+							action?: string;
+							projectDir?: string;
+							hookInput?: { tool_response?: string };
+						};
+					},
+			);
 		const actions = requests
 			.filter((request) => request.command === "session")
 			.map((request) => request.params?.action);
@@ -98,7 +112,6 @@ describe("Pi session hook delegation", () => {
 			"check_tool_call",
 			"extract_hook_events",
 			"events",
-			"record_provider_response",
 			"prepare_before_agent_start",
 			"prepare_before_compact",
 			"build_pi_check",
@@ -106,5 +119,8 @@ describe("Pi session hook delegation", () => {
 			expect(actions).toContain(action);
 		}
 		expect(requests.find((request) => request.params?.action === "init")?.params?.projectDir).toBe(projectDir);
+		expect(
+			requests.find((request) => request.params?.action === "extract_hook_events")?.params?.hookInput?.tool_response,
+		).toBe("content from Pi result");
 	});
 });

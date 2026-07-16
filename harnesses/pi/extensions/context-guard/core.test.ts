@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { invokeCore } from "./pi/core.js";
+import { invokeCore, invokeCoreSync } from "./pi/core.js";
 
 const originalCoreBin = process.env.CONTEXT_GUARD_BIN;
 
@@ -58,7 +58,7 @@ describe("invokeCore cancellation", () => {
 				`const marker = ${JSON.stringify(marker)};`,
 				"process.stdin.resume();",
 				'process.stdin.on("end", () => {',
-				'  spawn("sh", ["-c", "sleep 30 # " + marker], { stdio: "ignore" });',
+				'  spawn("sh", ["-c", "sleep 30 # " + marker], { stdio: "ignore", detached: true });',
 				"  setInterval(() => {}, 1000);",
 				"});",
 			].join("\n"),
@@ -80,5 +80,46 @@ describe("invokeCore cancellation", () => {
 		expect(result.isError).toBe(true);
 		expect(result.content[0]?.text).toContain("Context Guard core cancelled");
 		await waitForProcess(marker, false);
+	});
+
+	it("times out an unresponsive async core", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "context-guard-timeout-"));
+		const coreBin = join(dir, "context-guard-core.js");
+		writeFileSync(coreBin, `#!${process.execPath}\nprocess.stdin.resume();\nsetInterval(() => {}, 1000);\n`);
+		chmodSync(coreBin, 0o755);
+		process.env.CONTEXT_GUARD_BIN = coreBin;
+
+		const result = await invokeCore("batch", { timeout: 1 });
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("timed out after 1001ms");
+	});
+
+	it("bounds synchronous core calls used by hooks", () => {
+		const dir = mkdtempSync(join(tmpdir(), "context-guard-sync-timeout-"));
+		const coreBin = join(dir, "context-guard-core.js");
+		writeFileSync(coreBin, `#!${process.execPath}\nprocess.stdin.resume();\nsetInterval(() => {}, 1000);\n`);
+		chmodSync(coreBin, 0o755);
+		process.env.CONTEXT_GUARD_BIN = coreBin;
+
+		const started = Date.now();
+		const result = invokeCoreSync("session", {});
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("timed out after 2000ms");
+		expect(Date.now() - started).toBeLessThan(4000);
+	});
+
+	it("rejects excessive core output without accumulating it indefinitely", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "context-guard-output-limit-"));
+		const coreBin = join(dir, "context-guard-core.js");
+		writeFileSync(coreBin, `#!${process.execPath}\nprocess.stdout.write("x".repeat(9 * 1024 * 1024));\n`);
+		chmodSync(coreBin, 0o755);
+		process.env.CONTEXT_GUARD_BIN = coreBin;
+
+		const result = await invokeCore("status");
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("output exceeded 8388608 bytes");
 	});
 });

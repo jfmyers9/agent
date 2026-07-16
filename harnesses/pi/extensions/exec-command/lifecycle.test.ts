@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 import { execSync } from "node:child_process";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import execCommandExtension from "./index.ts";
 import { createExecSessionManager } from "./tools/exec-session-manager.ts";
 
@@ -199,6 +202,104 @@ test("Escape aborts a foreground exec_command", async () => {
 	} finally {
 		emit(handlers, "tool_execution_end", { toolName: "exec_command", toolCallId: "call-escape" }, ctx);
 		emit(handlers, "session_shutdown", undefined, ctx);
+	}
+});
+
+test("AbortSignal cancels a context_guard:true exec command", async () => {
+	const originalCoreBin = process.env.CONTEXT_GUARD_BIN;
+	const dir = mkdtempSync(join(tmpdir(), "exec-command-context-guard-abort-"));
+	const coreBin = join(dir, "context-guard-core.js");
+	const marker = join(dir, "started");
+	writeFileSync(
+		coreBin,
+		[
+			`#!${process.execPath}`,
+			'let input = "";',
+			'process.stdin.on("data", chunk => input += chunk);',
+			'process.stdin.on("end", () => {',
+			"  const request = JSON.parse(input);",
+			'  if (request.command !== "batch") {',
+			'    process.stdout.write(JSON.stringify({ content: [{ type: "text", text: "{}" }] }));',
+			"    return;",
+			"  }",
+			`  require("node:fs").writeFileSync(${JSON.stringify(marker)}, "yes");`,
+			"  setInterval(() => {}, 1000);",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(coreBin, 0o755);
+	process.env.CONTEXT_GUARD_BIN = coreBin;
+	const { handlers, tools } = createExtensionHarness();
+	const ctx = baseContext();
+	const controller = new AbortController();
+	emit(handlers, "session_start", undefined, ctx);
+	try {
+		const execution = tools
+			.get("exec_command")
+			.execute("call-context-guard-abort", { cmd: "sleep 60", context_guard: true }, controller.signal, undefined, ctx);
+		await waitForCondition(() => Bun.file(marker).size > 0);
+
+		controller.abort();
+		const result = await execution;
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("Context Guard core cancelled");
+	} finally {
+		emit(handlers, "session_shutdown", undefined, ctx);
+		if (originalCoreBin === undefined) delete process.env.CONTEXT_GUARD_BIN;
+		else process.env.CONTEXT_GUARD_BIN = originalCoreBin;
+	}
+});
+
+test("AbortSignal cancels explicit Context Guard batch mode", async () => {
+	const originalCoreBin = process.env.CONTEXT_GUARD_BIN;
+	const dir = mkdtempSync(join(tmpdir(), "exec-command-batch-abort-"));
+	const coreBin = join(dir, "context-guard-core.js");
+	const marker = join(dir, "started");
+	writeFileSync(
+		coreBin,
+		[
+			`#!${process.execPath}`,
+			'let input = "";',
+			'process.stdin.on("data", chunk => input += chunk);',
+			'process.stdin.on("end", () => {',
+			"  const request = JSON.parse(input);",
+			'  if (request.command === "session") {',
+			'    process.stdout.write(JSON.stringify({ content: [{ type: "text", text: "{}" }] }));',
+			"    return;",
+			"  }",
+			`  require("node:fs").writeFileSync(${JSON.stringify(marker)}, "yes");`,
+			"  setInterval(() => {}, 1000);",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(coreBin, 0o755);
+	process.env.CONTEXT_GUARD_BIN = coreBin;
+	const { handlers, tools } = createExtensionHarness();
+	const ctx = baseContext();
+	const controller = new AbortController();
+	emit(handlers, "session_start", undefined, ctx);
+	try {
+		const execution = tools
+			.get("exec_command")
+			.execute(
+				"call-batch-abort",
+				{ mode: "batch", commands: [{ label: "sleep", command: "sleep 60" }] },
+				controller.signal,
+				undefined,
+				ctx,
+			);
+		await waitForCondition(() => Bun.file(marker).size > 0);
+
+		controller.abort();
+		const result = await execution;
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("Context Guard core cancelled");
+	} finally {
+		emit(handlers, "session_shutdown", undefined, ctx);
+		if (originalCoreBin === undefined) delete process.env.CONTEXT_GUARD_BIN;
+		else process.env.CONTEXT_GUARD_BIN = originalCoreBin;
 	}
 });
 

@@ -1,11 +1,17 @@
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { resolvePiWorkspaceDir } from "./index.js";
+import { hashProjectDirCanonical } from "./session/paths.js";
 
 const home = "/home/test-user";
 const piConfigDir = join(home, ".pi");
 
 describe("resolvePiWorkspaceDir", () => {
+	it("canonicalizes relative aliases before hashing stores", () => {
+		expect(hashProjectDirCanonical(".")).toBe(hashProjectDirCanonical(process.cwd()));
+		expect(hashProjectDirCanonical(join(process.cwd(), "."))).toBe(hashProjectDirCanonical(process.cwd()));
+	});
+
 	it("uses workspace, project, PWD, then cwd precedence", () => {
 		expect(
 			resolvePiWorkspaceDir({

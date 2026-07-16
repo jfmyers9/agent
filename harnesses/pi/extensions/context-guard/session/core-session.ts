@@ -1,4 +1,4 @@
-import { buildCoreCheckText, invokeCoreSync, parseCoreJson, resolveCoreBin } from "../pi/core.js";
+import { buildCoreCheckText, invokeCore, invokeCoreSync, parseCoreJson, resolveCoreBin } from "../pi/core.js";
 
 export interface HookInput {
 	tool_name: string;
@@ -218,7 +218,7 @@ export function sessionWriteEvents(opts: {
 	});
 }
 
-export function sessionRecordToolTelemetry(opts: {
+export async function sessionRecordToolTelemetry(opts: {
 	sessionDbPath: string;
 	sessionId?: string;
 	projectDir?: string;
@@ -226,8 +226,8 @@ export function sessionRecordToolTelemetry(opts: {
 	bytesReturned?: number;
 	source?: string;
 	bytesAvoided?: number;
-}): void {
-	callSession({
+}): Promise<void> {
+	await invokeCore("session", {
 		action: "record_tool_telemetry",
 		sessionDbPath: opts.sessionDbPath,
 		sessionId: opts.sessionId,

@@ -7,7 +7,7 @@ import { buildCoreCheckText, invokeCore } from "./core.js";
 import { getPiConfigDir } from "./index.js";
 import { getProjectDir, getSessionDbPath, getSessionDir, getStorePath } from "./tool-paths.js";
 import { createPiToolSpecs } from "./tool-specs.js";
-import { type ToolResult, trackIndexed, trackResponse, VERSION } from "./tool-stats.js";
+import { type ToolResult, trackResponse, VERSION } from "./tool-stats.js";
 
 export { resolveSessionIdFromSessionDB } from "./tool-paths.js";
 
@@ -34,7 +34,7 @@ type DirectToolDef = {
 	name: string;
 	description: string;
 	inputSchema: z.ZodTypeAny;
-	handler: (params: any) => Promise<ToolResult>;
+	handler: (params: any, signal?: AbortSignal) => Promise<ToolResult>;
 };
 
 const DIRECT_TOOLS: DirectToolDef[] = [];
@@ -127,9 +127,7 @@ function createDirectResultRenderer(toolName: string) {
 		context: PiRenderContext,
 	) => {
 		if (isPartial) {
-			return new ContextToolComponent(
-				renderContextToolHeader(actionTextForTool(toolName, context?.args), theme, true),
-			);
+			return new ContextToolComponent(renderContextToolHeader(actionTextForTool(toolName, context?.args), theme, true));
 		}
 		const output = (result.content ?? [])
 			.filter((c: PiToolResponse["content"][number] | undefined) => c?.type === "text" && typeof c.text === "string")
@@ -179,7 +177,7 @@ function renderMarkdownLine(line: string, theme: PiRenderTheme): string {
 function registerDirectTool(
 	name: string,
 	spec: { description: string; inputSchema: z.ZodTypeAny },
-	handler: (params: any) => Promise<ToolResult>,
+	handler: (params: any, signal?: AbortSignal) => Promise<ToolResult>,
 ): void {
 	DIRECT_TOOLS.push({ name, description: spec.description, inputSchema: spec.inputSchema, handler });
 }
@@ -189,12 +187,6 @@ const server = { registerTool: registerDirectTool };
 function initDirectToolRuntime(): void {
 	if (runtimeInitialized) return;
 	runtimeInitialized = true;
-	process.on("unhandledRejection", (err) => {
-		process.stderr.write(`[context-guard] unhandledRejection: ${err}\n`);
-	});
-	process.on("uncaughtException", (err) => {
-		process.stderr.write(`[context-guard] uncaughtException: ${err?.message ?? err}\n`);
-	});
 }
 
 const toolSpecs = createPiToolSpecs();
@@ -223,69 +215,95 @@ async function withHashlineEditAnchor(result: ToolResult, path: string | undefin
 	}
 }
 
-server.registerTool("cg_process_file", toolSpecs.processFile, async ({ path, language, code, timeout, intent }) => {
-	const result = await invokeCore("process_file", {
-		path,
-		language,
-		code,
-		timeout,
-		intent,
-		projectDir: getProjectDir(),
-	});
+server.registerTool("cg_process_file", toolSpecs.processFile, async ({ path, language, code, timeout }, signal) => {
+	const result = await invokeCore(
+		"process_file",
+		{
+			path,
+			language,
+			code,
+			timeout,
+			projectDir: getProjectDir(),
+		},
+		signal,
+	);
 	return trackResponse("cg_process_file", await withHashlineEditAnchor(result, path));
 });
 
-server.registerTool("cg_index", toolSpecs.index, async ({ content, path, source }) => {
-	if (content) trackIndexed(Buffer.byteLength(content));
-	const result = await invokeCore("index", {
-		dbPath: getStorePath(),
-		content,
-		path,
-		source,
-		projectDir: getProjectDir(),
-	});
-	return trackResponse("cg_index", await withHashlineEditAnchor(result, path));
+server.registerTool("cg_index", toolSpecs.index, async ({ content, path, source }, signal) => {
+	const result = await invokeCore(
+		"index",
+		{
+			dbPath: getStorePath(),
+			content,
+			path,
+			source,
+			projectDir: getProjectDir(),
+		},
+		signal,
+	);
+	return trackResponse(
+		"cg_index",
+		await withHashlineEditAnchor(result, path),
+		content ? { bytes: Buffer.byteLength(content), source } : undefined,
+	);
 });
 
-server.registerTool("cg_search", toolSpecs.search, async (params) =>
+server.registerTool("cg_search", toolSpecs.search, async (params, signal) =>
 	trackResponse(
 		"cg_search",
-		await invokeCore("search", {
-			dbPath: getStorePath(),
-			...(params as Record<string, unknown>),
-			sessionDbPath: getSessionDbPath(),
-			projectDir: getProjectDir(),
-			configDir: getPiConfigDir(),
-		}),
+		await invokeCore(
+			"search",
+			{
+				dbPath: getStorePath(),
+				...(params as Record<string, unknown>),
+				sessionDbPath: getSessionDbPath(),
+				projectDir: getProjectDir(),
+				configDir: getPiConfigDir(),
+			},
+			signal,
+		),
 	),
 );
 
-server.registerTool("cg_fetch", toolSpecs.fetch, async ({ url, source, requests, concurrency, force }) =>
-	trackResponse(
-		"cg_fetch",
-		await invokeCore("fetch", {
-			dbPath: getStorePath(),
-			sessionDbPath: getSessionDbPath(),
-			url,
-			source,
-			requests,
-			concurrency,
-			force,
-		}),
-	),
+server.registerTool(
+	"cg_fetch",
+	toolSpecs.fetch,
+	async ({ url, source, requests, concurrency, force, timeout }, signal) =>
+		trackResponse(
+			"cg_fetch",
+			await invokeCore(
+				"fetch",
+				{
+					dbPath: getStorePath(),
+					sessionDbPath: getSessionDbPath(),
+					url,
+					source,
+					requests,
+					concurrency,
+					force,
+					timeout,
+				},
+				signal,
+			),
+		),
 );
 
-server.registerTool("cg_status", toolSpecs.status, async () =>
+server.registerTool("cg_status", toolSpecs.status, async (_params, signal) =>
 	trackResponse(
 		"cg_status",
-		await invokeCore("status", {
-			dbPath: getStorePath(),
-			sessionDbPath: getSessionDbPath(),
-			sessionsDir: getSessionDir(),
-			configDir: getPiConfigDir(),
-			version: VERSION,
-			cwd: getProjectDir(),
-		}),
+		await invokeCore(
+			"status",
+			{
+				dbPath: getStorePath(),
+				sessionDbPath: getSessionDbPath(),
+				sessionsDir: getSessionDir(),
+				configDir: getPiConfigDir(),
+				version: VERSION,
+				cwd: getProjectDir(),
+			},
+			signal,
+		),
 	),
 );
 
@@ -296,16 +314,20 @@ server.registerTool("cg_check", toolSpecs.check, async () =>
 	}),
 );
 
-server.registerTool("cg_purge", toolSpecs.purge, async ({ confirm, sessionId, scope }) =>
+server.registerTool("cg_purge", toolSpecs.purge, async ({ confirm, sessionId, scope }, signal) =>
 	trackResponse(
 		"cg_purge",
-		await invokeCore("purge", {
-			dbPath: getStorePath(),
-			sessionDbPath: getSessionDbPath(),
-			confirm,
-			scope,
-			sessionId,
-		}),
+		await invokeCore(
+			"purge",
+			{
+				dbPath: getStorePath(),
+				sessionDbPath: getSessionDbPath(),
+				confirm,
+				scope,
+				sessionId,
+			},
+			signal,
+		),
 	),
 );
 
@@ -323,7 +345,7 @@ export function registerPiContextTools(pi: {
 			theme: PiRenderTheme,
 			context: PiRenderContext,
 		) => unknown;
-		execute: (_toolCallId: string, params: unknown) => Promise<PiToolResponse>;
+		execute: (_toolCallId: string, params: unknown, signal?: AbortSignal) => Promise<PiToolResponse>;
 	}) => void;
 }): void {
 	initDirectToolRuntime();
@@ -337,10 +359,10 @@ export function registerPiContextTools(pi: {
 			renderShell: "self",
 			renderCall: createDirectCallRenderer(def.name),
 			renderResult: createDirectResultRenderer(def.name),
-			async execute(_toolCallId, params) {
+			async execute(_toolCallId, params, signal) {
 				try {
 					const parsed = def.inputSchema.parse(params ?? {});
-					const result = await def.handler(parsed);
+					const result = await def.handler(parsed, signal);
 					const text = (result.content ?? [])
 						.filter((c) => c?.type === "text" && typeof c.text === "string")
 						.map((c) => c.text)
