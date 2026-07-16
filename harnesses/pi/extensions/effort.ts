@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -8,6 +8,12 @@ import type { AutocompleteItem } from "@earendil-works/pi-tui";
 type Level = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 const LEVELS: readonly Level[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const VALID: ReadonlySet<Level> = new Set(LEVELS);
+const ENTRY_TYPE = "effort-model-level";
+
+interface EffortEntry {
+	modelId: string;
+	level: Level;
+}
 
 function effortPath(): string {
 	return join(getAgentDir(), "effort.json");
@@ -29,26 +35,36 @@ function loadMap(): Record<string, Level> {
 	}
 }
 
-function saveMap(map: Record<string, Level>): void {
-	writeFileSync(effortPath(), `${JSON.stringify(map, null, 2)}\n`);
+function effortEntry(data: unknown): EffortEntry | undefined {
+	if (!data || typeof data !== "object") return undefined;
+	const { modelId, level } = data as Record<string, unknown>;
+	if (typeof modelId !== "string" || typeof level !== "string" || !VALID.has(level as Level)) return undefined;
+	return { modelId, level: level as Level };
 }
 
 function supportedLevels(ctx?: ExtensionContext): readonly Level[] {
 	return ctx?.model ? (getSupportedThinkingLevels(ctx.model) as Level[]) : LEVELS;
 }
 
-export default function effortExtension(pi: ExtensionAPI) {
-	let map = loadMap();
+export default function effortExtension(pi: ExtensionAPI, loadDefaults: () => Record<string, Level> = loadMap) {
+	let defaults = loadDefaults();
+	let overrides: Record<string, Level> = {};
 
 	function apply(ctx: ExtensionContext) {
 		const id = ctx.model?.id;
 		if (!id) return;
-		const level = map[id];
+		const level = overrides[id] ?? defaults[id];
 		if (level) pi.setThinkingLevel(level);
 	}
 
 	pi.on("session_start", async (_e, ctx) => {
-		map = loadMap();
+		defaults = loadDefaults();
+		overrides = {};
+		for (const entry of ctx.sessionManager.getEntries()) {
+			if (entry.type !== "custom" || entry.customType !== ENTRY_TYPE) continue;
+			const saved = effortEntry(entry.data);
+			if (saved) overrides[saved.modelId] = saved.level;
+		}
 		apply(ctx);
 	});
 
@@ -57,7 +73,7 @@ export default function effortExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("effort", {
-		description: "Set thinking effort for the current model and persist to effort.json",
+		description: "Set thinking effort for the current model in this session",
 		getArgumentCompletions: (prefix: string, ctx?: ExtensionContext): AutocompleteItem[] | null => {
 			const items = supportedLevels(ctx)
 				.filter((l) => l.startsWith(prefix))
@@ -75,7 +91,7 @@ export default function effortExtension(pi: ExtensionAPI) {
 			}
 			const arg = args.trim();
 			if (!arg) {
-				const current = map[id] ?? "(unset)";
+				const current = overrides[id] ?? defaults[id] ?? pi.getThinkingLevel();
 				ctx.ui.notify(`effort[${id}] = ${current}`, "info");
 				return;
 			}
@@ -89,16 +105,8 @@ export default function effortExtension(pi: ExtensionAPI) {
 				ctx.ui.notify(`Level "${level}" is not supported by ${id}. Supported: ${supported.join(", ")}`, "error");
 				return;
 			}
-			// Reload from disk before mutating so concurrent hand-edits aren't clobbered.
-			const fresh = loadMap();
-			fresh[id] = level;
-			try {
-				saveMap(fresh);
-			} catch (err) {
-				ctx.ui.notify(`Failed to save effort.json: ${err instanceof Error ? err.message : String(err)}`, "error");
-				return;
-			}
-			map = fresh;
+			overrides[id] = level;
+			pi.appendEntry(ENTRY_TYPE, { modelId: id, level } satisfies EffortEntry);
 			pi.setThinkingLevel(level);
 			ctx.ui.notify(`effort[${id}] = ${level}`, "info");
 		},

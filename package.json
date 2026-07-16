@@ -12,7 +12,7 @@
     "test": "bun run test:rust && bun run test:blueprint && bun run test:pi-low-risk && bun run test:pi-context && bun run test:pi-exec && bun run test:pi-fileops && bun run test:pi-apply-patch && bun run test:pi-skillful && bun run test:pi-system && bun run test:pi-tui && bun run test:pi-token && bun run test:pi-spawn && bun run test:pi-vim",
     "test:rust": "cargo test --workspace",
     "test:blueprint": "bun test tests/*.test.ts",
-    "test:pi-low-risk": "bun test harnesses/pi/extensions/agents-local/index.test.ts harnesses/pi/extensions/fork-split.test.ts harnesses/pi/extensions/shared/editor-composition.test.ts harnesses/pi/extensions/shared/ordered-widgets.test.ts harnesses/pi/extensions/shared/lane-placement.test.ts",
+    "test:pi-low-risk": "bun test harnesses/pi/extensions/agents-local/index.test.ts harnesses/pi/extensions/effort.test.ts harnesses/pi/extensions/fork-split.test.ts harnesses/pi/extensions/shared/editor-composition.test.ts harnesses/pi/extensions/shared/ordered-widgets.test.ts harnesses/pi/extensions/shared/lane-placement.test.ts",
     "test:pi-context": "bun test harnesses/pi/extensions/context-guard/*.test.ts",
     "test:pi-exec": "bun test harnesses/pi/extensions/exec-command/lifecycle.test.ts",
     "test:pi-fileops": "bun test harnesses/pi/extensions/fileops/**/*.test.ts",

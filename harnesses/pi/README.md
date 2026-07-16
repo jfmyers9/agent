@@ -16,7 +16,7 @@ Pi loads:
 - `harnesses/pi/settings.json` for model, package, and extension defaults
 - `harnesses/pi/keybindings.json` for Emacs-style editor/session shortcuts
 - `harnesses/pi/tui.json` for status/footer icon, color, compact-mode, and usage-bar preferences
-- `harnesses/pi/effort.json` for per-model thinking defaults used by `/effort`
+- `harnesses/pi/effort.json` for read-only per-model thinking defaults used by `/effort`
 - `harnesses/pi/extensions/` as global Pi extension sources
 - `npm:pi-lens` for AST/LSP/code-intelligence checks
 - `npm:@dreki-gg/pi-context7@0.1.9` as reviewed docs lookup tools
@@ -44,7 +44,7 @@ Installed extensions:
 
 - `agents-local/` — injects untracked `AGENTS.local.md` / `CLAUDE.local.md` context from cwd ancestors; `/agents-local` lists loaded files.
 - `clear.ts` — `/clear` starts a fresh session after the current turn; `ctrl+shift+l` queues it.
-- `effort.ts` — `/effort [level]` persists per-model thinking effort to `effort.json`.
+- `effort.ts` — `/effort [level]` stores per-model thinking effort in the current Pi session; `effort.json` supplies defaults only.
 - `fileops/` — replaces the built-in local file workflow with `read`, `search`, `find`, `write`, and a configurable `edit` tool. Default edit mode is hashline.
 - `apply-patch/` — registers Codex's `apply_patch` format for GPT models and switches GPT sessions away from `edit`/`write`.
 - `prompt-storage/` — local prompt stash/history. Shortcuts: `alt+s` stash current draft, `ctrl+alt+s` pop a stash, `ctrl+r` search previous prompts.
