@@ -845,10 +845,15 @@ async function buildSpawnPayload(
 	return { prompt: edited, promptGoal: goal };
 }
 
-function piSpawnCommand(sessionPath: string, promptPath: string): string {
+export function piSpawnCommand(
+	sessionPath: string,
+	promptPath: string,
+	options: { nonInteractive?: boolean } = {},
+): string {
+	const printArg = options.nonInteractive ? " --print" : "";
 	return promptPath
-		? `bash -lc ${shellQuote('pi --session "$1" "$(cat "$2")"')} pi-spawn ${shellQuote(sessionPath)} ${shellQuote(promptPath)}`
-		: `bash -lc ${shellQuote('pi --session "$1"')} pi-spawn ${shellQuote(sessionPath)}`;
+		? `bash -lc ${shellQuote(`pi${printArg} --session "$1" "$(cat "$2")"`)} pi-spawn ${shellQuote(sessionPath)} ${shellQuote(promptPath)}`
+		: `bash -lc ${shellQuote(`pi${printArg} --session "$1"`)} pi-spawn ${shellQuote(sessionPath)}`;
 }
 
 function shellSpawnCommand(options: { keepOpen?: boolean } = {}): string {
@@ -1266,7 +1271,9 @@ async function spawn(
 		name: child.name,
 	};
 	const cleanupSession = ownedPtyAliasZellijSession(request, mux);
-	const piCommand = piSpawnCommand(child.sessionPath, promptPath);
+	const piCommand = piSpawnCommand(child.sessionPath, promptPath, {
+		nonInteractive: request.placement === "hidden",
+	});
 	const cleanupDoneFile = cleanupSession ? await zellijCleanupDoneFile(cleanupSession) : undefined;
 	const muxRef = await placeMux(
 		pi,

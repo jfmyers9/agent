@@ -4,6 +4,7 @@ import {
 	formatSpawnMap,
 	parseMux,
 	parsePlacement,
+	piSpawnCommand,
 	spawnResultText,
 	toolRequest,
 	zellijSessionCleanupCommand,
@@ -48,6 +49,19 @@ describe("spawn parsing", () => {
 });
 
 describe("spawn command wrappers", () => {
+	test("runs hidden Pi lanes non-interactively so their tmux session can exit", () => {
+		const command = piSpawnCommand("/sessions/child.jsonl", "/tmp/prompt.md", { nonInteractive: true });
+
+		expect(command).toContain('pi --print --session "$1"');
+	});
+
+	test("keeps visible Pi lanes interactive", () => {
+		const command = piSpawnCommand("/sessions/child.jsonl", "/tmp/prompt.md");
+
+		expect(command).toContain('pi --session "$1"');
+		expect(command).not.toContain("--print");
+	});
+
 	test("wraps owned hidden zellij commands with session cleanup", () => {
 		const command = zellijSessionCleanupCommand("printf ok", "/tmp/owned-session.done");
 
