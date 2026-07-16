@@ -4,6 +4,12 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 const read = (path: string) => readFileSync(resolve(root, path), "utf8");
+const section = (body: string, heading: string) => {
+  const start = body.indexOf(`### ${heading}`);
+  if (start < 0) throw new Error(`missing section: ${heading}`);
+  const end = body.indexOf("\n### ", start + heading.length + 4);
+  return body.slice(start, end < 0 ? undefined : end);
+};
 
 const artifactSkills = ["context", "research", "review", "diagnose"];
 
@@ -20,6 +26,7 @@ const directSkills = [
   "submit",
   "improve-rust-tests",
   "vibe",
+  "converge",
 ];
 
 const allSkillFiles = readdirSync(resolve(root, "skills"), { withFileTypes: true })
@@ -162,6 +169,49 @@ describe("workflow contracts", () => {
     expect(body).toMatch(/zero\s+unresolved `F` findings/);
     expect(body).toMatch(/On `NO-GO \/ replace`, stop\s+submission/);
     expect(body).toContain("Submission defaults to a draft pull request");
+  });
+
+  test("converge uses fresh workers for a bounded closure loop", () => {
+    const body = read("skills/converge/SKILL.md");
+    expect(body).toContain("disable-model-invocation: true");
+    expect(body).toContain("requires-fresh-workers: true");
+    expect(body).not.toContain("allowed-tools:");
+    expect(body).toContain("zero inherited conversation turns");
+    expect(body).toMatch(/Never reuse a\s+worker/);
+    expect(body).toContain("send it a follow-up stage");
+    expect(body).toContain("only the coordinator creates workers");
+    expect(body).toContain("one-shot, waitable, ephemeral worker");
+    expect(body).toContain("Before and after every worker");
+    expect(body).toContain("all local refs, repository config, index");
+    expect(body).toContain("Git / remote actions: none");
+    expect(body).toContain("--max-rounds <1-5>");
+    expect(body).toContain("default `3`");
+    expect(body).toContain("full-scope `GO / proceed`");
+    expect(body).toContain("zero unresolved `F` findings");
+    expect(body).toMatch(/Never stage,\s+commit, push, submit/);
+    expect(body).toContain("Do not silently run the stage in the coordinator");
+    expect(body).toContain("fresh-review-required");
+    expect(body).toContain("do not append it to the frozen basis");
+
+    const implementation = section(body, "2. Implement In A Brand-New Worker");
+    const discovery = section(body, "3. Establish A Basis In A Brand-New Full Reviewer");
+    const fix = section(body, "4. Fix In A Brand-New Worker");
+    const verification = section(body, "5. Verify In A Brand-New Reviewer");
+    const validation = section(body, "6. Validate In A Brand-New Final Worker");
+
+    expect(implementation).toMatch(/fresh implementation\s+worker/);
+    expect(discovery).toMatch(/fresh read-only full reviewer/);
+    expect(fix).toMatch(/fresh fixer/);
+    expect(verification).toMatch(/fresh, read-only reviewer/);
+    expect(validation).toMatch(/fresh, read-only validation worker/);
+    expect(verification).toContain("original-scope miss");
+    expect(validation).toContain("Snapshots:");
+  });
+
+  test("Pi exposes a synchronous ephemeral worker adapter", () => {
+    const body = read("harnesses/pi/README.md");
+    expect(body).toContain('pi --print --no-session "<complete stage packet>"');
+    expect(body).toContain("Do not use `spawn_lane`");
   });
 
   test("retired wrappers are absent", () => {

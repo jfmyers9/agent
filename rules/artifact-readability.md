@@ -125,6 +125,6 @@ For diagnosis or review synthesis, add a cross-reference matrix:
 - Do not force diagrams into tiny or single-file changes.
 - Do not claim more certainty than the evidence supports.
 - Keep raw logs and long command output out of the review path.
-- Keep shared skills portable: no harness-specific task stores, native
-  subagent requirements, chat-only state, Slack envelopes, or external state
-  repository assumptions.
+- Keep shared skills portable: no harness-specific task stores or subagent API
+  names, chat-only durable state, Slack envelopes, or external state repository
+  assumptions.

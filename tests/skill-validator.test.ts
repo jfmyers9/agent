@@ -11,6 +11,77 @@ test("repository skills satisfy the shared schema", () => {
 });
 
 describe("skill schema failures", () => {
+  test("allows omitted tools for explicit capability-driven orchestration", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "skill-validator-"));
+    const directory = join(fixture, "skills", "example");
+    mkdirSync(directory, { recursive: true });
+    const file = join(directory, "SKILL.md");
+    writeFileSync(
+      file,
+      [
+        "---",
+        "name: example",
+        "description: A sufficiently specific capability-driven skill.",
+        "disable-model-invocation: true",
+        "user-invocable: true",
+        "metadata:",
+        "  requires-fresh-workers: true",
+        "---",
+        "",
+        "Use the active harness capability without naming its native tool.",
+      ].join("\n"),
+    );
+
+    expect(validateSkillFile(file, fixture)).toEqual([]);
+    rmSync(fixture, { recursive: true, force: true });
+  });
+
+  test("rejects omitted tools for model-routed skills", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "skill-validator-"));
+    const directory = join(fixture, "skills", "example");
+    mkdirSync(directory, { recursive: true });
+    const file = join(directory, "SKILL.md");
+    writeFileSync(
+      file,
+      [
+        "---",
+        "name: example",
+        "description: A sufficiently specific model-routed skill.",
+        "---",
+        "",
+        "Use an unrestricted native capability.",
+      ].join("\n"),
+    );
+
+    const issues = validateSkillFile(file, fixture).map((issue) => issue.message);
+    expect(issues).toContain("allowed-tools may be omitted only for explicit fresh-worker orchestration");
+    rmSync(fixture, { recursive: true, force: true });
+  });
+
+  test("rejects omitted tools for explicit skills without a worker marker", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "skill-validator-"));
+    const directory = join(fixture, "skills", "example");
+    mkdirSync(directory, { recursive: true });
+    const file = join(directory, "SKILL.md");
+    writeFileSync(
+      file,
+      [
+        "---",
+        "name: example",
+        "description: A sufficiently specific explicit fixture skill.",
+        "disable-model-invocation: true",
+        "user-invocable: true",
+        "---",
+        "",
+        "Run only when the user invokes this skill.",
+      ].join("\n"),
+    );
+
+    const issues = validateSkillFile(file, fixture).map((issue) => issue.message);
+    expect(issues).toContain("allowed-tools may be omitted only for explicit fresh-worker orchestration");
+    rmSync(fixture, { recursive: true, force: true });
+  });
+
   test("reports mismatched names and missing references", () => {
     const fixture = mkdtempSync(join(tmpdir(), "skill-validator-"));
     const directory = join(fixture, "skills", "example");

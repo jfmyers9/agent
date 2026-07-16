@@ -78,6 +78,8 @@ argument-hint: "<required> [--optional]"
 - Add `user-invocable: true` and `disable-model-invocation: true` when the skill
   must run only through explicit invocation, including opt-in durable artifact
   skills. Preserve these fields on existing explicit-only skills.
+- Only fresh-worker orchestration may omit `allowed-tools`. It must also set
+  `metadata.requires-fresh-workers: true` with both explicit-only fields.
 
 Omit optional fields that add no constraint. If a workflow needs an optional
 tool outside the portable set, either leave tools unrestricted or specify a

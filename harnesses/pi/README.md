@@ -68,6 +68,21 @@ Context7 is installed as a pinned reviewed Pi package. It registers `context7_re
 
 Skills are available as `/skill:<name>` and `$skill-name` references by default.
 
+## Ephemeral worker adapter
+
+Orchestration skills such as `/skill:converge` need a new context and one
+terminal result for every stage. From the target repository working directory,
+the Pi adapter is:
+
+```sh
+pi --print --no-session "<complete stage packet>"
+```
+
+Run it once per stage and wait for the process to exit before launching the
+next stage. `--no-session` prevents worker context from being persisted or
+resumed. Do not use `spawn_lane` for this contract: lanes return asynchronously
+and retain native task/session state.
+
 ## Context Guard core
 
 The `context-guard` Pi extension is registered by default. Its indexing,

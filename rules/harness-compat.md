@@ -27,6 +27,16 @@ Use portable shared-skill tool names: `Bash`, `Read`, `Write`, `Edit`, `Glob`,
 and `Grep`. Do not list native task/team tools in shared skill frontmatter.
 Avoid harness-specific config paths except in adapter documentation.
 
+A deliberately invoked orchestration skill may require one-shot fresh workers
+when context isolation is its core behavior. Such a skill must set both
+`disable-model-invocation: true` and `user-invocable: true`; only then may it
+set `metadata.requires-fresh-workers: true` and omit `allowed-tools` instead of
+naming native tools. Describe the capability generically, pass compact stage
+packets, and persist no native task, team, lane, or session state. Every launch
+must create a new context, be waitable, and return one terminal result. Stop
+clearly when the harness cannot meet that contract; do not silently weaken the
+workflow to same-context execution.
+
 Skill directories must match `name`, use lowercase letters/numbers/hyphens,
 and keep descriptions specific enough to avoid routing ordinary questions.
 
