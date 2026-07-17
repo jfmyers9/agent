@@ -7,6 +7,7 @@ import {
 	parsePlacement,
 	piSpawnCommand,
 	spawnResultText,
+	tmuxSpawnTargetPane,
 	toolRequest,
 	validateToolSpawnRequest,
 	zellijSessionCleanupCommand,
@@ -91,6 +92,12 @@ describe("spawn parsing", () => {
 		expect(() => validateToolSpawnRequest(visible)).not.toThrow();
 		expect(() => validateToolSpawnRequest(hidden)).toThrow("spawn_lane only supports visible lanes");
 		expect(() => validateToolSpawnRequest(pty)).toThrow("spawn_lane only supports visible lanes");
+	});
+
+	test("targets splits at the Pi process pane unless another workspace is requested", () => {
+		expect(tmuxSpawnTargetPane({}, { TMUX_PANE: "%10" })).toBe("%10");
+		expect(tmuxSpawnTargetPane({ targetMuxWorkspace: "other" }, { TMUX_PANE: "%10" })).toBeUndefined();
+		expect(tmuxSpawnTargetPane({}, {})).toBeUndefined();
 	});
 });
 

@@ -1035,12 +1035,14 @@ class TmuxMuxAdapter {
 	}
 
 	async place(pi: ExtensionAPI, request: SpawnRequest, command: string): Promise<MuxPlacementRef> {
+		const targetWorkspace = targetMuxWorkspace(request);
 		const placement = await new TmuxLanePlacement({ exec: (args) => this.tmux(pi, args) }).place({
 			placement: request.placement as LanePlacement,
 			cwd: request.cwd,
 			name: request.name,
 			command,
-			targetWorkspace: targetMuxWorkspace(request),
+			targetWorkspace,
+			targetPane: tmuxSpawnTargetPane(request),
 			splitDirection: request.splitDirection,
 			splitSizePercent: request.splitSizePercent,
 		});
@@ -1083,6 +1085,14 @@ class ZellijMuxAdapter {
 
 function targetMuxWorkspace(request: SpawnRequest): string | undefined {
 	return request.targetMuxWorkspace || request.targetMuxSession;
+}
+
+export function tmuxSpawnTargetPane(
+	request: { targetMuxWorkspace?: string; targetMuxSession?: string },
+	environment: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+	if (request.targetMuxWorkspace || request.targetMuxSession) return undefined;
+	return environment.TMUX_PANE?.trim() || undefined;
 }
 
 function ownedPtyAliasZellijSession(request: SpawnRequest, mux: ResolvedSpawnMux): string | undefined {
