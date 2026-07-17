@@ -8,6 +8,7 @@ import {
 	piSpawnCommand,
 	spawnResultText,
 	toolRequest,
+	validateToolSpawnRequest,
 	zellijSessionCleanupCommand,
 } from "./index";
 
@@ -80,6 +81,16 @@ describe("spawn parsing", () => {
 		expect(request.mux).toBe("pty");
 		expect(request.placement).toBe("hidden");
 		expect(request.interactive).toBeFalse();
+	});
+
+	test("rejects hidden tool lanes while preserving visible defaults", () => {
+		const visible = toolRequest({ runtime: "pi", prompt: "inspect docs" }, { cwd: "/repo" } as any);
+		const hidden = toolRequest({ runtime: "pi", prompt: "inspect docs", placement: "hidden" }, { cwd: "/repo" } as any);
+		const pty = toolRequest({ runtime: "pi", prompt: "inspect docs", mux: "pty" }, { cwd: "/repo" } as any);
+
+		expect(() => validateToolSpawnRequest(visible)).not.toThrow();
+		expect(() => validateToolSpawnRequest(hidden)).toThrow("spawn_lane only supports visible lanes");
+		expect(() => validateToolSpawnRequest(pty)).toThrow("spawn_lane only supports visible lanes");
 	});
 });
 

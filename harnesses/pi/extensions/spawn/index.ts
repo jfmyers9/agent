@@ -1662,24 +1662,27 @@ const relationParam = Type.Union([Type.Literal("child"), Type.Literal("root")], 
 	description: "child or root. Defaults to root for shell/command and child for pi.",
 });
 
-const placementParam = Type.Union(
-	[Type.Literal("new-window"), Type.Literal("split-pane"), Type.Literal("new-session"), Type.Literal("hidden")],
-	{
-		description:
-			"new-window, split-pane, hidden, or new-session. Tools should usually use new-window, split-pane, or hidden.",
-	},
-);
+const toolPlacementParam = Type.Union([Type.Literal("new-window"), Type.Literal("split-pane")], {
+	description: "Visible placement only: split-pane (default) or new-window.",
+});
 
 const splitDirectionParam = Type.Union([Type.Literal("horizontal"), Type.Literal("vertical")], {
 	description: "horizontal or vertical for split-pane placement.",
 });
 
-const muxParam = Type.Union(
-	[Type.Literal("auto"), Type.Literal("tmux"), Type.Literal("zellij"), Type.Literal("pty"), Type.Literal("none")],
-	{
-		description: "auto, tmux, zellij, pty, or none. pty is a hidden zellij-session alias. Defaults to auto.",
-	},
+const toolMuxParam = Type.Union(
+	[Type.Literal("auto"), Type.Literal("tmux"), Type.Literal("zellij"), Type.Literal("none")],
+	{ description: "auto, tmux, zellij, or none. Defaults to auto." },
 );
+
+export function validateToolSpawnRequest(request: { placement?: SpawnPlacement; mux?: SpawnMux }): void {
+	if (request.placement === "hidden" || request.mux === "pty") {
+		throw new Error("spawn_lane only supports visible lanes; use /spawn --placement hidden for background work");
+	}
+	if (request.placement === "new-session") {
+		throw new Error("spawn_lane placement='new-session' requires the /spawn command; use split-pane or new-window");
+	}
+}
 
 const SPAWN_TOOL_NAMES = ["spawn_lane", "spawn_list", "spawn_map"];
 
@@ -1696,9 +1699,9 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 		description: [
 			"Spawn an execution lane without raw tmux or zellij commands. Use runtime='pi' for agent lanes, runtime='shell' for a fresh shell, or runtime='command' with command for a process lane.",
 			"For Pi lanes, use payload='direct' for a self-contained bounded task; payload='context' when the new lane needs current conversation context; payload='empty' for a blank lane.",
-			"Pi and command lanes are one-shot by default: visible lanes stream live output and close when their task exits. Set interactive=true to keep a lane open after its initial task. Shell lanes are always interactive. Hidden Pi and command lanes are always one-shot.",
-			"Placement defaults to 'split-pane'. Use placement='new-window' for durable parallel work, placement='hidden' for a background lane, and placement='new-session' only from /spawn because tools cannot replace the active session.",
-			"For split panes, use splitDirection='horizontal' or 'vertical' and optional splitSizePercent=10..90, e.g. 30 for a 30% split. Use mux='auto', 'tmux', or 'zellij'; mux='pty' is a hidden zellij-session alias.",
+			"Pi and command lanes are one-shot by default: they stream live output and close when their task exits. Set interactive=true to keep a lane open after its initial task. Shell lanes are always interactive.",
+			"Tool-spawned lanes must be visible. Placement defaults to 'split-pane'; use 'new-window' only when a separate visible window is required. Background and new-session placement are available only through the user-invoked /spawn command.",
+			"For split panes, use splitDirection='horizontal' or 'vertical' and optional splitSizePercent=10..90, e.g. 30 for a 30% split. Use mux='auto', 'tmux', or 'zellij'.",
 			"Use cwd for a target repo/project. Use relation='root' for unrelated or cross-project lanes unless targetSessionPath explicitly names the parent session for relation='child'. Use targetMuxWorkspace to place the lane in another mux workspace; targetMuxSession is accepted as a legacy alias.",
 		].join(" "),
 		promptSnippet: "Spawn a lane",
@@ -1709,10 +1712,10 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 			interactive: Type.Optional(
 				Type.Boolean({
 					description:
-						"Keep a Pi or command lane open after its initial task. Defaults to false; shell lanes are always interactive, and hidden Pi/command lanes always close.",
+						"Keep a Pi or command lane open after its initial task. Defaults to false; shell lanes are always interactive.",
 				}),
 			),
-			placement: Type.Optional(placementParam),
+			placement: Type.Optional(toolPlacementParam),
 			splitDirection: Type.Optional(splitDirectionParam),
 			splitSizePercent: Type.Optional(
 				Type.Number({
@@ -1736,7 +1739,7 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 					description: "Target mux workspace/session for placement outside the current mux workspace.",
 				}),
 			),
-			mux: Type.Optional(muxParam),
+			mux: Type.Optional(toolMuxParam),
 			command: Type.Optional(Type.String({ description: "Command to run when runtime='command'." })),
 			prompt: Type.Optional(
 				Type.String({
@@ -1749,10 +1752,7 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const request = toolRequest(params as NormalizedToolParams, ctx);
-			if (request.placement === "new-session")
-				throw new Error(
-					"spawn_lane placement='new-session' requires the /spawn command; use new-window, split-pane, or hidden from tools.",
-				);
+			validateToolSpawnRequest(request);
 			const result = await spawn(pi, request, ctx, signal);
 			return { content: [{ type: "text", text: spawnResultText(result) }], details: result };
 		},
