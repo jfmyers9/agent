@@ -70,11 +70,11 @@ describe("effort extension", () => {
 
 	test("restores session overrides and reapplies them when models change", async () => {
 		const harness = createHarness();
-		const saved = [{ customType: "effort-model-level", data: { modelId: "gpt-5.6-luna", level: "low" } }];
+		const saved = [{ customType: "effort-model-level", data: { modelId: "gpt-5.6-luna", level: "max" } }];
 		await harness.handlers.session_start({}, context("gpt-5.6-luna", saved));
 		await harness.handlers.model_select({}, context("gpt-5.6-sol", saved));
 		await harness.handlers.model_select({}, context("gpt-5.6-luna", saved));
 
-		expect(harness.levels).toEqual(["low", "medium", "low"]);
+		expect(harness.levels).toEqual(["max", "medium", "max"]);
 	});
 });

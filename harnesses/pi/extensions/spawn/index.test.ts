@@ -6,6 +6,7 @@ import {
 	parseMux,
 	parsePlacement,
 	piSpawnCommand,
+	piSessionFileContents,
 	spawnResultText,
 	tmuxSpawnTargetPane,
 	toolRequest,
@@ -134,6 +135,23 @@ describe("spawn command wrappers", () => {
 		});
 
 		expect(command).toContain("pi --model openai/gpt-5.6-sol --thinking high --session");
+	});
+
+	test("persists inherited effort against session-start defaults", () => {
+		const contents = piSessionFileContents(
+			{ type: "session", timestamp: "2026-07-17T00:00:00.000Z" },
+			{ modelId: "gpt-5.6-sol", thinking: "high" },
+		);
+		const entries = contents
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+
+		expect(entries[1]).toMatchObject({
+			type: "custom",
+			customType: "effort-model-level",
+			data: { modelId: "gpt-5.6-sol", level: "high" },
+		});
 	});
 
 	test("wraps owned hidden zellij commands with session cleanup", () => {

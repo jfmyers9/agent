@@ -5,10 +5,10 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
-type Level = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-const LEVELS: readonly Level[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+type Level = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+const LEVELS: readonly Level[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const VALID: ReadonlySet<Level> = new Set(LEVELS);
-const ENTRY_TYPE = "effort-model-level";
+export const EFFORT_ENTRY_TYPE = "effort-model-level";
 
 interface EffortEntry {
 	modelId: string;
@@ -54,14 +54,14 @@ export default function effortExtension(pi: ExtensionAPI, loadDefaults: () => Re
 		const id = ctx.model?.id;
 		if (!id) return;
 		const level = overrides[id] ?? defaults[id];
-		if (level) pi.setThinkingLevel(level);
+		if (level) pi.setThinkingLevel(level as ReturnType<ExtensionAPI["getThinkingLevel"]>);
 	}
 
 	pi.on("session_start", async (_e, ctx) => {
 		defaults = loadDefaults();
 		overrides = {};
 		for (const entry of ctx.sessionManager.getEntries()) {
-			if (entry.type !== "custom" || entry.customType !== ENTRY_TYPE) continue;
+			if (entry.type !== "custom" || entry.customType !== EFFORT_ENTRY_TYPE) continue;
 			const saved = effortEntry(entry.data);
 			if (saved) overrides[saved.modelId] = saved.level;
 		}
@@ -106,8 +106,8 @@ export default function effortExtension(pi: ExtensionAPI, loadDefaults: () => Re
 				return;
 			}
 			overrides[id] = level;
-			pi.appendEntry(ENTRY_TYPE, { modelId: id, level } satisfies EffortEntry);
-			pi.setThinkingLevel(level);
+			pi.appendEntry(EFFORT_ENTRY_TYPE, { modelId: id, level } satisfies EffortEntry);
+			pi.setThinkingLevel(level as ReturnType<ExtensionAPI["getThinkingLevel"]>);
 			ctx.ui.notify(`effort[${id}] = ${level}`, "info");
 		},
 	});

@@ -15,6 +15,7 @@ import {
 	serializeConversation,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { EFFORT_ENTRY_TYPE } from "../effort.ts";
 import { shellQuote, shellSplit } from "../exec-command/shell/tokenize.ts";
 import {
 	type LanePlacement,
@@ -870,6 +871,24 @@ export function piSpawnCommand(
 		: `bash -lc ${shellQuote(`${environment}pi${printArg}${modelArg}${thinkingArg} --session "$1"`)} pi-spawn ${shellQuote(sessionPath)}`;
 }
 
+export function piSessionFileContents(
+	header: Record<string, unknown>,
+	inference?: { modelId: string; thinking: string },
+): string {
+	const entries: Record<string, unknown>[] = [header];
+	if (inference) {
+		entries.push({
+			type: "custom",
+			id: randomUUID(),
+			parentId: null,
+			timestamp: header.timestamp,
+			customType: EFFORT_ENTRY_TYPE,
+			data: { modelId: inference.modelId, level: inference.thinking },
+		});
+	}
+	return `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
+}
+
 export function isOneShotSpawnProcess(environment: NodeJS.ProcessEnv = process.env): boolean {
 	return environment[SPAWN_ONE_SHOT_ENV] === "1";
 }
@@ -938,6 +957,7 @@ class PiRuntimeAdapter {
 		ctx: ExtensionContext,
 		request: SpawnRequest,
 		parentSessionPath?: string,
+		inference?: { modelId: string; thinking: string },
 	): Promise<PiSessionRef> {
 		const timestamp = new Date().toISOString();
 		const id = randomUUID();
@@ -951,7 +971,7 @@ class PiRuntimeAdapter {
 			cwd: request.cwd,
 			...(parentSessionPath ? { parentSession: parentSessionPath } : {}),
 		};
-		await writeFile(sessionPath, `${JSON.stringify(header)}\n`, "utf8");
+		await writeFile(sessionPath, piSessionFileContents(header, inference), "utf8");
 		return { sessionPath, parentSessionPath, cwd: request.cwd, name: request.name };
 	}
 
@@ -1291,7 +1311,8 @@ async function spawn(
 		return result;
 	}
 
-	const child = await piRuntime.createSessionFile(ctx, request, parentSessionPath);
+	const inference = ctx.model ? { modelId: ctx.model.id, thinking: pi.getThinkingLevel() } : undefined;
+	const child = await piRuntime.createSessionFile(ctx, request, parentSessionPath, inference);
 	const promptPath = await writePromptArtifact(request, prompt);
 	const lane: SpawnLaneRef = {
 		runtime: "pi",
@@ -1306,7 +1327,7 @@ async function spawn(
 		nonInteractive: hidden,
 		autoExit: !request.interactive && !hidden,
 		model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
-		thinking: pi.getThinkingLevel(),
+		thinking: inference?.thinking,
 	});
 	const cleanupDoneFile = cleanupSession ? await zellijCleanupDoneFile(cleanupSession) : undefined;
 	const muxRef = await placeMux(
