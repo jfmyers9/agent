@@ -22,6 +22,25 @@ describe("spawn parsing", () => {
 		);
 
 		expect(request.placement).toBe("split-pane");
+		expect(request.interactive).toBeFalse();
+	});
+
+	test("keeps tool-spawned lanes open only when requested", () => {
+		const interactivePi = toolRequest(
+			{
+				runtime: "pi",
+				payload: "direct",
+				prompt: "inspect docs",
+				interactive: true,
+			},
+			{ cwd: "/repo" } as any,
+		);
+		const command = toolRequest({ runtime: "command", command: "echo ok" }, { cwd: "/repo" } as any);
+		const shell = toolRequest({ runtime: "shell" }, { cwd: "/repo" } as any);
+
+		expect(interactivePi.interactive).toBeTrue();
+		expect(command.interactive).toBeFalse();
+		expect(shell.interactive).toBeTrue();
 	});
 
 	test("accepts zellij, pty, and hidden placement aliases", () => {
@@ -52,12 +71,14 @@ describe("spawn parsing", () => {
 				runtime: "command",
 				mux: "pty",
 				command: "echo ok",
+				interactive: true,
 			},
 			{ cwd: "/repo" } as any,
 		);
 
 		expect(request.mux).toBe("pty");
 		expect(request.placement).toBe("hidden");
+		expect(request.interactive).toBeFalse();
 	});
 });
 

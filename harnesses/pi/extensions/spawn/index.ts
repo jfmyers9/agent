@@ -133,6 +133,7 @@ type SpawnRequest = {
 	runtime: SpawnRuntime;
 	payload: SpawnPayload;
 	relation: SpawnRelation;
+	interactive: boolean;
 	placement: SpawnPlacement;
 	mux: SpawnMux;
 	cwd: string;
@@ -154,6 +155,7 @@ type SpawnResult = {
 	runtime: ResolvedSpawnRuntime;
 	relation: SpawnRelation;
 	payload: SpawnPayload;
+	interactive: boolean;
 	placement: SpawnPlacement;
 	splitDirection?: SpawnSplitDirection;
 	splitSizePercent?: number;
@@ -189,6 +191,7 @@ type SpawnCommandContext = ExtensionContext & {
 type NormalizedToolParams = {
 	payload?: string;
 	relation?: string;
+	interactive?: boolean;
 	placement?: string;
 	splitDirection?: string;
 	splitSizePercent?: number | string;
@@ -446,10 +449,15 @@ function sanitizeWindowName(text: string): string {
 		.slice(0, 36);
 }
 
-function normalizeSpawnRequest(input: Partial<SpawnRequest>, ctx: ExtensionContext): SpawnRequest {
-	const runtime =
+function inferSpawnRuntime(input: Pick<Partial<SpawnRequest>, "runtime" | "command" | "payload">): SpawnRuntime {
+	return (
 		input.runtime ??
-		(input.command ? "command" : input.payload === "direct" || input.payload === "context" ? "pi" : "shell");
+		(input.command ? "command" : input.payload === "direct" || input.payload === "context" ? "pi" : "shell")
+	);
+}
+
+function normalizeSpawnRequest(input: Partial<SpawnRequest>, ctx: ExtensionContext): SpawnRequest {
+	const runtime = inferSpawnRuntime(input);
 	const payload = input.payload ?? (runtime === "shell" || runtime === "command" ? "empty" : "direct");
 	const currentCwd = resolve(ctx.cwd);
 	const cwd = input.cwd ? resolve(ctx.cwd, input.cwd) : currentCwd;
@@ -459,6 +467,7 @@ function normalizeSpawnRequest(input: Partial<SpawnRequest>, ctx: ExtensionConte
 	if (relation === "child" && cwd !== currentCwd && !targetSessionPath) relation = "root";
 	const mux = input.mux ?? "auto";
 	const placement = input.placement ?? (mux === "pty" ? "hidden" : "split-pane");
+	const interactive = runtime === "shell" ? true : placement === "hidden" ? false : (input.interactive ?? true);
 	const splitSizePercent = validateSplitSizePercent(input.splitSizePercent);
 	const targetMuxSession = input.targetMuxSession?.trim() || undefined;
 	const targetMuxWorkspace = input.targetMuxWorkspace?.trim() || undefined;
@@ -471,6 +480,7 @@ function normalizeSpawnRequest(input: Partial<SpawnRequest>, ctx: ExtensionConte
 		runtime,
 		payload,
 		relation,
+		interactive,
 		placement,
 		mux,
 		cwd,
@@ -959,6 +969,7 @@ class PiRuntimeAdapter {
 					runtime: "pi",
 					relation: request.relation,
 					payload: request.payload,
+					interactive: request.interactive,
 					placement: request.placement,
 					splitDirection: request.splitDirection,
 					splitSizePercent: request.splitSizePercent,
@@ -1191,6 +1202,7 @@ async function spawn(
 			runtime,
 			relation: request.relation,
 			payload: request.payload,
+			interactive: request.interactive,
 			placement: request.placement,
 			splitDirection: request.splitDirection,
 			splitSizePercent: request.splitSizePercent,
@@ -1226,10 +1238,9 @@ async function spawn(
 		const child: SpawnLaneRef = { runtime, cwd: request.cwd, name: request.name, command: request.command };
 		const cleanupSession = ownedPtyAliasZellijSession(request, mux);
 		const cleanupDoneFile = cleanupSession ? await zellijCleanupDoneFile(cleanupSession) : undefined;
+		const keepOpen = request.interactive && request.placement !== "hidden" && cleanupSession === undefined;
 		const processCommand =
-			runtime === "shell"
-				? shellSpawnCommand({ keepOpen: cleanupSession === undefined })
-				: commandSpawnCommand(request.command || "", { keepOpen: cleanupSession === undefined });
+			runtime === "shell" ? shellSpawnCommand({ keepOpen }) : commandSpawnCommand(request.command || "", { keepOpen });
 		const placedCommand =
 			cleanupSession && cleanupDoneFile ? zellijSessionCleanupCommand(processCommand, cleanupDoneFile) : processCommand;
 		const muxRef = await placeMux(pi, mux, request, placedCommand);
@@ -1242,6 +1253,7 @@ async function spawn(
 			runtime,
 			relation: "root",
 			payload: "empty",
+			interactive: request.interactive,
 			placement: request.placement,
 			splitDirection: request.splitDirection,
 			splitSizePercent: request.splitSizePercent,
@@ -1272,7 +1284,7 @@ async function spawn(
 	};
 	const cleanupSession = ownedPtyAliasZellijSession(request, mux);
 	const piCommand = piSpawnCommand(child.sessionPath, promptPath, {
-		nonInteractive: request.placement === "hidden",
+		nonInteractive: !request.interactive || request.placement === "hidden",
 	});
 	const cleanupDoneFile = cleanupSession ? await zellijCleanupDoneFile(cleanupSession) : undefined;
 	const muxRef = await placeMux(
@@ -1290,6 +1302,7 @@ async function spawn(
 		runtime,
 		relation: request.relation,
 		payload: request.payload,
+		interactive: request.interactive,
 		placement: request.placement,
 		splitDirection: request.splitDirection,
 		splitSizePercent: request.splitSizePercent,
@@ -1355,6 +1368,7 @@ export function formatSpawnLaneEntries(entries: SpawnLaneEntry[]): string {
 				`- Runtime: ${entry.runtime}`,
 				`- Payload: ${entry.payload}`,
 				`- Relation: ${entry.relation}`,
+				`- Lifecycle: ${entry.interactive === false ? "one-shot" : "interactive"}`,
 				`- Placement: ${entry.placement}`,
 				entry.splitDirection ? `- Split direction: ${entry.splitDirection}` : undefined,
 				entry.splitSizePercent !== undefined ? `- Split size: ${entry.splitSizePercent}%` : undefined,
@@ -1515,6 +1529,7 @@ export function spawnResultText(result: SpawnResult): string {
 	const ptyRef = result.implementation?.mux?.pty;
 	return [
 		`Spawned ${result.runtime === "pi" ? result.payload : result.runtime} ${result.relation} lane: ${result.child.name}`,
+		`Lifecycle: ${result.interactive ? "interactive" : "one-shot"}`,
 		result.child.sessionPath ? `Session: ${result.child.sessionPath}` : undefined,
 		result.parent?.sessionPath ? `Parent: ${result.parent.sessionPath}` : undefined,
 		result.targetSessionPath && result.targetSessionPath !== result.parent?.sessionPath
@@ -1601,11 +1616,13 @@ export function toolRequest(params: NormalizedToolParams, ctx: ExtensionContext)
 	const prompt = params.prompt ?? "";
 	const command = params.command?.trim() || undefined;
 	const goal = params.goal || prompt || command || "";
+	const resolvedRuntime = inferSpawnRuntime({ runtime, payload, command });
 	return normalizeSpawnRequest(
 		{
-			runtime: runtime ?? (command ? "command" : undefined),
+			runtime: resolvedRuntime,
 			payload,
 			relation,
+			interactive: params.interactive ?? resolvedRuntime === "shell",
 			placement,
 			splitDirection,
 			splitSizePercent,
@@ -1671,6 +1688,7 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 		description: [
 			"Spawn an execution lane without raw tmux or zellij commands. Use runtime='pi' for agent lanes, runtime='shell' for a fresh shell, or runtime='command' with command for a process lane.",
 			"For Pi lanes, use payload='direct' for a self-contained bounded task; payload='context' when the new lane needs current conversation context; payload='empty' for a blank lane.",
+			"Pi and command lanes are one-shot by default and close when their task exits; set interactive=true to keep a visible lane open. Shell lanes are always interactive. Hidden Pi and command lanes are always one-shot.",
 			"Placement defaults to 'split-pane'. Use placement='new-window' for durable parallel work, placement='hidden' for a background lane, and placement='new-session' only from /spawn because tools cannot replace the active session.",
 			"For split panes, use splitDirection='horizontal' or 'vertical' and optional splitSizePercent=10..90, e.g. 30 for a 30% split. Use mux='auto', 'tmux', or 'zellij'; mux='pty' is a hidden zellij-session alias.",
 			"Use cwd for a target repo/project. Use relation='root' for unrelated or cross-project lanes unless targetSessionPath explicitly names the parent session for relation='child'. Use targetMuxWorkspace to place the lane in another mux workspace; targetMuxSession is accepted as a legacy alias.",
@@ -1680,6 +1698,12 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 			runtime: Type.Optional(runtimeParam),
 			payload: Type.Optional(payloadParam),
 			relation: Type.Optional(relationParam),
+			interactive: Type.Optional(
+				Type.Boolean({
+					description:
+						"Keep a Pi or command lane open after its initial task. Defaults to false; shell lanes are always interactive, and hidden Pi/command lanes always close.",
+				}),
+			),
 			placement: Type.Optional(placementParam),
 			splitDirection: Type.Optional(splitDirectionParam),
 			splitSizePercent: Type.Optional(
