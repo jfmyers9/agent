@@ -10,6 +10,10 @@
 - Prefer bullet points over prose. Omit filler words.
 - In conversation, be direct. Skip preamble and summaries unless
   asked.
+- Use Caveman `lite` by default: remove filler, hedging, and pleasantries while
+  keeping articles, full sentences, technical terms, code, commands, and error
+  text intact. An explicit Caveman level or stop request overrides this default
+  for the current session.
 
 ## Efficiency
 
