@@ -90,7 +90,9 @@ describe("workflow contracts", () => {
   test("review defines a decisive and convergent review lifecycle", () => {
     const body = read("skills/review/SKILL.md");
     const approach = read("skills/review/perspectives/intent-approach.md");
-    expect(body).toContain("correctness and compatibility");
+    expect(body).toContain("correctness for behavior-affecting changes");
+    expect(body.toLowerCase()).not.toContain("compatib");
+    expect(existsSync(resolve(root, "skills/review/perspectives/correctness.md"))).toBe(true);
     expect(body).toContain("design and maintainability");
     expect(body).toContain("stable sequential IDs");
     expect(body).toContain("## Resolutions");
@@ -108,7 +110,11 @@ describe("workflow contracts", () => {
     expect(body).toContain("Decision scope: full changeset | partial paths");
     expect(body).toContain("only when the approach is `sound`");
     expect(body).toContain("fresh review");
+    expect(body).toContain("Every criterion from an explicit intent source");
+    expect(body).toContain("new public option, default, authorization gate");
+    expect(body).toContain("existing internal switch is not evidence");
     expect(approach).toContain("sound`, `salvageable`, or `misguided");
+    expect(approach).toContain("do not promote an internal switch");
     expect(read("skills/review/perspectives/design-maintainability.md")).toContain("Apply only when");
     expect(read("skills/review/perspectives/tests.md")).toContain("named regression path");
     expect(read("skills/review/perspectives/security-operations.md")).toContain("only activated subsections");
@@ -165,6 +171,7 @@ describe("workflow contracts", () => {
     }
     expect(body).toContain("--dry-run");
     expect(body).toContain("Review the complete diff in session");
+    expect(body.toLowerCase()).not.toContain("compatib");
     expect(body).toContain("$review --local");
     expect(body).toMatch(/zero\s+unresolved `F` findings/);
     expect(body).toMatch(/On `NO-GO \/ replace`, stop\s+submission/);
@@ -195,6 +202,11 @@ describe("workflow contracts", () => {
     expect(body).toContain("Do not silently run the stage in the coordinator");
     expect(body).toContain("fresh-review-required");
     expect(body).toContain("do not append it to the frozen basis");
+    expect(body).toContain("every acceptance criterion without narrowing");
+    expect(body).toContain("never replace or narrow it");
+    expect(body).toMatch(/Do not silently select a\s+vertical slice/);
+    expect(body).toContain("every original acceptance criterion is");
+    expect(body).toContain("must not introduce a new public option");
 
     const implementation = section(body, "2. Implement In A Brand-New Worker");
     const discovery = section(body, "3. Establish A Basis In A Brand-New Full Reviewer");

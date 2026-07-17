@@ -7,7 +7,7 @@ abstractions, public surface, dependencies, or nontrivial control flow.
 - Check mutation ownership, dependency direction, lifecycle, and whether a
   boundary can preserve its invariants.
 - Flag indirection, public surface, or coupling only when it creates a concrete
-  compatibility, ownership, failure, or known change-cost risk.
+  ownership, failure, or known change-cost risk.
 - Reject speculative abstraction and unrelated refactoring as proposed fixes.
 - Leave whole-change strategy to the intent and approach gate.
 

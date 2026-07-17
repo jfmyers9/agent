@@ -6,8 +6,8 @@ Apply only activated subsections. Record which trigger applies before review:
   disclosure, and unsafe deserialization.
 - **State and concurrency:** persistence, races, atomicity, idempotency, retries,
   timeouts, and partial failure.
-- **Delivery and resources:** rollout/rollback compatibility, observability,
-  resource bounds, dependency failure, and incident diagnosability.
+- **Delivery and resources:** rollout/rollback safety, observability, resource
+  bounds, dependency failure, and incident diagnosability.
 - Distinguish realistic introduced risk from generic hardening advice.
 
 Do not inspect an inactive subsection merely because another trigger applies.

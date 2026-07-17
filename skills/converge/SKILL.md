@@ -71,6 +71,9 @@ stage. Do not silently run the stage in the coordinator context.
 Maintain only this compact coordinator ledger:
 
 - objective, observable acceptance criteria, and allowed scope;
+- for a named artifact, its exact path and content fingerprint plus its
+  decision, non-goals, and every acceptance criterion without narrowing;
+- criterion-by-criterion implementation and verification status;
 - baseline branch, `HEAD`, current branch ref, basis-dependent refs, repository
   config, index, changed-path, and content fingerprints;
 - current intended snapshot and unrelated paths to preserve;
@@ -103,6 +106,9 @@ Every stage packet includes the repository path, stage role, objective and
 criteria, only the ledger fields needed by that stage, its mutation boundary,
 the no-delegation and Git/remote prohibitions, and its exact output schema.
 Workers inspect live files instead of receiving copied source or full diffs.
+When the request names an artifact, every worker also receives its exact path
+and fingerprint and must read it directly. The compact objective and criteria
+supplement that source; they never replace or narrow it.
 
 Reserve `blocked` for a genuine external dependency, unavailable required
 input, or harness failure that the worker cannot resolve. Workload size,
@@ -126,15 +132,20 @@ waitable fresh-worker mechanism before any mutation.
 
 Resolve an explicitly named artifact exactly as `implement` resolves an input,
 but do not update, validate, stage, or commit it. Derive concrete acceptance
-criteria, allowed scope, and preserved paths. Record the baseline snapshot,
-including the current branch ref, refs on which the review basis or checks
-depend, observed unrelated refs, and repository Git config. Resolve named refs
-to commit IDs in stage packets so workers do not silently adopt later movement.
+criteria, allowed scope, and preserved paths. Preserve its decision, non-goals,
+and every acceptance criterion as the source of truth. Do not silently select a
+vertical slice or reduce the request to the currently convenient mechanism. If
+the full request cannot fit one coherent changeset, stop and ask the user to
+select a slice. Record the baseline snapshot, including the current branch ref,
+refs on which the review basis or checks depend, observed unrelated refs, and
+repository Git config. Resolve named refs to commit IDs in stage packets so
+workers do not silently adopt later movement.
 
 ### 2. Implement In A Brand-New Worker
 
 Skip this stage with `--current`. Otherwise launch a fresh implementation
-worker with the objective, criteria, scope, baseline, and mutation boundary.
+worker with the objective, criteria, scope, baseline, mutation boundary, and
+named artifact path and fingerprint when present.
 Tell it to follow the installed `implement` workflow for source changes while
 skipping all artifact-update and Git side effects. It must make the smallest
 complete change, preserve unrelated paths, and run focused checks.
@@ -150,23 +161,28 @@ Risks: <remaining risk or none>
 State: <branch, HEAD, index, and changed paths>
 ```
 
-Accept `implemented` only after the coordinator's state comparison passes and
-all changes fit the allowed scope. Otherwise stop; do not repair the worker's
-work in the coordinator context.
+Accept `implemented` only after the coordinator's state comparison passes, all
+changes fit the allowed scope, and every original acceptance criterion is
+reported `PASS`. A skipped, narrowed, partial, or omitted criterion requires
+`scope-expansion-required`. Otherwise stop; do not repair the worker's work in
+the coordinator context.
 
 ### 3. Establish A Basis In A Brand-New Full Reviewer
 
 Launch a fresh read-only full reviewer after implementation, and whenever a
 later stage returns `fresh-review-required`. Give it the objective, criteria,
 baseline, current intended snapshot, complete paths, and any compact trigger
-evidence. For a refreshed basis, include stable finding rows but no prior
-review prose. Never include implementation or fixer narratives.
+evidence. Include the named artifact path and fingerprint when present and
+require the reviewer to read it as the intent source. For a refreshed basis,
+include stable finding rows but no prior review prose. Never include
+implementation or fixer narratives.
 
 Tell it to follow the installed `review` decision, lens, materiality,
 root-cause grouping, and basis contracts without creating a review blueprint.
 It must review the complete current changeset, assign new IDs after the highest
 existing ID, preserve still-applicable IDs, and create a new immutable basis
-generation. Deferred observations never enter this loop.
+generation. It must report every original acceptance criterion as passed or
+unmet. Deferred observations never enter this loop.
 
 Require:
 
@@ -176,6 +192,7 @@ Verdict: GO | NO-GO
 Recommendation: proceed | fix | replace
 Approach: sound | salvageable | misguided
 Review basis: <generation and full paths/contracts/boundaries/fingerprints>
+Acceptance: <every original criterion and pass or unmet status>
 Findings: <stable F IDs with severity, evidence, impact, required change>
 Checks: <commands and results>
 State: <branch, HEAD, index, and changed paths>
@@ -208,6 +225,12 @@ reading or writing a blueprint. Before editing, it must return
 recorded basis, or `split-required` when even the assigned work will not fit a
 single turn. A split result must propose smaller dependency-safe packets and
 leave the worktree unchanged.
+
+A fixer must not introduce a new public option, default, authorization gate, or
+other product boundary merely because it is the shortest way to close a
+finding. If the finding prescribes one that the intent source does not require,
+return `fresh-review-required` before editing so a full reviewer can restate
+the required behavior.
 
 Otherwise it may edit only its assigned valid findings or checkpoint and must
 map every changed path and hunk to an ID. It runs focused checks proportional
@@ -313,11 +336,11 @@ fresh-review transition produces no actionable new basis, a worker leaves
 ambiguous partial edits, or the round limit is reached. Preserve the worktree
 and report the exact evidence or user decision needed.
 
-Success requires a current full-scope `GO / proceed`, a `sound` approach, zero
-unresolved `F` findings, passing final checks, matching relevant read-only
-snapshots and Git metadata, a no-remote-action attestation from every worker,
-and no unrelated worktree changes. Unrelated shared-ref movement does not
-prevent success.
+Success requires every original acceptance criterion to pass, a current
+full-scope `GO / proceed`, a `sound` approach, zero unresolved `F` findings,
+passing final checks, matching relevant read-only snapshots and Git metadata,
+a no-remote-action attestation from every worker, and no unrelated worktree
+changes. Unrelated shared-ref movement does not prevent success.
 
 Report the final verdict, files changed, fix-round count, basis-generation
 count, resolved IDs, and checks. Suggest `$commit` when useful. Never stage,

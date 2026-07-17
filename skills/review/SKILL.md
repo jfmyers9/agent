@@ -39,7 +39,8 @@ Keep generated frontmatter intact and write the body below its closing `---`.
 Every review starts with a binary verdict and an explicit recommendation:
 
 - `GO / proceed` — the premise and central approach are sound and no unresolved
-  blocking findings remain. Deferred observations are allowed.
+  blocking findings remain. Every criterion from an explicit intent source
+  passes. Deferred observations are allowed.
 - `NO-GO / fix` — the central approach is viable, but bounded corrections are
   required before merge.
 - `NO-GO / replace` — the premise is wrong or safe resolution requires
@@ -87,11 +88,13 @@ For an initial review:
 Resolve a proposal only when `--proposal` is present. Read an existing path
 directly; otherwise require one unambiguous
 `blueprint find --type proposal,spec,plan --match <target>` result. Record
-whether the source is a blueprint or an ordinary repository document. Do not
-guess from a branch name or silently adopt a stale design. For local reviews,
-inspect names before reading relevant untracked source or tests and never read
-likely secret files implicitly. Exclude generated files, build output,
-coverage, binaries, and routine lockfile churn unless material.
+whether the source is a blueprint or an ordinary repository document, its
+content fingerprint, decision, non-goals, and every acceptance criterion. Do
+not narrow that source to the implemented subset, guess from a branch name, or
+silently adopt a stale design. For local reviews, inspect names before reading
+relevant untracked source or tests and never read likely secret files
+implicitly. Exclude generated files, build output, coverage, binaries, and
+routine lockfile churn unless material.
 
 ### 2. Establish The Review Basis
 
@@ -101,6 +104,7 @@ Record a finite basis before generating findings:
 
 - objective and claimed problem, marked `inferred` when derived from commits or
   the diff;
+- explicit intent source and criterion-by-criterion pass or unmet status;
 - target and scope;
 - base and reviewed head SHAs for a branch or PR;
 - `HEAD`, changed paths, and deterministic tracked-diff fingerprints for local
@@ -117,6 +121,13 @@ line-level review. Verify the premise, whether the mechanism achieves the
 objective, responsibility placement, scope, and proportionality. A proposal is
 evidence of intent, not unquestionable truth.
 
+Treat a new public option, default, authorization gate, or similar product
+boundary as part of the central approach. Verify that the explicit intent
+source requires that boundary and that its default semantics preserve the
+requested experience. If intent does not establish the choice, state the
+required behavior without prescribing the new control; request clarification
+when the distinction is central to the product.
+
 ### 3. Run One Initial Discovery Pass
 
 If the approach gate establishes `NO-GO / replace`, stop exhaustive issue
@@ -126,7 +137,7 @@ should be discarded.
 
 Otherwise read the remaining checklists in `perspectives/` and apply:
 
-- **Core:** correctness and compatibility for behavior-affecting changes.
+- **Core:** correctness for behavior-affecting changes.
 - **Conditional:** design and maintainability only for changed boundaries,
   responsibilities, ownership, abstractions, public surface, or nontrivial
   control flow; tests and verification only for changed behavior, changed
@@ -150,11 +161,16 @@ Treat lens output as candidates. Keep an `F` finding only when all are true:
 3. source, execution, or tool evidence establishes the problem; and
 4. it must change before merge.
 
+State the required observable outcome in each finding. Prescribe a particular
+public API or product control only when the intent source or a demonstrated
+safety constraint requires it; an existing internal switch is not evidence
+that users should control it.
+
 Trace callers, callees, state, and asynchronous paths as needed. Group
-candidates by root cause before assigning IDs; include code, compatibility, and
-regression-test facets in one finding rather than duplicating them across
-lenses. Record a standalone test finding only when tests can miss a named
-regression or provide false confidence.
+candidates by root cause before assigning IDs; include code and regression-test
+facets in one finding rather than duplicating them across lenses. Record a
+standalone test finding only when tests can miss a named regression or provide
+false confidence.
 
 Use `D` only for an evidenced, non-blocking risk worth preserving. Omit style,
 optional cleanup, generic hardening, and speculative future work entirely.
@@ -224,6 +240,8 @@ deferred or omitted, never blocking findings.
 - Approach: sound | salvageable | misguided
 - Rationale: <direct decision rationale>
 - Objective: <stated or explicitly inferred goal>
+- Intent source: <path and fingerprint, or conversation/inferred>
+- Acceptance: <every explicit criterion and pass or unmet status>
 - Target: <branch, PR, or local diff and optional path scope>
 - Decision scope: full changeset | partial paths
 - Reviewed snapshot: <immutable base..head or local HEAD and fingerprint>
@@ -241,6 +259,7 @@ deferred or omitted, never blocking findings.
 - Local fingerprints: <per-hunk and untracked-file hashes, or none>
 - Contracts / invariants: <changed behavioral obligations>
 - Boundaries / responsibilities: <affected ownership and external edges>
+- Intent constraints: <decision, non-goals, defaults, and public controls>
 - Exclusions: <anything deliberately outside the decision scope>
 
 ## Recommended Replacement

@@ -46,8 +46,8 @@ authorize Graphite sync, force-pushes, unrelated changes, or publishing without
 4. Research uncertainties in session, then apply `$implement` to the request or
    named artifact. Do not create a proposal unless the user also explicitly
    invokes `$research`; when invoked, use its `--auto` mode.
-5. Review the complete diff in session for correctness, compatibility, security,
-   reliability, tests, and maintainability, using the review decision and
+5. Review the complete diff in session for correctness, security, reliability,
+   tests, and maintainability, using the review decision and
    materiality contract. Revalidate actionable findings and apply `$fix`. When
    the user explicitly requested a durable review, create it with
    `$review --local`, then close that same review with `$review --verify` after
