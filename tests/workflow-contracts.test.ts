@@ -182,7 +182,10 @@ describe("workflow contracts", () => {
     expect(body).toContain("only the coordinator creates workers");
     expect(body).toContain("one-shot, waitable, ephemeral worker");
     expect(body).toContain("Before and after every worker");
-    expect(body).toContain("all local refs, repository config, index");
+    expect(body).toContain("current branch ref, basis-dependent refs");
+    expect(body).toMatch(/basis-dependent ref\s+moved, invalidate the affected basis/);
+    expect(body).toMatch(/only\s+unrelated refs moved, record their new values and continue/);
+    expect(body).toContain("unrelated shared-ref movement as worker failure");
     expect(body).toContain("Git / remote actions: none");
     expect(body).toContain("--max-rounds <1-5>");
     expect(body).toContain("default `3`");

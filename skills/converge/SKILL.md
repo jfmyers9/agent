@@ -71,8 +71,8 @@ stage. Do not silently run the stage in the coordinator context.
 Maintain only this compact coordinator ledger:
 
 - objective, observable acceptance criteria, and allowed scope;
-- baseline branch, `HEAD`, all local refs, repository config, index,
-  changed-path, and content fingerprints;
+- baseline branch, `HEAD`, current branch ref, basis-dependent refs, repository
+  config, index, changed-path, and content fingerprints;
 - current intended snapshot and unrelated paths to preserve;
 - fix round and maximum;
 - current full-review basis generation, verdict, and approach rating;
@@ -80,12 +80,19 @@ Maintain only this compact coordinator ledger:
 - mapped fix deltas and focused/final check results; and
 - terminal blocker or replacement recommendation.
 
-Before and after every worker, independently compare the branch, `HEAD`, all
-local refs, repository config, index, changed paths, and
-tracked/relevant-untracked content fingerprints. A read-only worker must leave
-the complete repository snapshot unchanged. An implementation or fix worker
-may change only its authorized worktree paths. Stop on a metadata or state
-mismatch, preserve the worktree, and do not undo another actor's changes.
+Before and after every worker, independently compare the branch, `HEAD`,
+current branch ref, refs on which the review basis or checks depend, repository
+config, index, changed paths, and tracked/relevant-untracked content
+fingerprints. Also observe other local refs so concurrent activity in a linked
+worktree can be classified without being attributed to the worker. A read-only
+worker must leave relevant repository state unchanged. An implementation or
+fix worker may change only its authorized worktree paths.
+
+Stop on an unexpected change to the branch, `HEAD`, current branch ref,
+repository config, index, or worktree content. If only a basis-dependent ref
+moved, invalidate the affected basis and route to a fresh full review. If only
+unrelated refs moved, record their new values and continue. Never undo another
+actor's changes or treat unrelated shared-ref movement as worker failure.
 
 Require every worker result to attest `Git / remote actions: none`. A missing
 or different attestation is terminal even when local snapshots match. Apply
@@ -114,7 +121,9 @@ waitable fresh-worker mechanism before any mutation.
 Resolve an explicitly named artifact exactly as `implement` resolves an input,
 but do not update, validate, stage, or commit it. Derive concrete acceptance
 criteria, allowed scope, and preserved paths. Record the baseline snapshot,
-including all local refs and repository Git config.
+including the current branch ref, refs on which the review basis or checks
+depend, observed unrelated refs, and repository Git config. Resolve named refs
+to commit IDs in stage packets so workers do not silently adopt later movement.
 
 ### 2. Implement In A Brand-New Worker
 
@@ -261,7 +270,7 @@ Snapshots: <before and after branch/HEAD/index/path/content fingerprints>
 - `state-mutated`: stop without accepting `GO` or undoing the mutation.
 
 Final validation is not another broad review. `pass` completes only when the
-read-only snapshots match and every required check succeeds.
+relevant read-only snapshots match and every required check succeeds.
 
 ## Stop Conditions And Output
 
@@ -272,9 +281,10 @@ ambiguous partial edits, or the round limit is reached. Preserve the worktree
 and report the exact evidence or user decision needed.
 
 Success requires a current full-scope `GO / proceed`, a `sound` approach, zero
-unresolved `F` findings, passing final checks, matching read-only snapshots and
-Git metadata, a no-remote-action attestation from every worker, and no
-unrelated changes.
+unresolved `F` findings, passing final checks, matching relevant read-only
+snapshots and Git metadata, a no-remote-action attestation from every worker,
+and no unrelated worktree changes. Unrelated shared-ref movement does not
+prevent success.
 
 Report the final verdict, files changed, fix-round count, basis-generation
 count, resolved IDs, and checks. Suggest `$commit` when useful. Never stage,
