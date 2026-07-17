@@ -34,7 +34,8 @@
   "packages": [
     "npm:@dreki-gg/pi-context7",
     "npm:pi-cache-graph",
-    "git:github.com/DietrichGebert/ponytail@v4.8.4"
+    "git:github.com/DietrichGebert/ponytail@v4.8.4",
+    "git:github.com/juliusbrussee/caveman@v1.9.1"
   ],
   "extensions": [
     "extensions/agents-local/index.ts",
