@@ -859,13 +859,15 @@ async function buildSpawnPayload(
 export function piSpawnCommand(
 	sessionPath: string,
 	promptPath: string,
-	options: { nonInteractive?: boolean; autoExit?: boolean } = {},
+	options: { nonInteractive?: boolean; autoExit?: boolean; model?: string; thinking?: string } = {},
 ): string {
 	const printArg = options.nonInteractive ? " --print" : "";
+	const modelArg = options.model ? ` --model ${shellQuote(options.model)}` : "";
+	const thinkingArg = options.thinking ? ` --thinking ${shellQuote(options.thinking)}` : "";
 	const environment = `${SPAWN_ONE_SHOT_ENV}=${options.autoExit ? "1" : "0"} `;
 	return promptPath
-		? `bash -lc ${shellQuote(`${environment}pi${printArg} --session "$1" "$(cat "$2")"`)} pi-spawn ${shellQuote(sessionPath)} ${shellQuote(promptPath)}`
-		: `bash -lc ${shellQuote(`${environment}pi${printArg} --session "$1"`)} pi-spawn ${shellQuote(sessionPath)}`;
+		? `bash -lc ${shellQuote(`${environment}pi${printArg}${modelArg}${thinkingArg} --session "$1" "$(cat "$2")"`)} pi-spawn ${shellQuote(sessionPath)} ${shellQuote(promptPath)}`
+		: `bash -lc ${shellQuote(`${environment}pi${printArg}${modelArg}${thinkingArg} --session "$1"`)} pi-spawn ${shellQuote(sessionPath)}`;
 }
 
 export function isOneShotSpawnProcess(environment: NodeJS.ProcessEnv = process.env): boolean {
@@ -1303,6 +1305,8 @@ async function spawn(
 	const piCommand = piSpawnCommand(child.sessionPath, promptPath, {
 		nonInteractive: hidden,
 		autoExit: !request.interactive && !hidden,
+		model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
+		thinking: pi.getThinkingLevel(),
 	});
 	const cleanupDoneFile = cleanupSession ? await zellijCleanupDoneFile(cleanupSession) : undefined;
 	const muxRef = await placeMux(

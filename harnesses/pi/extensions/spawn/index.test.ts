@@ -127,6 +127,15 @@ describe("spawn command wrappers", () => {
 		expect(command).toContain('PI_SPAWN_ONE_SHOT=0 pi --session "$1"');
 	});
 
+	test("inherits the parent model and thinking level", () => {
+		const command = piSpawnCommand("/sessions/child.jsonl", "/tmp/prompt.md", {
+			model: "openai/gpt-5.6-sol",
+			thinking: "high",
+		});
+
+		expect(command).toContain("pi --model openai/gpt-5.6-sol --thinking high --session");
+	});
+
 	test("wraps owned hidden zellij commands with session cleanup", () => {
 		const command = zellijSessionCleanupCommand("printf ok", "/tmp/owned-session.done");
 
