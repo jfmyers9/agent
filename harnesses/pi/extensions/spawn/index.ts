@@ -26,6 +26,7 @@ import { navInput, navOptionalInput, navSelect } from "./cockpit-nav.ts";
 
 const CONTEXT_RECENT_TOKEN_BUDGET = 8_000;
 const SPAWN_ENTRY_TYPE = "spawn-lane";
+const SPAWN_ONE_SHOT_ENV = "PI_SPAWN_ONE_SHOT";
 const SPAWN_USAGE =
 	"Usage: /spawn direct|context|empty [child|root] ...; /spawn shell|bash ...; /spawn command|run ... -- <command>; /spawn list|map|status|help";
 
@@ -858,12 +859,17 @@ async function buildSpawnPayload(
 export function piSpawnCommand(
 	sessionPath: string,
 	promptPath: string,
-	options: { nonInteractive?: boolean } = {},
+	options: { nonInteractive?: boolean; autoExit?: boolean } = {},
 ): string {
 	const printArg = options.nonInteractive ? " --print" : "";
+	const environment = `${SPAWN_ONE_SHOT_ENV}=${options.autoExit ? "1" : "0"} `;
 	return promptPath
-		? `bash -lc ${shellQuote(`pi${printArg} --session "$1" "$(cat "$2")"`)} pi-spawn ${shellQuote(sessionPath)} ${shellQuote(promptPath)}`
-		: `bash -lc ${shellQuote(`pi${printArg} --session "$1"`)} pi-spawn ${shellQuote(sessionPath)}`;
+		? `bash -lc ${shellQuote(`${environment}pi${printArg} --session "$1" "$(cat "$2")"`)} pi-spawn ${shellQuote(sessionPath)} ${shellQuote(promptPath)}`
+		: `bash -lc ${shellQuote(`${environment}pi${printArg} --session "$1"`)} pi-spawn ${shellQuote(sessionPath)}`;
+}
+
+export function isOneShotSpawnProcess(environment: NodeJS.ProcessEnv = process.env): boolean {
+	return environment[SPAWN_ONE_SHOT_ENV] === "1";
 }
 
 function shellSpawnCommand(options: { keepOpen?: boolean } = {}): string {
@@ -1283,8 +1289,10 @@ async function spawn(
 		name: child.name,
 	};
 	const cleanupSession = ownedPtyAliasZellijSession(request, mux);
+	const hidden = request.placement === "hidden";
 	const piCommand = piSpawnCommand(child.sessionPath, promptPath, {
-		nonInteractive: !request.interactive || request.placement === "hidden",
+		nonInteractive: hidden,
+		autoExit: !request.interactive && !hidden,
 	});
 	const cleanupDoneFile = cleanupSession ? await zellijCleanupDoneFile(cleanupSession) : undefined;
 	const muxRef = await placeMux(
@@ -1688,7 +1696,7 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 		description: [
 			"Spawn an execution lane without raw tmux or zellij commands. Use runtime='pi' for agent lanes, runtime='shell' for a fresh shell, or runtime='command' with command for a process lane.",
 			"For Pi lanes, use payload='direct' for a self-contained bounded task; payload='context' when the new lane needs current conversation context; payload='empty' for a blank lane.",
-			"Pi and command lanes are one-shot by default and close when their task exits; set interactive=true to keep a visible lane open. Shell lanes are always interactive. Hidden Pi and command lanes are always one-shot.",
+			"Pi and command lanes are one-shot by default: visible lanes stream live output and close when their task exits. Set interactive=true to keep a lane open after its initial task. Shell lanes are always interactive. Hidden Pi and command lanes are always one-shot.",
 			"Placement defaults to 'split-pane'. Use placement='new-window' for durable parallel work, placement='hidden' for a background lane, and placement='new-session' only from /spawn because tools cannot replace the active session.",
 			"For split panes, use splitDirection='horizontal' or 'vertical' and optional splitSizePercent=10..90, e.g. 30 for a 30% split. Use mux='auto', 'tmux', or 'zellij'; mux='pty' is a hidden zellij-session alias.",
 			"Use cwd for a target repo/project. Use relation='root' for unrelated or cross-project lanes unless targetSessionPath explicitly names the parent session for relation='child'. Use targetMuxWorkspace to place the lane in another mux workspace; targetMuxSession is accepted as a legacy alias.",
@@ -1785,6 +1793,9 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 
 export default function spawnExtension(pi: ExtensionAPI) {
 	let registered = false;
+	pi.on("agent_end", (_event, ctx) => {
+		if (isOneShotSpawnProcess()) ctx.shutdown();
+	});
 	pi.on("session_start", () => {
 		if (registered || hasExistingSpawnSurface(pi)) return;
 		registerSpawnSurface(pi);

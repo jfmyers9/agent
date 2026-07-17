@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	formatSpawnLaneEntries,
 	formatSpawnMap,
+	isOneShotSpawnProcess,
 	parseMux,
 	parsePlacement,
 	piSpawnCommand,
@@ -83,17 +84,29 @@ describe("spawn parsing", () => {
 });
 
 describe("spawn command wrappers", () => {
-	test("runs hidden Pi lanes non-interactively so their tmux session can exit", () => {
-		const command = piSpawnCommand("/sessions/child.jsonl", "/tmp/prompt.md", { nonInteractive: true });
-
-		expect(command).toContain('pi --print --session "$1"');
+	test("recognizes only explicitly marked one-shot Pi processes", () => {
+		expect(isOneShotSpawnProcess({ PI_SPAWN_ONE_SHOT: "1" })).toBeTrue();
+		expect(isOneShotSpawnProcess({ PI_SPAWN_ONE_SHOT: "0" })).toBeFalse();
+		expect(isOneShotSpawnProcess({})).toBeFalse();
 	});
 
-	test("keeps visible Pi lanes interactive", () => {
+	test("runs hidden Pi lanes in print mode so their tmux session can exit", () => {
+		const command = piSpawnCommand("/sessions/child.jsonl", "/tmp/prompt.md", { nonInteractive: true });
+
+		expect(command).toContain('PI_SPAWN_ONE_SHOT=0 pi --print --session "$1"');
+	});
+
+	test("shows the live TUI for visible one-shot Pi lanes and exits after settling", () => {
+		const command = piSpawnCommand("/sessions/child.jsonl", "/tmp/prompt.md", { autoExit: true });
+
+		expect(command).toContain('PI_SPAWN_ONE_SHOT=1 pi --session "$1"');
+		expect(command).not.toContain("--print");
+	});
+
+	test("keeps interactive Pi lanes open by clearing an inherited one-shot marker", () => {
 		const command = piSpawnCommand("/sessions/child.jsonl", "/tmp/prompt.md");
 
-		expect(command).toContain('pi --session "$1"');
-		expect(command).not.toContain("--print");
+		expect(command).toContain('PI_SPAWN_ONE_SHOT=0 pi --session "$1"');
 	});
 
 	test("wraps owned hidden zellij commands with session cleanup", () => {
