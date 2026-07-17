@@ -30,7 +30,7 @@
     "clearOnShrink": false,
     "showTerminalProgress": true
   },
-  "lastChangelogVersion": "0.80.9",
+  "lastChangelogVersion": "0.80.10",
   "packages": [
     "npm:@dreki-gg/pi-context7",
     "npm:pi-cache-graph"

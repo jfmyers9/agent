@@ -54,7 +54,7 @@ Spawn opens an execution lane. It only controls runtime, payload, topology, mux 
 
 ## Options
 
-- \`--placement new-window|split-pane|hidden|new-session\`
+- \`--placement split-pane|new-window|hidden|new-session\` (default: \`split-pane\`)
 - \`--split-direction horizontal|vertical\`
 - \`--split-size-percent 10..90\`
 - \`--cwd <path>\`
@@ -458,7 +458,7 @@ function normalizeSpawnRequest(input: Partial<SpawnRequest>, ctx: ExtensionConte
 	if (runtime === "shell" || runtime === "command") relation = "root";
 	if (relation === "child" && cwd !== currentCwd && !targetSessionPath) relation = "root";
 	const mux = input.mux ?? "auto";
-	const placement = input.placement ?? (mux === "pty" ? "hidden" : "new-window");
+	const placement = input.placement ?? (mux === "pty" ? "hidden" : "split-pane");
 	const splitSizePercent = validateSplitSizePercent(input.splitSizePercent);
 	const targetMuxSession = input.targetMuxSession?.trim() || undefined;
 	const targetMuxWorkspace = input.targetMuxWorkspace?.trim() || undefined;
@@ -635,7 +635,7 @@ async function promptSpawnRequest(ctx: ExtensionContext): Promise<SpawnRequest |
 	let runtime: SpawnRuntime = "pi";
 	let payload: SpawnPayload = "direct";
 	let relation: SpawnRelation = "child";
-	let placement: SpawnPlacement = "new-window";
+	let placement: SpawnPlacement = "split-pane";
 	let splitDirection: SpawnSplitDirection | undefined;
 	let splitSizePercent: number | undefined;
 	let targetSessionPath: string | undefined;
@@ -680,7 +680,7 @@ async function promptSpawnRequest(ctx: ExtensionContext): Promise<SpawnRequest |
 		}
 
 		const placementOptions =
-			runtime === "pi" ? ["new window", "split pane", "hidden", "new session"] : ["new window", "split pane", "hidden"];
+			runtime === "pi" ? ["split pane", "new window", "hidden", "new session"] : ["split pane", "new window", "hidden"];
 		const placementResult = await navSelect(ctx, "Placement", placementOptions);
 		if (placementResult.action === "back") continue;
 		if (placementResult.action === "cancel") return undefined;
@@ -1671,7 +1671,7 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 		description: [
 			"Spawn an execution lane without raw tmux or zellij commands. Use runtime='pi' for agent lanes, runtime='shell' for a fresh shell, or runtime='command' with command for a process lane.",
 			"For Pi lanes, use payload='direct' for a self-contained bounded task; payload='context' when the new lane needs current conversation context; payload='empty' for a blank lane.",
-			"Use placement='new-window' for durable parallel work, placement='split-pane' for quick parallel iteration, placement='hidden' for a background lane, and placement='new-session' only from /spawn because tools cannot replace the active session.",
+			"Placement defaults to 'split-pane'. Use placement='new-window' for durable parallel work, placement='hidden' for a background lane, and placement='new-session' only from /spawn because tools cannot replace the active session.",
 			"For split panes, use splitDirection='horizontal' or 'vertical' and optional splitSizePercent=10..90, e.g. 30 for a 30% split. Use mux='auto', 'tmux', or 'zellij'; mux='pty' is a hidden zellij-session alias.",
 			"Use cwd for a target repo/project. Use relation='root' for unrelated or cross-project lanes unless targetSessionPath explicitly names the parent session for relation='child'. Use targetMuxWorkspace to place the lane in another mux workspace; targetMuxSession is accepted as a legacy alias.",
 		].join(" "),

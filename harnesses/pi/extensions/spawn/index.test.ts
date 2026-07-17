@@ -11,6 +11,19 @@ import {
 } from "./index";
 
 describe("spawn parsing", () => {
+	test("defaults lanes to split-pane placement", () => {
+		const request = toolRequest(
+			{
+				runtime: "pi",
+				payload: "direct",
+				prompt: "inspect docs",
+			},
+			{ cwd: "/repo" } as any,
+		);
+
+		expect(request.placement).toBe("split-pane");
+	});
+
 	test("accepts zellij, pty, and hidden placement aliases", () => {
 		expect(parseMux("zellij")).toBe("zellij");
 		expect(parseMux("pty")).toBe("pty");
