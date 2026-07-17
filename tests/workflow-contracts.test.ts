@@ -198,14 +198,21 @@ describe("workflow contracts", () => {
 
     const implementation = section(body, "2. Implement In A Brand-New Worker");
     const discovery = section(body, "3. Establish A Basis In A Brand-New Full Reviewer");
-    const fix = section(body, "4. Fix In A Brand-New Worker");
+    const fix = section(body, "4. Fix In Bounded Brand-New Workers");
     const verification = section(body, "5. Verify In A Brand-New Reviewer");
     const validation = section(body, "6. Validate In A Brand-New Final Worker");
 
     expect(implementation).toMatch(/fresh implementation\s+worker/);
     expect(discovery).toMatch(/fresh read-only full reviewer/);
     expect(fix).toMatch(/fresh fixer/);
+    expect(fix).toContain("split-required");
+    expect(fix).toContain("Outcome: fixed | progress");
+    expect(fix).toMatch(/needing\s+another worker[\s\S]*does not advance/);
+    expect(fix).toMatch(/broad compilation and test suites belong to\s+final validation/);
+    expect(body).toMatch(/Reserve `blocked` for a genuine external dependency/);
+    expect(body).toMatch(/turn\/context limit is not a\s+blocker/);
     expect(verification).toMatch(/fresh, read-only reviewer/);
+    expect(verification).toContain("Batch status: complete | coherent-progress | rejected");
     expect(validation).toMatch(/fresh, read-only validation worker/);
     expect(verification).toContain("original-scope miss");
     expect(validation).toContain("Snapshots:");

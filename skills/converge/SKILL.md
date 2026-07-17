@@ -41,7 +41,7 @@ state. It must delegate every substantive stage to a brand-new worker:
 
 1. implementation, unless `--current`;
 2. every full discovery review;
-3. every fix attempt;
+3. every bounded fix batch or checkpoint;
 4. every closure verification; and
 5. final validation.
 
@@ -74,7 +74,7 @@ Maintain only this compact coordinator ledger:
 - baseline branch, `HEAD`, current branch ref, basis-dependent refs, repository
   config, index, changed-path, and content fingerprints;
 - current intended snapshot and unrelated paths to preserve;
-- fix round and maximum;
+- fix round and maximum, active batch or checkpoint, and exact remaining work;
 - current full-review basis generation, verdict, and approach rating;
 - stable `F` IDs with resolution and verification state;
 - mapped fix deltas and focused/final check results; and
@@ -103,6 +103,12 @@ Every stage packet includes the repository path, stage role, objective and
 criteria, only the ledger fields needed by that stage, its mutation boundary,
 the no-delegation and Git/remote prohibitions, and its exact output schema.
 Workers inspect live files instead of receiving copied source or full diffs.
+
+Reserve `blocked` for a genuine external dependency, unavailable required
+input, or harness failure that the worker cannot resolve. Workload size,
+remaining fix work, or a practical turn/context limit is not a blocker. A
+fixer must instead return the pre-edit split or post-edit progress outcome
+below.
 
 ## Workflow
 
@@ -180,32 +186,54 @@ replacement shape; never patch around a misguided approach. On `NO-GO / fix`,
 enter the fix loop. On full-scope `GO / proceed` with a `sound` approach and no
 unresolved findings, continue to final validation.
 
-### 4. Fix In A Brand-New Worker
+### 4. Fix In Bounded Brand-New Workers
 
-Increment the round and stop before editing if it exceeds the configured
-maximum. Launch a fresh fixer with only the objective, criteria, allowed paths,
-current immutable review basis, unresolved `F` rows, verified rows that must
-remain closed, and pre-worker snapshot.
+Start round 1 when correction first begins. Advance the round only when closure
+verification rejects a correction attempted in the current round; needing
+another worker for unattempted or coherently checkpointed work does not advance
+it. Stop before editing when the next round would exceed the configured
+maximum.
+
+Partition unresolved findings into the smallest dependency-safe batch that one
+worker can inspect, edit, and focused-check in one turn. Prefer whole findings.
+For a finding too large for one turn, define a coherent checkpoint with an
+observable postcondition and no knowingly broken intermediate state. Launch a
+fresh fixer with only the objective, criteria, allowed paths, current immutable
+review basis, assigned batch or checkpoint, compact state of remaining rows,
+verified rows that must remain closed, and pre-worker snapshot.
 
 Tell it to follow the installed `fix` revalidation and scope rules without
 reading or writing a blueprint. Before editing, it must return
 `fresh-review-required` if basis drift or the necessary correction exceeds the
-recorded basis. Otherwise it may edit only valid unresolved findings and must
-map every changed path and hunk to an ID.
+recorded basis, or `split-required` when even the assigned work will not fit a
+single turn. A split result must propose smaller dependency-safe packets and
+leave the worktree unchanged.
+
+Otherwise it may edit only its assigned valid findings or checkpoint and must
+map every changed path and hunk to an ID. It runs focused checks proportional
+to that batch; broad compilation and test suites belong to final validation
+unless the checkpoint cannot be made coherent without them. If practical
+capacity runs low after editing, it must stop at a coherent state and return
+`progress`, never `blocked`, with completed work, exact remaining work, mapped
+edits, and available focused-check evidence.
 
 Require:
 
 ```text
-Outcome: fixed | no-change | fresh-review-required | blocked
+Outcome: fixed | progress | no-change | split-required |
+  fresh-review-required | blocked
+Batch: <assigned IDs/checkpoint, completed work, and exact remaining work>
 Resolutions: <per-ID classification, evidence, and pending status>
 Changes: <ID to every changed path and hunk>
 Checks: <command and result>
 State: <branch, HEAD, index, and changed paths>
 ```
 
-Stop on unmapped edits, ambiguous partial work, or repository-state mismatch.
-Route a clean, pre-edit `fresh-review-required` result to step 3. Otherwise
-continue to verification even when the fixer reports `no-change`.
+Stop on unmapped edits, ambiguous or broken partial work, or repository-state
+mismatch. Repartition and launch a new fresh fixer after a clean, pre-edit
+`split-required`; route a clean, pre-edit `fresh-review-required` to step 3.
+Accept `progress` only for a coherent mapped checkpoint with exact remaining
+work. Route `fixed`, `progress`, and `no-change` to verification.
 
 ### 5. Verify In A Brand-New Reviewer
 
@@ -216,6 +244,7 @@ exact pre-worker snapshot. Include finding evidence, not prior review prose.
 Tell it to apply only the installed `review` closure contract:
 
 - verify pending resolutions and every mapped fix hunk;
+- classify the batch as complete, coherent progress, or a rejected correction;
 - preserve verified findings unless an overlapping edit regressed them;
 - never rerun broad discovery or add deferred observations;
 - append a new `F` only for a blocker introduced by the mapped fix; and
@@ -229,6 +258,7 @@ Outcome: verified | fix-required | fresh-review-required | blocked | state-mutat
 Verdict: GO | NO-GO
 Recommendation: proceed | fix
 Approach: sound | salvageable
+Batch status: complete | coherent-progress | rejected
 Findings: <all IDs with resolution and verification state>
 Fix delta: <ID-to-hunk mapping>
 Basis drift: none | <reason a fresh full review is required>
@@ -236,8 +266,11 @@ Checks: <commands and results>
 State: <branch, HEAD, index, and changed paths>
 ```
 
-Merge the result only after the read-only state comparison passes. Route
-`fix-required` to step 4 and `fresh-review-required` to step 3, where a new
+Merge the result only after the read-only state comparison passes. A
+`coherent-progress` checkpoint is not a failed correction. After a `complete`
+or `coherent-progress` batch, launch a new fresh fixer for the next unattempted
+work in the same round. On `rejected`, route `fix-required` to step 4 and
+advance the round. Route `fresh-review-required` to step 3, where a new
 full-scope basis replaces the stale generation. Continue only on full-scope
 `GO / proceed` with a `sound` approach and zero unresolved `F` findings.
 
