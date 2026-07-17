@@ -14,5 +14,6 @@ Includes:
 - `statusline.py` — Claude Code statusline protocol
 - `hooks/notify-completion.sh` — Claude notification hook
 
-Shared instructions come from root `AGENTS.md`, linked as
-`~/.claude/CLAUDE.md`.
+Shared instructions come from `global/AGENTS.md`. The installer links it as
+`~/.claude/AGENTS.md` and links `global/CLAUDE.md` as
+`~/.claude/CLAUDE.md`. Root `AGENTS.md` remains repository-only.

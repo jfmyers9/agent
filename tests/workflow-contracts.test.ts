@@ -46,7 +46,7 @@ describe("opt-in routing", () => {
     for (const skill of directSkills) {
       expect(read(`skills/${skill}/SKILL.md`)).not.toMatch(/blueprint create /);
     }
-    expect(read("AGENTS.md")).toContain("Ordinary Q&A, coding, debugging, and PR work");
+    expect(read("global/AGENTS.md")).toContain("Ordinary Q&A, coding, debugging, and PR work");
   });
 
   test("named artifact skills persist the requested artifact", () => {
@@ -124,6 +124,7 @@ describe("workflow contracts", () => {
   test("active workflow docs contain no retired approval states", () => {
     const files = [
       "AGENTS.md",
+      "global/AGENTS.md",
       "README.md",
       "rules/blueprints.md",
       "rules/harness-compat.md",

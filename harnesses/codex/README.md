@@ -21,7 +21,7 @@ The installer copies the mutable baseline config and links shared files:
 - `harnesses/codex/config.toml` to `~/.codex/config.toml` as a baseline copy
 - `harnesses/codex/hooks.json` to `~/.codex/hooks.json`
 - `harnesses/codex/hooks/*` to `~/.codex/hooks/`
-- `AGENTS.md` to `~/.codex/AGENTS.md` as a reference copy
+- `global/AGENTS.md` to `~/.codex/AGENTS.md` as a reference copy
 - `rules/` to `~/.codex/rules-md` as reference Markdown
 - `skills/` to `~/.agents/skills` for Codex discovery
 - `rules/` to `~/.agents/rules` for shared skill references

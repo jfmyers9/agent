@@ -10,7 +10,7 @@ Installed to `~/.pi/agent/` by:
 
 Pi loads:
 
-- `AGENTS.md` as global context
+- `global/AGENTS.md`, installed as `AGENTS.md`, as global context
 - `skills/` via Agent Skills discovery
 - `rules/` as referenced Markdown
 - `harnesses/pi/settings.json` for model, package, and extension defaults

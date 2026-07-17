@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	lstatSync,
+	mkdtempSync,
+	mkdirSync,
+	readFileSync,
+	readlinkSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -44,7 +53,12 @@ describe("installer safety", () => {
 		const first = install("install", "claude", paths);
 		expect(first.stderr).toBe("");
 		expect(first.status).toBe(0);
-		expect(readFileSync(join(paths.claude, "AGENTS.md"), "utf8")).toBe(readFileSync(join(root, "AGENTS.md"), "utf8"));
+		expect(readFileSync(join(paths.claude, "AGENTS.md"), "utf8")).toBe(
+			readFileSync(join(root, "global/AGENTS.md"), "utf8"),
+		);
+		expect(readFileSync(join(paths.claude, "CLAUDE.md"), "utf8")).toBe(
+			readFileSync(join(root, "global/CLAUDE.md"), "utf8"),
+		);
 
 		const second = install("install", "claude", paths);
 		expect(second.status).toBe(0);
@@ -58,6 +72,19 @@ describe("installer safety", () => {
 		expect(result.status).toBe(0);
 		expect(result.stdout).toContain("Would link:");
 		expect(() => readFileSync(join(paths.claude, "AGENTS.md"))).toThrow();
+	});
+
+	test("install migrates legacy global instruction links", () => {
+		const paths = workspace();
+		mkdirSync(paths.claude, { recursive: true });
+		symlinkSync(join(root, "AGENTS.md"), join(paths.claude, "AGENTS.md"));
+		symlinkSync(join(root, "CLAUDE.md"), join(paths.claude, "CLAUDE.md"));
+
+		const result = install("install", "claude", paths);
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain("Relinked:");
+		expect(readlinkSync(join(paths.claude, "AGENTS.md"))).toBe(join(root, "global/AGENTS.md"));
+		expect(readlinkSync(join(paths.claude, "CLAUDE.md"))).toBe(join(root, "global/CLAUDE.md"));
 	});
 
 	test("a real-file conflict prevents every planned write", () => {

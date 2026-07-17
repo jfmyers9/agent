@@ -5,7 +5,8 @@ configuration plus harness adapters.
 
 - Edit files in this repo, not generated/symlinked files under
   `~/.claude` or `~/.pi/agent`
-- Shared instructions live in `AGENTS.md`
+- Shared global instructions live in `global/AGENTS.md`
+- Repository-only instructions live in `AGENTS.md`
 - Claude-specific config lives in `harnesses/claude/`
 - Pi-specific config lives in `harnesses/pi/`
 - Non-symlinked additions must be added to `install.sh`

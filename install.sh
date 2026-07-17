@@ -81,8 +81,8 @@ add_seed() {
 
 plan_claude() {
 	local dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-	add_link "$SCRIPT_DIR/CLAUDE.md" "$dir/CLAUDE.md"
-	add_link "$SCRIPT_DIR/AGENTS.md" "$dir/AGENTS.md"
+	add_link "$SCRIPT_DIR/global/CLAUDE.md" "$dir/CLAUDE.md"
+	add_link "$SCRIPT_DIR/global/AGENTS.md" "$dir/AGENTS.md"
 	add_link "$SCRIPT_DIR/rules" "$dir/rules"
 	add_link "$SCRIPT_DIR/skills" "$dir/skills"
 	add_link "$SCRIPT_DIR/harnesses/claude/settings.json" "$dir/settings.json"
@@ -96,7 +96,7 @@ plan_claude() {
 
 plan_pi() {
 	local dir="${PI_CONFIG_DIR:-$HOME/.pi/agent}"
-	add_link "$SCRIPT_DIR/AGENTS.md" "$dir/AGENTS.md"
+	add_link "$SCRIPT_DIR/global/AGENTS.md" "$dir/AGENTS.md"
 	add_link "$SCRIPT_DIR/rules" "$dir/rules"
 	add_link "$SCRIPT_DIR/skills" "$dir/skills"
 	add_link "$SCRIPT_DIR/harnesses/pi/settings.json" "$dir/settings.json"
@@ -141,7 +141,7 @@ plan_codex() {
 		[ -f "$hook" ] || continue
 		add_link "$hook" "$dir/hooks/$(basename "$hook")"
 	done
-	add_link "$SCRIPT_DIR/AGENTS.md" "$dir/AGENTS.md"
+	add_link "$SCRIPT_DIR/global/AGENTS.md" "$dir/AGENTS.md"
 	add_link "$SCRIPT_DIR/rules" "$dir/rules-md"
 	add_link "$SCRIPT_DIR/skills" "$agents_dir/skills"
 	add_link "$SCRIPT_DIR/rules" "$agents_dir/rules"
@@ -164,6 +164,18 @@ build_plan() {
 
 is_owned_link() {
 	[ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]
+}
+
+is_legacy_owned_link() {
+	local source="$1"
+	local destination="$2"
+	local legacy_source
+	case "$source" in
+	"$SCRIPT_DIR/global/AGENTS.md") legacy_source="$SCRIPT_DIR/AGENTS.md" ;;
+	"$SCRIPT_DIR/global/CLAUDE.md") legacy_source="$SCRIPT_DIR/CLAUDE.md" ;;
+	*) return 1 ;;
+	esac
+	[ -L "$destination" ] && [ "$(readlink "$destination")" = "$legacy_source" ]
 }
 
 is_planned_destination() {
@@ -255,7 +267,7 @@ preflight_targets() {
 			fi
 			continue
 		fi
-		if is_owned_link "$source" "$destination"; then
+		if is_owned_link "$source" "$destination" || is_legacy_owned_link "$source" "$destination"; then
 			continue
 		fi
 		if [ -L "$destination" ]; then
@@ -324,6 +336,10 @@ apply_plan() {
 			fi
 		elif is_owned_link "$source" "$destination"; then
 			echo "Up to date: $destination"
+		elif is_legacy_owned_link "$source" "$destination"; then
+			rm "$destination"
+			ln -s "$source" "$destination"
+			echo "Relinked: $destination"
 		else
 			mkdir -p "$(dirname "$destination")"
 			ln -s "$source" "$destination"
@@ -346,6 +362,8 @@ print_plan() {
 			fi
 		elif is_owned_link "$source" "$destination"; then
 			echo "Up to date: $destination"
+		elif is_legacy_owned_link "$source" "$destination"; then
+			echo "Would relink: $destination -> $source"
 		else
 			echo "Would link: $destination -> $source"
 		fi
@@ -360,7 +378,7 @@ unlink_plan() {
 		kind="${KINDS[$index]}"
 		if [ "$kind" = "seed" ]; then
 			echo "Preserved: $destination"
-		elif is_owned_link "$source" "$destination"; then
+		elif is_owned_link "$source" "$destination" || is_legacy_owned_link "$source" "$destination"; then
 			rm "$destination"
 			echo "Unlinked: $destination"
 		elif [ -e "$destination" ] || [ -L "$destination" ]; then

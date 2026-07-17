@@ -63,8 +63,11 @@ Rust and Bun tests.
 ## Layout
 
 ```text
-AGENTS.md                  # shared global instructions
-CLAUDE.md                  # Claude compatibility entrypoint
+AGENTS.md                  # repository-only instructions
+CLAUDE.md                  # repository Claude compatibility entrypoint
+global/
+  AGENTS.md                # shared global instructions
+  CLAUDE.md                # globally installed Claude entrypoint
 install.sh                 # harness-aware installer
 bin/blueprint              # portable blueprint state CLI
 bin/git-surgeon.ts         # deterministic selective-hunk Git CLI
@@ -94,7 +97,8 @@ harnesses/
 
 Portable across harnesses:
 
-- `AGENTS.md` — global instructions
+- `global/AGENTS.md` — global instructions installed for each harness
+- `AGENTS.md` — repository-only instructions layered over the global file
 - `rules/*.md` — style, tests, comments, PR workflow, context budget
 - `skills/*/SKILL.md` — Agent Skills-compatible workflow packages
 - `bin/blueprint` — opt-in proposals, reviews, and reports
@@ -117,7 +121,7 @@ archivable for compatibility.
 
 Installed by `./install.sh claude` into `~/.claude`:
 
-- links `CLAUDE.md`, `AGENTS.md`, `rules/`, `skills/`
+- links `global/CLAUDE.md`, `global/AGENTS.md`, `rules/`, `skills/`
 - links `harnesses/claude/settings.json` as `settings.json`
 - links Claude statusline and hooks
 - installs `blueprint` and `git-surgeon` to `~/.local/bin`
@@ -134,7 +138,7 @@ unless an artifact skill is explicitly invoked.
 
 Installed by `./install.sh pi` into `~/.pi/agent`:
 
-- links `AGENTS.md`, `rules/`, `skills/`
+- links `global/AGENTS.md`, `rules/`, `skills/`
 - links `harnesses/pi/settings.json` as `settings.json`
 - links Pi `keybindings.json`, `tui.json`, and `effort.json` when present
 - links Pi extensions named in `settings.json`, plus shared extension support, and prunes stale owned extension links
@@ -160,7 +164,7 @@ Installed by `./install.sh codex` into `~/.codex` and `~/.agents`:
 
 - copies `harnesses/codex/config.toml` as a baseline to `~/.codex/config.toml`
 - links `harnesses/codex/hooks.json` and `harnesses/codex/hooks/*`
-- links `AGENTS.md` and `rules/` into `~/.codex` as reference files
+- links `global/AGENTS.md` and `rules/` into `~/.codex` as reference files
 - links shared `skills/` as `$HOME/.agents/skills`
 - links shared `rules/` as `$HOME/.agents/rules`
 - installs `blueprint` and `git-surgeon` to `~/.local/bin`
