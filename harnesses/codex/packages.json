@@ -1,0 +1,9 @@
+{
+  "plugins": [
+    {
+      "marketplace": "ponytail",
+      "source": "DietrichGebert/ponytail",
+      "plugin": "ponytail@ponytail"
+    }
+  ]
+}

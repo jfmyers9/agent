@@ -167,6 +167,7 @@ Installed by `./install.sh codex` into `~/.codex` and `~/.agents`:
 - links `global/AGENTS.md` and `rules/` into `~/.codex` as reference files
 - links shared `skills/` as `$HOME/.agents/skills`
 - links shared `rules/` as `$HOME/.agents/rules`
+- installs plugins declared in `harnesses/codex/packages.json`
 - installs `blueprint` and `git-surgeon` to `~/.local/bin`
 
 If `~/.codex/config.toml` already exists as a real file, the installer preserves
@@ -186,6 +187,10 @@ Manual artifact skills: `context`, `research`, `review`, and `diagnose`.
 Direct workflows may consume artifacts but do not require or create trackers:
 `implement`, `fix`, `debug`, `respond`, `split-commit`, `resume-work`, `vibe`,
 and `converge`.
+
+The Codex package manifest installs Ponytail automatically. Caveman `lite` is
+provided by the shared `AGENTS.md`. Use `CODEX_SKIP_PACKAGES=1` to skip external
+plugin installation, such as during an offline bootstrap.
 
 ## Rules
 

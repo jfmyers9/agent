@@ -73,6 +73,24 @@ for (const extension of settings.extensions ?? []) {
 ' "$settings"
 }
 
+codex_configured_plugins() {
+	local settings="$1"
+	if ! command -v node >/dev/null 2>&1; then
+		echo "Error: node is required to read Codex package settings." >&2
+		exit 1
+	fi
+	node -e '
+const fs = require("fs");
+const settings = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+for (const entry of settings.plugins ?? []) {
+  if (!entry || typeof entry.marketplace !== "string" || typeof entry.source !== "string" || typeof entry.plugin !== "string") {
+    throw new Error("Invalid Codex plugin entry");
+  }
+  console.log([entry.marketplace, entry.source, entry.plugin].join("\t"));
+}
+' "$settings"
+}
+
 add_seed() {
 	SOURCES+=("$1")
 	DESTINATIONS+=("$2")
@@ -320,6 +338,52 @@ prepare_install() {
 	esac
 }
 
+install_codex_packages() {
+	[ "${CODEX_SKIP_PACKAGES:-0}" != "1" ] || {
+		echo "Skipped Codex packages: CODEX_SKIP_PACKAGES=1"
+		return
+	}
+	if ! command -v codex >/dev/null 2>&1; then
+		echo "Error: codex is required to install configured Codex plugins." >&2
+		exit 1
+	fi
+	local codex_home marketplace source plugin marketplaces installed
+	codex_home="${CODEX_CONFIG_DIR:-${CODEX_HOME:-$HOME/.codex}}"
+	marketplaces="$(CODEX_HOME="$codex_home" codex plugin marketplace list --json)"
+	installed="$(CODEX_HOME="$codex_home" codex plugin list --json)"
+	while IFS=$'\t' read -r marketplace source plugin; do
+		[ -n "$marketplace" ] || continue
+		if ! node -e '
+const data = JSON.parse(process.argv[1]);
+process.exit(data.marketplaces?.some((entry) => entry.name === process.argv[2]) ? 0 : 1);
+' "$marketplaces" "$marketplace"; then
+			CODEX_HOME="$codex_home" codex plugin marketplace add "$source"
+			marketplaces="$(CODEX_HOME="$codex_home" codex plugin marketplace list --json)"
+		else
+			echo "Up to date: Codex marketplace $marketplace"
+		fi
+		if ! node -e '
+const data = JSON.parse(process.argv[1]);
+const name = process.argv[2].split("@", 1)[0];
+process.exit(data.installed?.some((entry) => entry.name === name) ? 0 : 1);
+' "$installed" "$plugin"; then
+			CODEX_HOME="$codex_home" codex plugin add "$plugin"
+			installed="$(CODEX_HOME="$codex_home" codex plugin list --json)"
+		else
+			echo "Up to date: Codex plugin $plugin"
+		fi
+	done < <(codex_configured_plugins "$SCRIPT_DIR/harnesses/codex/packages.json")
+}
+
+print_codex_packages() {
+	local marketplace source plugin
+	while IFS=$'\t' read -r marketplace source plugin; do
+		[ -n "$marketplace" ] || continue
+		echo "Would ensure Codex marketplace: $marketplace ($source)"
+		echo "Would ensure Codex plugin: $plugin"
+	done < <(codex_configured_plugins "$SCRIPT_DIR/harnesses/codex/packages.json")
+}
+
 apply_plan() {
 	local index source destination kind
 	for ((index = 0; index < ${#SOURCES[@]}; index++)); do
@@ -399,6 +463,7 @@ validate_json_sources() {
 		"$SCRIPT_DIR/harnesses/pi/tui.json"
 		"$SCRIPT_DIR/harnesses/pi/effort.json"
 		"$SCRIPT_DIR/harnesses/codex/hooks.json"
+		"$SCRIPT_DIR/harnesses/codex/packages.json"
 	)
 	node -e 'const fs = require("fs"); for (const file of process.argv.slice(1)) JSON.parse(fs.readFileSync(file, "utf8"));' "${files[@]}"
 }
@@ -492,11 +557,17 @@ install)
 	remove_stale_links "Removed stale"
 	apply_plan
 	validate_install
+	case "$HARNESS" in
+	codex | all) install_codex_packages ;;
+	esac
 	;;
 dry-run)
 	preflight_targets
 	print_stale_links
 	print_plan
+	case "$HARNESS" in
+	codex | all) print_codex_packages ;;
+	esac
 	;;
 doctor) doctor ;;
 validate) validate_install ;;

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+	chmodSync,
 	existsSync,
 	lstatSync,
 	mkdtempSync,
@@ -42,6 +43,7 @@ function install(
 			PI_CONFIG_DIR: paths.pi,
 			CODEX_CONFIG_DIR: paths.codex,
 			CODEX_AGENTS_DIR: paths.agents,
+			CODEX_SKIP_PACKAGES: "1",
 			...environment,
 		},
 	});
@@ -156,6 +158,46 @@ describe("installer safety", () => {
 		expect(readFileSync(config, "utf8")).toBe("runtime = true\n");
 		expect(install("unlink", "codex", paths).status).toBe(0);
 		expect(readFileSync(config, "utf8")).toBe("runtime = true\n");
+	});
+
+	test("Codex packages are installed once from the manifest", () => {
+		const paths = workspace();
+		const bin = join(paths.home, "bin");
+		const calls = join(paths.home, "codex-calls");
+		mkdirSync(bin);
+		const codex = join(bin, "codex");
+		writeFileSync(
+			codex,
+			`#!/bin/sh
+set -eu
+echo "$*" >> "${calls}"
+case "$*" in
+  "plugin marketplace list --json")
+    if grep -q '^plugin marketplace add ' "${calls}"; then
+      echo '{"marketplaces":[{"name":"ponytail"}]}'
+    else
+      echo '{"marketplaces":[]}'
+    fi ;;
+  "plugin list --json")
+    if grep -q '^plugin add ' "${calls}"; then
+      echo '{"installed":[{"name":"ponytail"}]}'
+    else
+      echo '{"installed":[]}'
+    fi ;;
+esac
+`,
+		);
+		chmodSync(codex, 0o755);
+		const environment = {
+			CODEX_SKIP_PACKAGES: "0",
+			PATH: `${bin}:${process.env.PATH}`,
+		};
+
+		expect(install("install", "codex", paths, environment).status).toBe(0);
+		expect(install("install", "codex", paths, environment).status).toBe(0);
+		const log = readFileSync(calls, "utf8");
+		expect(log.match(/^plugin marketplace add DietrichGebert\/ponytail$/gm)).toHaveLength(1);
+		expect(log.match(/^plugin add ponytail@ponytail$/gm)).toHaveLength(1);
 	});
 
 	test("doctor requires Bun for the installed CLI", () => {
