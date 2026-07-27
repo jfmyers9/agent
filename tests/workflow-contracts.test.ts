@@ -237,6 +237,16 @@ describe("workflow contracts", () => {
     expect(body).toContain("Do not use `spawn_lane`");
   });
 
+  test("multi-model review runs three fixed review workers", () => {
+    const body = read("skills/multi-model-review/SKILL.md");
+    expect(body).toContain("requires-fresh-workers: true");
+    expect(body).toContain("pi --print --no-session --model <model>");
+    expect(body).toContain("anthropic/claude-opus-5");
+    expect(body).toContain("openai/gpt-5.6-sol");
+    expect(body).toContain("openai/gpt-5.6-terra");
+    expect(body).toContain("Invoke the installed $review skill");
+  });
+
   test("retired wrappers are absent", () => {
     for (const skill of ["archive", "pr-plan", "report", "simplify", "start"]) {
       expect(existsSync(resolve(root, "skills", skill, "SKILL.md"))).toBe(false);
