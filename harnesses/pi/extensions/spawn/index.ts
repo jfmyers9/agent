@@ -144,6 +144,7 @@ type SpawnRequest = {
 	targetSessionPath?: string;
 	targetMuxSession?: string;
 	targetMuxWorkspace?: string;
+	model?: string;
 	command?: string;
 	prompt: string;
 	goal: string;
@@ -200,6 +201,7 @@ type NormalizedToolParams = {
 	targetSessionPath?: string;
 	targetMuxSession?: string;
 	targetMuxWorkspace?: string;
+	model?: string;
 	runtime?: string;
 	mux?: string;
 	command?: string;
@@ -473,6 +475,7 @@ function normalizeSpawnRequest(input: Partial<SpawnRequest>, ctx: ExtensionConte
 	const splitSizePercent = validateSplitSizePercent(input.splitSizePercent);
 	const targetMuxSession = input.targetMuxSession?.trim() || undefined;
 	const targetMuxWorkspace = input.targetMuxWorkspace?.trim() || undefined;
+	const model = input.model?.trim() || undefined;
 	const command = input.command?.trim() || undefined;
 	const prompt = input.prompt ?? "";
 	const goal = input.goal || prompt || command || `${runtime} spawn`;
@@ -491,6 +494,7 @@ function normalizeSpawnRequest(input: Partial<SpawnRequest>, ctx: ExtensionConte
 		targetSessionPath,
 		targetMuxSession,
 		targetMuxWorkspace,
+		model,
 		command,
 		prompt,
 		goal,
@@ -514,6 +518,7 @@ function parseSpawnRequest(args: string, ctx: ExtensionContext): SpawnRequest | 
 	let targetSessionPath: string | undefined;
 	let targetMuxSession: string | undefined;
 	let targetMuxWorkspace: string | undefined;
+	let model: string | undefined;
 	let mux: SpawnMux | undefined;
 	let command: string | undefined;
 	let cwd = ctx.cwd;
@@ -581,6 +586,10 @@ function parseSpawnRequest(args: string, ctx: ExtensionContext): SpawnRequest | 
 			targetMuxWorkspace = tokens[++index] ?? targetMuxWorkspace;
 			continue;
 		}
+		if (token === "--model") {
+			model = tokens[++index] ?? model;
+			continue;
+		}
 		if (token === "--runtime") {
 			runtime = parseRuntimeOrThrow(tokens[++index]?.toLowerCase(), "runtime");
 			if (runtime === "shell" || runtime === "command") payload = payload ?? "empty";
@@ -630,6 +639,7 @@ function parseSpawnRequest(args: string, ctx: ExtensionContext): SpawnRequest | 
 			targetSessionPath,
 			targetMuxSession,
 			targetMuxWorkspace,
+			model,
 			mux,
 			cwd,
 			name,
@@ -1191,8 +1201,11 @@ async function resolveMux(
 function validateRuntimeRequest(request: SpawnRequest, runtime: ResolvedSpawnRuntime) {
 	if (runtime === "pi") {
 		if (request.command) throw new Error("Pi runtime does not accept command; use runtime='command'");
+		if (request.model && request.placement === "new-session")
+			throw new Error("Pi new-session placement does not support explicit model selection");
 		return;
 	}
+	if (request.model) throw new Error(`${runtime} runtime does not accept model; use runtime='pi'`);
 	if (request.payload !== "empty") throw new Error(`${runtime} runtime only supports payload='empty'`);
 	if (request.targetSessionPath) throw new Error(`${runtime} runtime does not support targetSessionPath`);
 	if (runtime === "shell" && request.command)
@@ -1311,7 +1324,7 @@ async function spawn(
 		return result;
 	}
 
-	const inference = ctx.model ? { modelId: ctx.model.id, thinking: pi.getThinkingLevel() } : undefined;
+	const inference = !request.model && ctx.model ? { modelId: ctx.model.id, thinking: pi.getThinkingLevel() } : undefined;
 	const child = await piRuntime.createSessionFile(ctx, request, parentSessionPath, inference);
 	const promptPath = await writePromptArtifact(request, prompt);
 	const lane: SpawnLaneRef = {
@@ -1326,7 +1339,7 @@ async function spawn(
 	const piCommand = piSpawnCommand(child.sessionPath, promptPath, {
 		nonInteractive: hidden,
 		autoExit: !request.interactive && !hidden,
-		model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
+		model: request.model ?? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined),
 		thinking: inference?.thinking,
 	});
 	const cleanupDoneFile = cleanupSession ? await zellijCleanupDoneFile(cleanupSession) : undefined;
@@ -1672,6 +1685,7 @@ export function toolRequest(params: NormalizedToolParams, ctx: ExtensionContext)
 			targetSessionPath: params.targetSessionPath ? resolve(ctx.cwd, params.targetSessionPath) : undefined,
 			targetMuxSession: params.targetMuxSession,
 			targetMuxWorkspace: params.targetMuxWorkspace,
+			model: params.model,
 			mux,
 			command,
 			cwd: params.cwd ? resolve(ctx.cwd, params.cwd) : ctx.cwd,
@@ -1772,6 +1786,11 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 			targetMuxWorkspace: Type.Optional(
 				Type.String({
 					description: "Target mux workspace/session for placement outside the current mux workspace.",
+				}),
+			),
+			model: Type.Optional(
+				Type.String({
+					description: "Provider/model for a Pi lane; defaults to the parent model.",
 				}),
 			),
 			mux: Type.Optional(toolMuxParam),

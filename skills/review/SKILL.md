@@ -2,20 +2,21 @@
 name: review
 description: >
   Create a durable code review with a direct go/no-go decision and verified,
-  merge-relevant findings. Invoke only as /skill:review or $review when a
-  persistent initial review or bounded verification pass is wanted.
+  merge-relevant findings, or return a write-free transient review for an
+  orchestrator. Invoke only as /skill:review or $review.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash, Read, Write, Glob, Grep
 argument-hint: >
   [--local|<branch>|<PR>] [--path <glob>] [--proposal <slug-or-path>]
-  [--verify <review-slug-or-path>]
+  [--verify <review-slug-or-path>] [--transient]
 ---
 
 # Review
 
 Decide whether introduced changes should proceed, be fixed, or be replaced,
-then store the evidence in one review blueprint.
+then store the evidence in one review blueprint unless transient output was
+explicitly requested.
 
 @rules/blueprints.md, @rules/harness-compat.md, and
 @rules/artifact-readability.md apply.
@@ -31,8 +32,12 @@ Keep generated frontmatter intact and write the body below its closing `---`.
   acceptance criteria as evidence of intent.
 - `--verify <review-slug-or-path>` — update one existing review by checking its
   unresolved findings against a persisted review basis.
+- `--transient` — return a complete initial review without creating or changing
+  a blueprint; intended for parallel review orchestration.
 
 `--verify` is mutually exclusive with every initial-review target and option.
+`--transient` is valid only for an initial review and is mutually exclusive
+with `--verify`.
 
 ## Decision Contract
 
@@ -313,6 +318,10 @@ and evidence cross-reference needed by `@rules/artifact-readability.md`.
 
 ### 6. Store The Review
 
+For `--transient`, skip this step. Do not create, edit, validate, link, or
+commit a blueprint, and do not write the review to another file. Return the
+complete review Markdown in the terminal response.
+
 For an initial review:
 
 ```sh
@@ -334,21 +343,23 @@ After either mode, run `blueprint validate "$file"`, then
 
 ### 7. Report The Decision
 
-Lead with the verdict and recommendation, then return the artifact path,
-approach rating, unresolved finding IDs, and checks performed.
+Lead with the verdict and recommendation, then return the artifact path when
+stored, approach rating, unresolved finding IDs, and checks performed.
 
 - `GO / proceed`: suggest `$commit` only for a full-scope decision.
 - `NO-GO / fix`: suggest `$fix <review>`, followed by
   `$review --verify <review>`.
 - `NO-GO / replace`: state plainly that the changeset should not merge and
   describe the replacement. Do not route it into a local fix loop.
+- `--transient`: report `Artifact: none (transient)` and do not suggest
+  `$fix`; a durable review is required to enter the fix/verification loop.
 
 ## Rules
 
 - Review introduced behavior first. Mention pre-existing code only when the
   change newly activates it or it creates critical context.
 - Do not modify reviewed source or remote state. The review blueprint and its
-  exact commit are the only intended writes.
+  exact commit are the only intended writes; transient mode makes no writes.
 - Perform one full discovery pass per recorded basis. Verification is monotonic
   closure over its findings, not an opportunity to restart discovery.
 - Omit preferences and claims without concrete impact or evidence.

@@ -240,11 +240,19 @@ describe("workflow contracts", () => {
   test("multi-model review runs three fixed review workers", () => {
     const body = read("skills/multi-model-review/SKILL.md");
     expect(body).toContain("requires-fresh-workers: true");
-    expect(body).toContain("pi --print --no-session --model <model>");
+    expect(body).toContain("spawn_lane");
+    expect(body).toContain("Start all three lanes before waiting");
     expect(body).toContain("anthropic/claude-opus-5");
     expect(body).toContain("openai/gpt-5.6-sol");
     expect(body).toContain("openai/gpt-5.6-terra");
-    expect(body).toContain("Invoke the installed $review skill");
+    expect(body).toContain("$review skill with --transient");
+  });
+
+  test("review supports write-free transient orchestration", () => {
+    const body = read("skills/review/SKILL.md");
+    expect(body).toContain("`--transient`");
+    expect(body).toContain("transient mode makes no writes");
+    expect(body).toContain("Artifact: none (transient)");
   });
 
   test("retired wrappers are absent", () => {
