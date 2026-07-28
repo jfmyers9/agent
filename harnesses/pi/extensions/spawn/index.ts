@@ -145,6 +145,7 @@ type SpawnRequest = {
 	targetMuxSession?: string;
 	targetMuxWorkspace?: string;
 	model?: string;
+	thinking?: string;
 	command?: string;
 	prompt: string;
 	goal: string;
@@ -202,6 +203,7 @@ type NormalizedToolParams = {
 	targetMuxSession?: string;
 	targetMuxWorkspace?: string;
 	model?: string;
+	thinking?: string;
 	runtime?: string;
 	mux?: string;
 	command?: string;
@@ -476,6 +478,7 @@ function normalizeSpawnRequest(input: Partial<SpawnRequest>, ctx: ExtensionConte
 	const targetMuxSession = input.targetMuxSession?.trim() || undefined;
 	const targetMuxWorkspace = input.targetMuxWorkspace?.trim() || undefined;
 	const model = input.model?.trim() || undefined;
+	const thinking = input.thinking?.trim() || undefined;
 	const command = input.command?.trim() || undefined;
 	const prompt = input.prompt ?? "";
 	const goal = input.goal || prompt || command || `${runtime} spawn`;
@@ -495,6 +498,7 @@ function normalizeSpawnRequest(input: Partial<SpawnRequest>, ctx: ExtensionConte
 		targetMuxSession,
 		targetMuxWorkspace,
 		model,
+		thinking,
 		command,
 		prompt,
 		goal,
@@ -519,6 +523,7 @@ function parseSpawnRequest(args: string, ctx: ExtensionContext): SpawnRequest | 
 	let targetMuxSession: string | undefined;
 	let targetMuxWorkspace: string | undefined;
 	let model: string | undefined;
+	let thinking: string | undefined;
 	let mux: SpawnMux | undefined;
 	let command: string | undefined;
 	let cwd = ctx.cwd;
@@ -590,6 +595,10 @@ function parseSpawnRequest(args: string, ctx: ExtensionContext): SpawnRequest | 
 			model = tokens[++index] ?? model;
 			continue;
 		}
+		if (token === "--thinking") {
+			thinking = tokens[++index] ?? thinking;
+			continue;
+		}
 		if (token === "--runtime") {
 			runtime = parseRuntimeOrThrow(tokens[++index]?.toLowerCase(), "runtime");
 			if (runtime === "shell" || runtime === "command") payload = payload ?? "empty";
@@ -640,6 +649,7 @@ function parseSpawnRequest(args: string, ctx: ExtensionContext): SpawnRequest | 
 			targetMuxSession,
 			targetMuxWorkspace,
 			model,
+			thinking,
 			mux,
 			cwd,
 			name,
@@ -1201,11 +1211,12 @@ async function resolveMux(
 function validateRuntimeRequest(request: SpawnRequest, runtime: ResolvedSpawnRuntime) {
 	if (runtime === "pi") {
 		if (request.command) throw new Error("Pi runtime does not accept command; use runtime='command'");
-		if (request.model && request.placement === "new-session")
-			throw new Error("Pi new-session placement does not support explicit model selection");
+		if ((request.model || request.thinking) && request.placement === "new-session")
+			throw new Error("Pi new-session placement does not support explicit model or thinking selection");
 		return;
 	}
 	if (request.model) throw new Error(`${runtime} runtime does not accept model; use runtime='pi'`);
+	if (request.thinking) throw new Error(`${runtime} runtime does not accept thinking; use runtime='pi'`);
 	if (request.payload !== "empty") throw new Error(`${runtime} runtime only supports payload='empty'`);
 	if (request.targetSessionPath) throw new Error(`${runtime} runtime does not support targetSessionPath`);
 	if (runtime === "shell" && request.command)
@@ -1324,7 +1335,9 @@ async function spawn(
 		return result;
 	}
 
-	const inference = !request.model && ctx.model ? { modelId: ctx.model.id, thinking: pi.getThinkingLevel() } : undefined;
+	const modelId = request.model?.split("/").at(-1) ?? ctx.model?.id;
+	const thinking = request.thinking ?? (!request.model && ctx.model ? pi.getThinkingLevel() : undefined);
+	const inference = modelId && thinking ? { modelId, thinking } : undefined;
 	const child = await piRuntime.createSessionFile(ctx, request, parentSessionPath, inference);
 	const promptPath = await writePromptArtifact(request, prompt);
 	const lane: SpawnLaneRef = {
@@ -1686,6 +1699,7 @@ export function toolRequest(params: NormalizedToolParams, ctx: ExtensionContext)
 			targetMuxSession: params.targetMuxSession,
 			targetMuxWorkspace: params.targetMuxWorkspace,
 			model: params.model,
+			thinking: params.thinking,
 			mux,
 			command,
 			cwd: params.cwd ? resolve(ctx.cwd, params.cwd) : ctx.cwd,
@@ -1791,6 +1805,11 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 			model: Type.Optional(
 				Type.String({
 					description: "Provider/model for a Pi lane; defaults to the parent model.",
+				}),
+			),
+			thinking: Type.Optional(
+				Type.String({
+					description: "Thinking level for a Pi lane; defaults to the selected model's configured level.",
 				}),
 			),
 			mux: Type.Optional(toolMuxParam),

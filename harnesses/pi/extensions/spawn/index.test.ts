@@ -47,13 +47,14 @@ describe("spawn parsing", () => {
 		expect(shell.interactive).toBeTrue();
 	});
 
-	test("accepts an explicit Pi lane model", () => {
+	test("accepts explicit Pi lane inference settings", () => {
 		const request = toolRequest(
-			{ runtime: "pi", prompt: "review", model: "anthropic/claude-opus-5" },
+			{ runtime: "pi", prompt: "review", model: "anthropic/claude-opus-5", thinking: "high" },
 			{ cwd: "/repo" } as any,
 		);
 
 		expect(request.model).toBe("anthropic/claude-opus-5");
+		expect(request.thinking).toBe("high");
 	});
 
 	test("accepts zellij, pty, and hidden placement aliases", () => {

@@ -237,15 +237,20 @@ describe("workflow contracts", () => {
     expect(body).toContain("Do not use `spawn_lane`");
   });
 
-  test("multi-model review runs three fixed review workers", () => {
+  test("multi-model review runs two fixed high-effort review workers", () => {
     const body = read("skills/multi-model-review/SKILL.md");
     expect(body).toContain("requires-fresh-workers: true");
     expect(body).toContain("spawn_lane");
-    expect(body).toContain("Start all three lanes before waiting");
+    expect(body).toContain("Start both lanes before waiting");
     expect(body).toContain("anthropic/claude-opus-5");
     expect(body).toContain("openai/gpt-5.6-sol");
-    expect(body).toContain("openai/gpt-5.6-terra");
+    expect(body).not.toContain("openai/gpt-5.6-terra");
+    expect(body.match(/`thinking: high`/g)).toHaveLength(3);
     expect(body).toContain("$review skill with --transient");
+    expect(body).toContain("model: openai/gpt-5.6-sol");
+    expect(body).toContain("Judge: openai/gpt-5.6-sol (high)");
+    expect(body).toContain("Do not retry with another model or");
+    expect(body).toContain("adjudicate in the main session");
   });
 
   test("review supports write-free transient orchestration", () => {
