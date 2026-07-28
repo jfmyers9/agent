@@ -11,7 +11,7 @@ const section = (body: string, heading: string) => {
   return body.slice(start, end < 0 ? undefined : end);
 };
 
-const artifactSkills = ["context", "research", "review", "diagnose"];
+const artifactSkills = ["context", "research", "review", "diagnose", "multi-model-review"];
 
 const directSkills = [
   "implement",
@@ -54,6 +54,7 @@ describe("opt-in routing", () => {
     expect(read("skills/review/SKILL.md")).toContain("blueprint create review");
     expect(read("skills/context/SKILL.md")).toContain("--kind context");
     expect(read("skills/diagnose/SKILL.md")).toContain("--kind diagnosis");
+    expect(read("skills/multi-model-review/SKILL.md")).toContain("blueprint create review");
   });
 });
 
@@ -251,6 +252,11 @@ describe("workflow contracts", () => {
     expect(body).toContain("Judge: openai/gpt-5.6-sol (high)");
     expect(body).toContain("Do not retry with another model or");
     expect(body).toContain("adjudicate in the main session");
+    expect(body).toContain("blueprint create review");
+    expect(body).toContain("Aggregate review: <target>");
+    expect(body).toContain("blueprint validate");
+    expect(body).toContain("blueprint commit review");
+    expect(body).toContain("Aggregate review: <complete review Markdown>");
   });
 
   test("review supports write-free transient orchestration", () => {
