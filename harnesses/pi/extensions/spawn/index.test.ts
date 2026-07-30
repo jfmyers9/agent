@@ -5,8 +5,8 @@ import {
 	isOneShotSpawnProcess,
 	parseMux,
 	parsePlacement,
-	piSpawnCommand,
 	piSessionFileContents,
+	piSpawnCommand,
 	spawnResultText,
 	tmuxSpawnTargetPane,
 	toolRequest,
@@ -136,6 +136,12 @@ describe("spawn command wrappers", () => {
 		const command = piSpawnCommand("/sessions/child.jsonl", "/tmp/prompt.md");
 
 		expect(command).toContain('PI_SPAWN_ONE_SHOT=0 pi --session "$1"');
+	});
+
+	test("prevents spawned Pi lanes from recursively delegating", () => {
+		const command = piSpawnCommand("/sessions/child.jsonl", "/tmp/prompt.md");
+
+		expect(command).toContain("--exclude-tools spawn_lane,spawn_list,spawn_map");
 	});
 
 	test("inherits the parent model and thinking level", () => {

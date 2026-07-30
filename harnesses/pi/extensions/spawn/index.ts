@@ -28,6 +28,7 @@ import { navInput, navOptionalInput, navSelect } from "./cockpit-nav.ts";
 const CONTEXT_RECENT_TOKEN_BUDGET = 8_000;
 const SPAWN_ENTRY_TYPE = "spawn-lane";
 const SPAWN_ONE_SHOT_ENV = "PI_SPAWN_ONE_SHOT";
+const SPAWN_EXCLUDED_TOOLS = "spawn_lane,spawn_list,spawn_map";
 const SPAWN_USAGE =
 	"Usage: /spawn direct|context|empty [child|root] ...; /spawn shell|bash ...; /spawn command|run ... -- <command>; /spawn list|map|status|help";
 
@@ -885,10 +886,11 @@ export function piSpawnCommand(
 	const printArg = options.nonInteractive ? " --print" : "";
 	const modelArg = options.model ? ` --model ${shellQuote(options.model)}` : "";
 	const thinkingArg = options.thinking ? ` --thinking ${shellQuote(options.thinking)}` : "";
+	const toolsArg = ` --exclude-tools ${SPAWN_EXCLUDED_TOOLS}`;
 	const environment = `${SPAWN_ONE_SHOT_ENV}=${options.autoExit ? "1" : "0"} `;
 	return promptPath
-		? `bash -lc ${shellQuote(`${environment}pi${printArg}${modelArg}${thinkingArg} --session "$1" "$(cat "$2")"`)} pi-spawn ${shellQuote(sessionPath)} ${shellQuote(promptPath)}`
-		: `bash -lc ${shellQuote(`${environment}pi${printArg}${modelArg}${thinkingArg} --session "$1"`)} pi-spawn ${shellQuote(sessionPath)}`;
+		? `bash -lc ${shellQuote(`${environment}pi${printArg}${modelArg}${thinkingArg} --session "$1"${toolsArg} "$(cat "$2")"`)} pi-spawn ${shellQuote(sessionPath)} ${shellQuote(promptPath)}`
+		: `bash -lc ${shellQuote(`${environment}pi${printArg}${modelArg}${thinkingArg} --session "$1"${toolsArg}`)} pi-spawn ${shellQuote(sessionPath)}`;
 }
 
 export function piSessionFileContents(

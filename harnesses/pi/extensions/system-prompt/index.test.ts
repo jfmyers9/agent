@@ -74,6 +74,8 @@ describe("system-prompt Skillful skill rendering", () => {
 		expect(prompt).toContain("rg -n -M 400 --max-columns-preview");
 		expect(prompt).toContain("avoid `head` for line-length control");
 		expect(prompt).toContain("Do not use shell commands for routine file reads, writes, or edits");
+		expect(prompt).toContain("Prefer `spawn_lane` for bounded, context-heavy work");
+		expect(prompt).toContain("Keep the main session focused on coordination and synthesis");
 		expect(prompt).not.toContain("Use `bash` for shell-only workflows");
 		expect(prompt).not.toContain("RTK");
 		expect(prompt).not.toContain("rtk grep");
