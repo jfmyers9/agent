@@ -56,9 +56,14 @@ verification.
 
    ```text
    Invoke the installed $review skill with --transient and the supplied
-   arguments. Complete its full initial-review workflow without creating or
-   changing a blueprint. Review only the supplied snapshot. Act alone without
-   delegating. End with the result schema below.
+   arguments. Treat the supplied snapshot as the resolved review basis: do not
+   re-resolve the target or proposal, repeat fingerprints, or inspect unchanged
+   code beyond direct dependencies needed to validate a material candidate.
+   Run one focused discovery pass and only checks needed to prove or reject
+   material candidates. Preserve the $review decision, materiality, scope, and
+   output contracts without creating or changing a blueprint. Review only the
+   supplied snapshot. Act alone without delegating or narrating progress. End
+   with the result schema below.
    ```
 
    Require:
