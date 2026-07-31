@@ -1,16 +1,18 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-const DEFAULT_RESERVE_TOKENS = 16_384;
+const COMPACT_AT_PERCENT = 85;
 const MESSAGE_TYPE = "auto-compact-resume";
 
 export function needsCompaction(
 	content: readonly { type: string }[],
 	tokens: number | null,
 	contextWindow: number,
-	maxTokens?: number,
 ): boolean {
-	const reserve = Math.max(DEFAULT_RESERVE_TOKENS, maxTokens ?? 0);
-	return content.some((part) => part.type === "toolCall") && tokens !== null && tokens > contextWindow - reserve;
+	return (
+		content.some((part) => part.type === "toolCall") &&
+		tokens !== null &&
+		tokens / contextWindow >= COMPACT_AT_PERCENT / 100
+	);
 }
 
 export default function autoCompactResumeExtension(pi: ExtensionAPI) {
@@ -20,10 +22,7 @@ export default function autoCompactResumeExtension(pi: ExtensionAPI) {
 		if (compacting) return;
 
 		const usage = ctx.getContextUsage();
-		if (
-			!usage ||
-			!needsCompaction(event.message.content, usage.tokens, usage.contextWindow, ctx.model?.maxTokens)
-		) {
+		if (!usage || !needsCompaction(event.message.content, usage.tokens, usage.contextWindow)) {
 			return;
 		}
 

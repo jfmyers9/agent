@@ -75,6 +75,8 @@ verification.
    Approach: sound | salvageable | misguided
    Artifact: none (transient)
    Unresolved findings: <IDs or none>
+   Deferred observations: <D IDs, classification, evidence, and verdict impact,
+     or none>
    Checks: <commands and results>
    Outcome: reviewed | blocked | failed
    ```
@@ -98,6 +100,9 @@ verification.
    review body using the installed `$review` Markdown structure, with new stable
    finding IDs, source-review provenance in each accepted finding, an empty
    resolution table when findings exist, and only judge-accepted findings.
+   Separately preserve judge-accepted deferred observations, deduplicate them,
+   and keep verified `pre-existing latent` defects non-blocking unless the
+   target introduced or newly activated them.
 
    Require:
 
@@ -107,6 +112,8 @@ verification.
    Recommendation: proceed | fix | replace
    Approach: sound | salvageable | misguided
    Accepted findings: <source review and finding, evidence, required outcome>
+   Deferred observations: <source review and D observation, classification,
+     evidence, and why verdict impact is none>
    Rejected candidates: <source review and finding, reason>
    Checks: <commands and results>
    Aggregate review: <complete review Markdown>
@@ -117,9 +124,9 @@ verification.
    response from the recorded session log. Do not retry with another model or
    adjudicate in the main session if the judge blocks or fails.
 9. Recheck the captured snapshot. Stop without creating an artifact on drift or
-   when the judge omitted required review sections or included unaccepted
-   findings. Do not repair or reinterpret the judge's review in the main
-   session.
+   when the judge omitted required review sections or included any finding or
+   deferred observation it did not accept. Do not repair or reinterpret the
+   judge's review in the main session.
 10. Create one aggregate review blueprint:
 
     ```sh
@@ -142,6 +149,6 @@ verification.
     Stop on any error; this exact blueprint commit is the only intended write.
 11. Return the aggregate artifact path and judge decision first, followed by
     one row per reviewer with its outcome, decision, approach, unresolved IDs,
-    checks, and lane session path. Report the judge lane path and rejected
-    candidates. Do not edit reviewed source or change target-repository or
-    remote state.
+    deferred IDs, checks, and lane session path. Report the judge lane path,
+    accepted deferred observations, and rejected candidates. Do not edit
+    reviewed source or change target-repository or remote state.

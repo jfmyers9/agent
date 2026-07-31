@@ -257,6 +257,8 @@ describe("workflow contracts", () => {
     expect(body).toContain("blueprint validate");
     expect(body).toContain("blueprint commit review");
     expect(body).toContain("Aggregate review: <complete review Markdown>");
+    expect(body).toContain("Deferred observations: <D IDs");
+    expect(body).toContain("keep verified `pre-existing latent` defects non-blocking");
   });
 
   test("review supports write-free transient orchestration", () => {
@@ -264,6 +266,9 @@ describe("workflow contracts", () => {
     expect(body).toContain("`--transient`");
     expect(body).toContain("transient mode makes no writes");
     expect(body).toContain("Artifact: none (transient)");
+    expect(body).toContain("Label it `pre-existing latent`");
+    expect(body).toContain("- Verdict impact: none");
+    expect(body).toContain("do not search unchanged code for latent");
   });
 
   test("retired wrappers are absent", () => {

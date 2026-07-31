@@ -166,6 +166,13 @@ Treat lens output as candidates. Keep an `F` finding only when all are true:
 3. source, execution, or tool evidence establishes the problem; and
 4. it must change before merge.
 
+A candidate that is pre-existing and the target does not newly activate must
+not become an `F`. Record it as a `D` observation when items 2 and 3 are
+established. Label it `pre-existing latent`, state why the target did not
+introduce or activate it, and never let it affect the verdict or enter the fix
+loop. Do not search unchanged code for latent defects; record only those
+encountered while tracing the reviewed change.
+
 State the required observable outcome in each finding. Prescribe a particular
 public API or product control only when the intent source or a demonstrated
 safety constraint requires it; an existing internal switch is not evidence
@@ -177,8 +184,9 @@ facets in one finding rather than duplicating them across lenses. Record a
 standalone test finding only when tests can miss a named regression or provide
 false confidence.
 
-Use `D` only for an evidenced, non-blocking risk worth preserving. Omit style,
-optional cleanup, generic hardening, and speculative future work entirely.
+Use `D` only for an evidenced, non-blocking defect or risk worth preserving.
+Omit style, optional cleanup, generic hardening, and speculative future work
+entirely.
 
 ### 4. Verify Without Reopening Scope
 
@@ -290,10 +298,13 @@ deferred or omitted, never blocking findings.
 
 ### D001: <short title>
 
+- Classification: pre-existing latent | introduced non-blocking
 - Location: `<path:line>` or `cross-file`
 - Evidence: <verified non-blocking risk>
+- Verdict impact: none
 
-<why it does not affect the verdict>
+<for a pre-existing latent defect, why the target did not introduce or activate
+it; why it does not affect the verdict>
 
 ## Resolutions
 
@@ -356,8 +367,9 @@ stored, approach rating, unresolved finding IDs, and checks performed.
 
 ## Rules
 
-- Review introduced behavior first. Mention pre-existing code only when the
-  change newly activates it or it creates critical context.
+- Review introduced behavior first; do not search unchanged code for latent
+  defects. When tracing the reviewed change exposes a verified pre-existing
+  latent defect, record it as a `D` observation with no verdict impact.
 - Do not modify reviewed source or remote state. The review blueprint and its
   exact commit are the only intended writes; transient mode makes no writes.
 - Perform one full discovery pass per recorded basis. Verification is monotonic
