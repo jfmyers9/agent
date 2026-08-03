@@ -98,7 +98,7 @@ harnesses/
 Portable across harnesses:
 
 - `global/AGENTS.md` — global instructions installed for each harness
-- `AGENTS.md` — repository-only instructions layered over the global file
+- `AGENTS.md` — repository-only instructions
 - `rules/*.md` — style, tests, comments, PR workflow, context budget
 - `skills/*/SKILL.md` — Agent Skills-compatible workflow packages
 - `bin/blueprint` — opt-in proposals, reviews, and reports

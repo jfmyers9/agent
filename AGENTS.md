@@ -1,7 +1,5 @@
 # Agent Configuration Repository Instructions
 
-@global/AGENTS.md
-
 ## Repository Neutrality
 
 - Keep this agent-configuration repository company-neutral and reusable.
