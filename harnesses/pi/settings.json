@@ -47,6 +47,7 @@
   "extensions": [
     "extensions/agents-local/index.ts",
     "extensions/auto-compact-resume/index.ts",
+    "extensions/convergence-loop/index.ts",
     "extensions/fileops/index.ts",
     "extensions/apply-patch/index.ts",
     "extensions/vcc/index.ts",
