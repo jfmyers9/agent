@@ -38,7 +38,7 @@ function createMockPi() {
 }
 
 describe("Pi session hook delegation", () => {
-	it("keeps session capture without ambient prompt or resume hooks", async () => {
+	it("keeps only telemetry lifecycle hooks", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "context-guard-session-hooks-"));
 		const coreBin = join(dir, "context-guard-core.js");
 		const logPath = join(dir, "requests.log");
@@ -60,8 +60,6 @@ describe("Pi session hook delegation", () => {
 				'  fs.appendFileSync(logPath, JSON.stringify(request) + "\\n");',
 				"  const action = request.params?.action;",
 				"  let payload = {};",
-				'  if (action === "extract_hook_events") payload = [{ type: "tool_call", category: "pi", data: "captured", priority: 1 }];',
-				'  if (action === "check_tool_call") payload = { block: request.params?.hookInput?.tool_input?.command?.includes("curl "), reason: "blocked from rust" };',
 				'  if (action === "build_pi_check") payload = "rust cg-check summary";',
 				'  process.stdout.write(JSON.stringify({ ok: true, content: [{ type: "text", text: JSON.stringify(payload) }] }));',
 				"});",
@@ -72,16 +70,11 @@ describe("Pi session hook delegation", () => {
 		const pi = createMockPi();
 		piExtension(pi);
 		pi.hooks.get("session_start")?.({}, { sessionManager: { getSessionFile: () => join(dir, "session.json") } });
-		const blocked = pi.hooks.get("tool_call")?.({ toolName: "bash", input: { command: "curl https://example.com" } });
-		pi.hooks.get("tool_result")?.({
-			toolName: "read",
-			input: { path: "README.md" },
-			content: [{ type: "text", text: "content from Pi result" }],
-			isError: false,
-		});
 		const check = await pi.commands.get("cg-check")?.handler({});
 
-		expect(blocked).toEqual({ block: true, reason: "blocked from rust" });
+		expect(pi.hooks.has("tool_call")).toBe(false);
+		expect(pi.hooks.has("tool_result")).toBe(false);
+		expect(pi.hooks.has("session_compact")).toBe(false);
 		expect(pi.hooks.has("before_agent_start")).toBe(false);
 		expect(pi.hooks.has("session_before_compact")).toBe(false);
 		expect(check).toEqual({ text: "rust cg-check summary" });
@@ -96,25 +89,15 @@ describe("Pi session hook delegation", () => {
 						params?: {
 							action?: string;
 							projectDir?: string;
-							hookInput?: { tool_response?: string };
 						};
 					},
 			);
 		const actions = requests
 			.filter((request) => request.command === "session")
 			.map((request) => request.params?.action);
-		for (const action of [
-			"init",
-			"check_tool_call",
-			"extract_hook_events",
-			"events",
-			"build_pi_check",
-		]) {
+		for (const action of ["init", "build_pi_check"]) {
 			expect(actions).toContain(action);
 		}
 		expect(requests.find((request) => request.params?.action === "init")?.params?.projectDir).toBe(projectDir);
-		expect(
-			requests.find((request) => request.params?.action === "extract_hook_events")?.params?.hookInput?.tool_response,
-		).toBe("content from Pi result");
 	});
 });

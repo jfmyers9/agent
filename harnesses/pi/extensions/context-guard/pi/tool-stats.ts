@@ -5,6 +5,15 @@ import { fileURLToPath } from "node:url";
 import { sessionRecordToolTelemetry } from "../session/core-session.js";
 import { getProjectDir, getSessionDbPath } from "./tool-paths.js";
 
+type OperationMetrics = {
+	rawBytes?: number;
+	indexedBytes?: number;
+	returnedBytes?: number;
+	omittedBytes?: number;
+	elapsedMs?: number;
+	success?: boolean;
+};
+
 const pkgDir = dirname(fileURLToPath(import.meta.url));
 export const VERSION: string = (() => {
 	for (const rel of ["../../package.json", "../package.json", "./package.json"]) {
@@ -28,22 +37,31 @@ export const VERSION: string = (() => {
 export type ToolResult = {
 	content: Array<{ type: "text"; text: string }>;
 	isError?: boolean;
+	details?: Record<string, unknown>;
 };
 
 export function trackResponse(
 	toolName: string,
 	response: ToolResult,
-	indexed?: { bytes: number; source?: string },
+	indexed?: { bytes: number },
 ): ToolResult {
 	const bytes = response.content.reduce((sum, c) => sum + Buffer.byteLength(c.text), 0);
+	const coreMetrics = response.details?.metrics as OperationMetrics | undefined;
+	const indexedBytes = coreMetrics?.indexedBytes ?? indexed?.bytes ?? 0;
+	const returnedBytes = coreMetrics?.returnedBytes ?? bytes;
+	const rawBytes = coreMetrics?.rawBytes ?? returnedBytes;
+	const omittedBytes = coreMetrics?.omittedBytes ?? Math.max(0, rawBytes - returnedBytes);
 	setImmediate(() => {
 		void sessionRecordToolTelemetry({
 			sessionDbPath: getSessionDbPath(),
 			projectDir: getProjectDir(),
 			toolName,
-			bytesReturned: bytes,
-			bytesAvoided: indexed?.bytes,
-			source: indexed?.source,
+			bytesReturned: returnedBytes,
+			rawBytes,
+			indexedBytes,
+			omittedBytes,
+			elapsedMs: coreMetrics?.elapsedMs,
+			success: coreMetrics?.success ?? !response.isError,
 		});
 	});
 

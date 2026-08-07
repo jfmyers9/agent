@@ -240,23 +240,24 @@ fn run_command_returns_partial_output_on_timeout() {
 
 #[test]
 fn completed_parent_does_not_wait_for_descendant_output_handles() {
+    let marker_path = temp_file_path("completed-descendant", "txt");
+    let code = format!(
+        "import os, time\nif os.fork() == 0:\n    time.sleep(0.2)\n    open({:?}, 'w').write('leaked')\n    os._exit(0)",
+        marker_path.to_string_lossy()
+    );
     let request = serde_json::json!({
         "command": "run",
         "params": {
             "language": "python",
-            "code": "import os, time\nif os.fork() == 0:\n    time.sleep(3)\n    os._exit(0)",
+            "code": code,
             "timeout": 2000
         }
     });
-    let started = Instant::now();
     let response = call_core(request.to_string().as_bytes());
 
     assert_eq!(response["ok"], true);
-    assert!(
-        started.elapsed() < std::time::Duration::from_millis(1000),
-        "reader collection waited for a detached descendant: {:?}",
-        started.elapsed()
-    );
+    thread::sleep(std::time::Duration::from_millis(400));
+    assert!(!marker_path.exists(), "completed descendant survived");
 }
 
 #[test]
@@ -677,14 +678,26 @@ fn batch_bounds_returned_output_but_keeps_full_capture_searchable() {
     let text = response_text(&response);
 
     assert_eq!(response["ok"], true);
-    assert!(text.contains("Context Guard omitted"));
-    assert!(text.len() < 25_000);
+    assert!(text.contains("Output indexed (1000"));
+    assert!(text.contains("Use cg_search"));
+    assert!(text.len() < 1_000);
+    assert!(response["details"]["metrics"]["rawBytes"].as_u64().unwrap() > 100_000);
+    assert_eq!(
+        response["details"]["metrics"]["indexedBytes"],
+        response["details"]["metrics"]["rawBytes"]
+    );
+    assert!(
+        response["details"]["metrics"]["omittedBytes"]
+            .as_u64()
+            .unwrap()
+            > 99_000
+    );
     assert!(
         response["details"]["results"][0]["output"]
             .as_str()
             .expect("bounded detail output")
             .len()
-            < 25_000
+            < 1_000
     );
 
     let search = serde_json::json!({
@@ -694,6 +707,78 @@ fn batch_bounds_returned_output_but_keeps_full_capture_searchable() {
     let search_response = call_core(search.to_string().as_bytes());
     assert_eq!(search_response["ok"], true);
     assert!(response_text(&search_response).contains("searchabletailneedle"));
+}
+
+#[test]
+fn repeated_batch_labels_keep_unique_searchable_history_and_display_labels() {
+    let db_path = temp_db_path("batch-history");
+    for needle in ["firsthistoryneedle", "secondhistoryneedle"] {
+        let request = serde_json::json!({
+            "command": "batch",
+            "params": {
+                "dbPath": db_path,
+                "commands": [{ "label": "repeated-command", "command": format!("printf {needle}") }]
+            }
+        });
+        assert_eq!(call_core(request.to_string().as_bytes())["ok"], true);
+    }
+
+    for needle in ["firsthistoryneedle", "secondhistoryneedle"] {
+        let search = serde_json::json!({
+            "command": "search",
+            "params": { "dbPath": db_path, "queries": [needle], "source": "repeated-command" }
+        });
+        let text = response_text(&call_core(search.to_string().as_bytes()));
+        assert!(text.contains(needle));
+        assert!(text.contains("repeated-command"));
+        assert!(!text.contains("__context_guard_exec_v1__"));
+    }
+}
+
+#[test]
+fn batch_removes_expired_execution_sources() {
+    let db_path = temp_db_path("batch-retention");
+    let old = serde_json::json!({
+        "command": "batch",
+        "params": {
+            "dbPath": db_path,
+            "commands": [{ "label": "old-command", "command": "printf expiredexecutionneedle" }]
+        }
+    });
+    assert_eq!(call_core(old.to_string().as_bytes())["ok"], true);
+    let conn = Connection::open(&db_path).expect("open retention db");
+    conn.execute(
+        "UPDATE sources SET indexed_at = '2000-01-01 00:00:00' WHERE label LIKE '__context_guard_exec_v1__%'",
+        [],
+    )
+    .expect("age execution source");
+    drop(conn);
+
+    let current = serde_json::json!({
+        "command": "batch",
+        "params": {
+            "dbPath": db_path,
+            "commands": [{ "label": "current-command", "command": "printf currentexecutionneedle" }]
+        }
+    });
+    assert_eq!(call_core(current.to_string().as_bytes())["ok"], true);
+
+    let expired_search = serde_json::json!({
+        "command": "search",
+        "params": { "dbPath": db_path, "queries": ["expiredexecutionneedle"] }
+    });
+    assert!(
+        response_text(&call_core(expired_search.to_string().as_bytes()))
+            .contains("No results found")
+    );
+    let current_search = serde_json::json!({
+        "command": "search",
+        "params": { "dbPath": db_path, "queries": ["currentexecutionneedle"] }
+    });
+    assert!(
+        response_text(&call_core(current_search.to_string().as_bytes()))
+            .contains("currentexecutionneedle")
+    );
 }
 
 #[test]
@@ -995,74 +1080,6 @@ fn fetch_refetches_when_the_cached_entry_is_older_than_the_ttl_window() {
 }
 
 #[test]
-fn fetch_cache_hits_emit_session_telemetry_when_session_db_is_provided() {
-    let db_path = temp_db_path("fetch-cache-telemetry");
-    let session_db_path = temp_db_path("fetch-cache-session");
-    let url = serve_http_once("cache telemetry body");
-
-    let init_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "init",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-fetch",
-            "projectDir": "/tmp/project-fetch"
-        }
-    });
-    assert_eq!(call_core(init_request.to_string().as_bytes())["ok"], true);
-
-    let first = serde_json::json!({
-        "command": "fetch",
-        "params": {
-            "dbPath": db_path,
-            "sessionDbPath": session_db_path,
-            "url": url,
-            "source": "fetch-telemetry-source"
-        }
-    });
-    assert_eq!(call_core(first.to_string().as_bytes())["ok"], true);
-
-    let second = serde_json::json!({
-        "command": "fetch",
-        "params": {
-            "dbPath": db_path,
-            "sessionDbPath": session_db_path,
-            "url": url,
-            "source": "fetch-telemetry-source"
-        }
-    });
-    let second_response = call_core(second.to_string().as_bytes());
-    let second_text = second_response["content"][0]["text"]
-        .as_str()
-        .expect("cached fetch text");
-    assert_eq!(second_response["ok"], true);
-    assert!(second_text.contains("[cache] fetch-telemetry-source"));
-
-    let query_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "query",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-fetch",
-            "limit": 20
-        }
-    });
-    let query_response = call_core(query_request.to_string().as_bytes());
-    let query_text = query_response["content"][0]["text"]
-        .as_str()
-        .expect("session query text");
-    let query_json: serde_json::Value =
-        serde_json::from_str(query_text).expect("session query json");
-    let events = query_json["events"].as_array().expect("events array");
-
-    assert!(events.iter().any(|event| {
-        event["type"] == "cache-hit"
-            && event["category"] == "cache"
-            && event["data"] == "fetch-telemetry-source"
-    }));
-}
-
-#[test]
 fn fetch_rejects_non_http_schemes() {
     let db_path = temp_db_path("fetch-scheme");
     let request = serde_json::json!({
@@ -1288,90 +1305,6 @@ fn search_migrates_legacy_chunks_table_and_uses_trigram_fallback() {
 }
 
 #[test]
-fn search_timeline_merges_current_session_prior_session_and_auto_memory() {
-    let db_path = temp_db_path("timeline-search");
-    let session_db_path = temp_db_path("timeline-session");
-    let project_dir = temp_file_path("timeline-project", "dir");
-    let config_dir = temp_file_path("timeline-config", "dir");
-    std::fs::create_dir_all(&project_dir).expect("create project dir");
-    std::fs::create_dir_all(config_dir.join("memory")).expect("create memory dir");
-
-    std::fs::write(
-        project_dir.join("AGENTS.md"),
-        "Project instruction with memoryneedle and commonneedle.",
-    )
-    .expect("write project memory");
-    std::fs::write(
-        config_dir.join("memory").join("notes.md"),
-        "User memory note with memoryneedle and commonneedle.",
-    )
-    .expect("write config memory");
-
-    let session_conn = Connection::open(&session_db_path).expect("open session db");
-    session_conn
-        .execute_batch(
-            "CREATE TABLE session_events (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                session_id TEXT NOT NULL,\n                category TEXT NOT NULL,\n                type TEXT NOT NULL,\n                data TEXT NOT NULL,\n                created_at TEXT NOT NULL,\n                project_dir TEXT NOT NULL\n            );",
-        )
-        .expect("create session_events");
-    session_conn
-        .execute(
-            "INSERT INTO session_events(session_id, category, type, data, created_at, project_dir) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                "session-1",
-                "decision",
-                "summary",
-                "Prior session carries sessionneedle and commonneedle.",
-                "2024-01-01 00:00:00",
-                project_dir.to_string_lossy().to_string()
-            ],
-        )
-        .expect("insert prior-session event");
-
-    let index_request = serde_json::json!({
-        "command": "index",
-        "params": {
-            "dbPath": db_path,
-            "source": "current-doc",
-            "content": "# Current\n\nCurrent session holds currentneedle only."
-        }
-    });
-    assert_eq!(call_core(index_request.to_string().as_bytes())["ok"], true);
-
-    let search_request = serde_json::json!({
-        "command": "search",
-        "params": {
-            "dbPath": db_path,
-            "sessionDbPath": session_db_path,
-            "projectDir": project_dir,
-            "configDir": config_dir,
-            "sort": "timeline",
-            "limit": 5,
-            "queries": ["currentneedle", "sessionneedle", "memoryneedle", "commonneedle"]
-        }
-    });
-    let search_response = call_core(search_request.to_string().as_bytes());
-    let search_text = search_response["content"][0]["text"]
-        .as_str()
-        .expect("search text");
-
-    assert_eq!(search_response["ok"], true);
-    assert!(search_text.contains("current-doc"));
-    assert!(search_text.contains("Prior session carries sessionneedle"));
-    assert!(search_text.contains("[auto-memory]"));
-
-    let prior_idx = search_text
-        .find("prior-session")
-        .expect("prior-session result present");
-    let memory_idx = search_text
-        .find("[auto-memory]")
-        .expect("auto-memory result present");
-    assert!(
-        prior_idx < memory_idx,
-        "timeline results should sort chronologically"
-    );
-}
-
-#[test]
 fn timeline_search_avoids_other_project_memory_and_handles_unicode_snippets() {
     let db_path = temp_db_path("timeline-memory-isolation");
     let project_dir = temp_file_path("timeline-project", "dir");
@@ -1524,119 +1457,6 @@ fn search_removes_deleted_file_backed_sources() {
 }
 
 #[test]
-fn status_reports_session_and_lifetime_stats_from_session_dbs() {
-    let db_path = temp_db_path("status-session");
-    let sessions_dir = temp_file_path("status-sessions", "dir");
-    let config_dir = temp_file_path("status-config", "dir");
-    std::fs::create_dir_all(&sessions_dir).expect("create sessions dir");
-    std::fs::create_dir_all(config_dir.join("memory").join("project-a"))
-        .expect("create memory project dir");
-    std::fs::write(
-        config_dir
-            .join("memory")
-            .join("project-a")
-            .join("feedback_note.md"),
-        "Long-term project memory",
-    )
-    .expect("write memory file");
-
-    let current_session_db = sessions_dir.join("current.db");
-    let current = Connection::open(&current_session_db).expect("open current session db");
-    current
-        .execute_batch(
-            "CREATE TABLE session_events (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                session_id TEXT NOT NULL,\n                type TEXT NOT NULL,\n                category TEXT NOT NULL,\n                priority INTEGER NOT NULL DEFAULT 2,\n                data TEXT NOT NULL,\n                project_dir TEXT NOT NULL DEFAULT '',\n                attribution_source TEXT NOT NULL DEFAULT 'unknown',\n                attribution_confidence REAL NOT NULL DEFAULT 0,\n                bytes_avoided INTEGER NOT NULL DEFAULT 0,\n                bytes_returned INTEGER NOT NULL DEFAULT 0,\n                source_hook TEXT NOT NULL DEFAULT 'test',\n                created_at TEXT NOT NULL DEFAULT (datetime('now')),\n                data_hash TEXT NOT NULL DEFAULT ''\n            );\n            CREATE TABLE session_meta (\n                session_id TEXT PRIMARY KEY,\n                project_dir TEXT NOT NULL,\n                started_at TEXT NOT NULL,\n                last_event_at TEXT,\n                event_count INTEGER NOT NULL DEFAULT 0,\n                compact_count INTEGER NOT NULL DEFAULT 0\n            );\n            CREATE TABLE session_resume (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                session_id TEXT NOT NULL UNIQUE,\n                snapshot TEXT NOT NULL,\n                event_count INTEGER NOT NULL,\n                created_at TEXT NOT NULL DEFAULT (datetime('now')),\n                consumed INTEGER NOT NULL DEFAULT 0\n            );\n            CREATE TABLE tool_calls (\n                session_id TEXT NOT NULL,\n                tool TEXT NOT NULL,\n                calls INTEGER NOT NULL DEFAULT 0,\n                bytes_returned INTEGER NOT NULL DEFAULT 0,\n                updated_at TEXT NOT NULL DEFAULT (datetime('now')),\n                PRIMARY KEY (session_id, tool)\n            );",
-        )
-        .expect("create current session schema");
-    current
-        .execute(
-            "INSERT INTO session_meta(session_id, project_dir, started_at, last_event_at, event_count, compact_count) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params!["session-current", "/tmp/project-a", "2024-01-01 00:00:00", "2024-01-01 00:10:00", 2, 1],
-        )
-        .expect("insert current meta");
-    current
-        .execute(
-            "INSERT INTO session_events(session_id, type, category, data, project_dir, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params!["session-current", "summary", "decision", "event one", "/tmp/project-a", "2024-01-01 00:05:00"],
-        )
-        .expect("insert current event one");
-    current
-        .execute(
-            "INSERT INTO session_events(session_id, type, category, data, project_dir, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params!["session-current", "summary", "memory", "event two", "/tmp/project-a", "2024-01-01 00:10:00"],
-        )
-        .expect("insert current event two");
-    current
-        .execute(
-            "INSERT INTO session_resume(session_id, snapshot, event_count) VALUES (?1, ?2, ?3)",
-            rusqlite::params!["session-current", "snapshot body", 2],
-        )
-        .expect("insert current resume");
-    current
-        .execute(
-            "INSERT INTO tool_calls(session_id, tool, calls, bytes_returned) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params!["session-current", "cg_search", 3, 512],
-        )
-        .expect("insert tool calls");
-
-    let other_session_db = sessions_dir.join("other.db");
-    let other = Connection::open(&other_session_db).expect("open other session db");
-    other
-        .execute_batch(
-            "CREATE TABLE session_events (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                session_id TEXT NOT NULL,\n                type TEXT NOT NULL,\n                category TEXT NOT NULL,\n                priority INTEGER NOT NULL DEFAULT 2,\n                data TEXT NOT NULL,\n                project_dir TEXT NOT NULL DEFAULT '',\n                attribution_source TEXT NOT NULL DEFAULT 'unknown',\n                attribution_confidence REAL NOT NULL DEFAULT 0,\n                bytes_avoided INTEGER NOT NULL DEFAULT 0,\n                bytes_returned INTEGER NOT NULL DEFAULT 0,\n                source_hook TEXT NOT NULL DEFAULT 'test',\n                created_at TEXT NOT NULL DEFAULT (datetime('now')),\n                data_hash TEXT NOT NULL DEFAULT ''\n            );\n            CREATE TABLE session_meta (\n                session_id TEXT PRIMARY KEY,\n                project_dir TEXT NOT NULL,\n                started_at TEXT NOT NULL,\n                last_event_at TEXT,\n                event_count INTEGER NOT NULL DEFAULT 0,\n                compact_count INTEGER NOT NULL DEFAULT 0\n            );\n            CREATE TABLE session_resume (\n                id INTEGER PRIMARY KEY AUTOINCREMENT,\n                session_id TEXT NOT NULL UNIQUE,\n                snapshot TEXT NOT NULL,\n                event_count INTEGER NOT NULL,\n                created_at TEXT NOT NULL DEFAULT (datetime('now')),\n                consumed INTEGER NOT NULL DEFAULT 0\n            );",
-        )
-        .expect("create other session schema");
-    other
-        .execute(
-            "INSERT INTO session_meta(session_id, project_dir, started_at, event_count, compact_count) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params!["session-other", "/tmp/project-b", "2024-01-02 00:00:00", 3, 0],
-        )
-        .expect("insert other meta");
-    for idx in 0..3 {
-        other
-            .execute(
-                "INSERT INTO session_events(session_id, type, category, data, project_dir, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params!["session-other", "summary", "decision", format!("event {idx}"), "/tmp/project-b", "2024-01-02 00:00:00"],
-            )
-            .expect("insert other event");
-    }
-    other
-        .execute(
-            "INSERT INTO session_resume(session_id, snapshot, event_count) VALUES (?1, ?2, ?3)",
-            rusqlite::params!["session-other", "other snapshot", 3],
-        )
-        .expect("insert other resume");
-
-    let status_request = serde_json::json!({
-        "command": "status",
-        "params": {
-            "dbPath": db_path,
-            "sessionDbPath": current_session_db,
-            "sessionsDir": sessions_dir,
-            "configDir": config_dir,
-            "version": "test-version",
-            "cwd": "/tmp/project-a"
-        }
-    });
-    let response = call_core(status_request.to_string().as_bytes());
-    let text = response["content"][0]["text"]
-        .as_str()
-        .expect("status text");
-
-    assert_eq!(response["ok"], true);
-    assert!(text.contains("test-version"));
-    assert!(text.contains("Tool calls: 3"));
-    assert!(text.contains("Events captured: 2"));
-    assert!(text.contains("Conversations recorded: 1"));
-    assert!(text.contains("Compactions recorded: 1"));
-    assert!(text.contains("Resume snapshots: 1"));
-    assert!(text.contains("Events across projects: 5"));
-    assert!(text.contains("Conversations across projects: 2"));
-    assert!(text.contains("Projects with session DBs: 2"));
-    assert!(text.contains("Resume snapshots across projects: 2"));
-    assert!(text.contains("Auto-memory files: 1 across 1 projects"));
-}
-
-#[test]
 fn purge_session_scope_removes_only_target_session_rows() {
     let db_path = temp_db_path("purge-session-content");
     let session_db_path = temp_db_path("purge-session-db");
@@ -1744,62 +1564,6 @@ fn purge_session_scope_removes_only_target_session_rows() {
 }
 
 #[test]
-fn session_schema_migration_preserves_generated_hash_events() {
-    let session_db_path = temp_db_path("session-generated-hash-migration");
-    let conn = Connection::open(&session_db_path).expect("open legacy session db");
-    conn.execute_batch(
-        "
-        CREATE TABLE session_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            type TEXT NOT NULL,
-            category TEXT NOT NULL,
-            priority INTEGER NOT NULL DEFAULT 2,
-            data TEXT NOT NULL,
-            project_dir TEXT NOT NULL DEFAULT '',
-            attribution_source TEXT NOT NULL DEFAULT 'unknown',
-            attribution_confidence REAL NOT NULL DEFAULT 0,
-            bytes_avoided INTEGER NOT NULL DEFAULT 0,
-            bytes_returned INTEGER NOT NULL DEFAULT 0,
-            source_hook TEXT NOT NULL DEFAULT 'unknown',
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            data_hash TEXT GENERATED ALWAYS AS (lower(hex(data))) STORED
-        );
-        INSERT INTO session_events(session_id, type, category, data, project_dir)
-        VALUES ('legacy-session', 'summary', 'decision', 'preserved migration event', '/tmp/project');
-        ",
-    )
-    .expect("create generated-hash fixture");
-    drop(conn);
-
-    let request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "query",
-            "sessionDbPath": session_db_path,
-            "sessionId": "legacy-session",
-            "limit": 10
-        }
-    });
-    let response = call_core(request.to_string().as_bytes());
-    let payload = response_text_json(&response);
-
-    assert_eq!(response["ok"], true);
-    assert_eq!(payload["events"].as_array().expect("events").len(), 1);
-    assert_eq!(payload["events"][0]["data"], "preserved migration event");
-
-    let conn = Connection::open(&session_db_path).expect("reopen migrated session db");
-    let hidden: i64 = conn
-        .query_row(
-            "SELECT hidden FROM pragma_table_xinfo('session_events') WHERE name = 'data_hash'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("read migrated data_hash shape");
-    assert_eq!(hidden, 0);
-}
-
-#[test]
 fn session_cleanup_preserves_current_and_recently_active_sessions() {
     let session_db_path = temp_db_path("session-cleanup-activity");
     for session_id in ["current", "recent", "stale"] {
@@ -1854,63 +1618,6 @@ fn session_cleanup_preserves_current_and_recently_active_sessions() {
 }
 
 #[test]
-fn concurrent_session_writers_do_not_drop_events_to_database_locks() {
-    let session_db_path = temp_db_path("session-concurrent-writers");
-    let init = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "init",
-            "sessionDbPath": session_db_path,
-            "sessionId": "concurrent-session",
-            "projectDir": "/tmp/project"
-        }
-    });
-    assert_eq!(call_core(init.to_string().as_bytes())["ok"], true);
-
-    let writers = (0..20)
-        .map(|index| {
-            let session_db_path = session_db_path.clone();
-            thread::spawn(move || {
-                let request = serde_json::json!({
-                    "command": "session",
-                    "params": {
-                        "action": "events",
-                        "sessionDbPath": session_db_path,
-                        "sessionId": "concurrent-session",
-                        "projectDir": "/tmp/project",
-                        "sourceHook": "concurrency-test",
-                        "events": [{
-                            "type": "summary",
-                            "category": "test",
-                            "data": format!("concurrent event {index}"),
-                            "priority": 2
-                        }]
-                    }
-                });
-                call_core(request.to_string().as_bytes())
-            })
-        })
-        .collect::<Vec<_>>();
-    for writer in writers {
-        let response = writer.join().expect("join concurrent writer");
-        assert_eq!(response["ok"], true, "writer failed: {response}");
-    }
-
-    let query = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "query",
-            "sessionDbPath": session_db_path,
-            "sessionId": "concurrent-session",
-            "includeEventCount": true,
-            "limit": 25
-        }
-    });
-    let response = call_core(query.to_string().as_bytes());
-    assert_eq!(response_text_json(&response)["eventCount"], 20);
-}
-
-#[test]
 fn project_purge_removes_content_and_session_databases() {
     let db_path = temp_db_path("purge-project-content");
     let session_db_path = temp_db_path("purge-project-session");
@@ -1947,124 +1654,7 @@ fn project_purge_removes_content_and_session_databases() {
 }
 
 #[test]
-fn session_command_persists_runtime_side_effects_and_query_state() {
-    let session_db_path = temp_db_path("session-command");
-
-    let init_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "init",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-a",
-            "projectDir": "/tmp/project-a",
-            "maxAgeDays": 7
-        }
-    });
-    assert_eq!(call_core(init_request.to_string().as_bytes())["ok"], true);
-
-    let event_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "events",
-            "sessionDbPath": session_db_path,
-            "sourceHook": "cg-server",
-            "events": [{
-                "type": "sandbox-execute",
-                "category": "sandbox",
-                "data": "exec_command.batch",
-                "priority": 1,
-                "bytesReturned": 64
-            }]
-        }
-    });
-    assert_eq!(call_core(event_request.to_string().as_bytes())["ok"], true);
-
-    let tool_call_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "increment_tool_call",
-            "sessionDbPath": session_db_path,
-            "toolName": "exec_command.batch",
-            "bytesReturned": 64
-        }
-    });
-    assert_eq!(
-        call_core(tool_call_request.to_string().as_bytes())["ok"],
-        true
-    );
-
-    let resume_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "upsert_resume",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-a",
-            "snapshot": "<resume>carry forward</resume>",
-            "eventCount": 1
-        }
-    });
-    assert_eq!(call_core(resume_request.to_string().as_bytes())["ok"], true);
-
-    let query_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "query",
-            "sessionDbPath": session_db_path,
-            "latestSessionId": true,
-            "limit": 10,
-            "includeStats": true,
-            "includeResume": true,
-            "includeEventCount": true,
-            "includeToolCallStats": true
-        }
-    });
-    let query_response = call_core(query_request.to_string().as_bytes());
-    let query_text = query_response["content"][0]["text"]
-        .as_str()
-        .expect("session query text");
-    let query_json: serde_json::Value =
-        serde_json::from_str(query_text).expect("session query json");
-
-    assert_eq!(query_response["ok"], true);
-    assert_eq!(query_json["latestSessionId"], "session-a");
-    assert_eq!(query_json["eventCount"], 1);
-    assert_eq!(
-        query_json["events"].as_array().map(|rows| rows.len()),
-        Some(1)
-    );
-    assert_eq!(query_json["events"][0]["type"], "sandbox-execute");
-    assert_eq!(query_json["events"][0]["data"], "exec_command.batch");
-    assert_eq!(query_json["toolCallStats"]["totalCalls"], 1);
-    assert_eq!(
-        query_json["toolCallStats"]["byTool"]["exec_command.batch"]["bytesReturned"],
-        64
-    );
-    assert_eq!(query_json["resume"]["consumed"], false);
-
-    let consume_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "mark_resume_consumed",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-a"
-        }
-    });
-    assert_eq!(
-        call_core(consume_request.to_string().as_bytes())["ok"],
-        true
-    );
-
-    let consumed_query = call_core(query_request.to_string().as_bytes());
-    let consumed_text = consumed_query["content"][0]["text"]
-        .as_str()
-        .expect("consumed query text");
-    let consumed_json: serde_json::Value =
-        serde_json::from_str(consumed_text).expect("consumed query json");
-    assert_eq!(consumed_json["resume"]["consumed"], true);
-}
-
-#[test]
-fn session_record_tool_telemetry_updates_tool_calls_and_events() {
+fn session_record_tool_telemetry_updates_aggregates_and_samples() {
     let session_db_path = temp_db_path("session-record-tool-telemetry");
     let init_request = serde_json::json!({
         "command": "session",
@@ -2083,9 +1673,12 @@ fn session_record_tool_telemetry_updates_tool_calls_and_events() {
             "action": "record_tool_telemetry",
             "sessionDbPath": session_db_path,
             "toolName": "exec_command.batch",
+            "rawBytes": 160,
+            "indexedBytes": 150,
             "bytesReturned": 64,
-            "source": "inline-doc",
-            "bytesAvoided": 32
+            "omittedBytes": 96,
+            "elapsedMs": 25,
+            "success": false
         }
     });
     assert_eq!(
@@ -2106,8 +1699,6 @@ fn session_record_tool_telemetry_updates_tool_calls_and_events() {
     });
     let query_response = call_core(query_request.to_string().as_bytes());
     let query_json = response_text_json(&query_response);
-    let events = query_json["events"].as_array().expect("events array");
-
     assert_eq!(query_response["ok"], true);
     assert_eq!(
         query_json["toolCallStats"]["byTool"]["exec_command.batch"]["calls"],
@@ -2117,195 +1708,20 @@ fn session_record_tool_telemetry_updates_tool_calls_and_events() {
         query_json["toolCallStats"]["byTool"]["exec_command.batch"]["bytesReturned"],
         64
     );
-    assert!(
-        events
-            .iter()
-            .any(|event| { event["type"] == "sandbox-execute" && event["bytes_returned"] == 64 })
-    );
-    assert!(events.iter().any(|event| {
-        event["type"] == "index-write"
-            && event["data"] == "inline-doc"
-            && event["bytes_avoided"] == 32
-    }));
-}
-
-#[test]
-fn session_extract_hook_events_returns_rule_and_file_events() {
-    let db_path = temp_db_path("session-extract-hook-events");
-    let request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "extract_hook_events",
-            "sessionDbPath": db_path,
-            "sessionId": "sess-1",
-            "hookInput": {
-                "tool_name": "Read",
-                "tool_input": { "file_path": "/tmp/AGENTS.md" },
-                "tool_response": "Always use rust first"
-            },
-            "fallbackToolName": "read"
-        }
-    });
-
-    let response = call_core(request.to_string().as_bytes());
-    assert_eq!(response["ok"], true);
-    let events = response_text_json(&response)
-        .as_array()
-        .cloned()
-        .expect("events array");
-
-    assert!(events.iter().any(|event| {
-        event["type"] == "rule" && event["category"] == "rule" && event["data"] == "/tmp/AGENTS.md"
-    }));
-    assert!(events.iter().any(|event| {
-        event["type"] == "rule_content"
-            && event["category"] == "rule"
-            && event["data"] == "Always use rust first"
-    }));
-    assert!(events.iter().any(|event| {
-        event["type"] == "file_read"
-            && event["category"] == "file"
-            && event["data"] == "/tmp/AGENTS.md"
-    }));
-}
-
-#[test]
-fn session_extract_hook_events_normalizes_pi_ls_to_glob() {
-    let db_path = temp_db_path("session-extract-ls");
-    let request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "extract_hook_events",
-            "sessionDbPath": db_path,
-            "sessionId": "sess-ls",
-            "hookInput": {
-                "tool_name": "ls",
-                "tool_input": { "pattern": "src/**/*.ts" }
-            },
-            "fallbackToolName": "ls"
-        }
-    });
-
-    let response = call_core(request.to_string().as_bytes());
-    assert_eq!(response["ok"], true);
-    let events = response_text_json(&response)
-        .as_array()
-        .cloned()
-        .expect("events array");
-
-    assert!(events.iter().any(|event| {
-        event["type"] == "file_glob"
-            && event["category"] == "file"
-            && event["data"] == "src/**/*.ts"
-    }));
-}
-
-#[test]
-fn session_extract_hook_events_persists_iteration_loop_state() {
-    let db_path = temp_db_path("session-iteration-loop");
-    let request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "extract_hook_events",
-            "sessionDbPath": db_path,
-            "sessionId": "sess-2",
-            "hookInput": {
-                "tool_name": "Bash",
-                "tool_input": { "command": "cargo test" }
-            },
-            "fallbackToolName": "bash"
-        }
-    });
-
-    let first = call_core(request.to_string().as_bytes());
-    let second = call_core(request.to_string().as_bytes());
-    let third = call_core(request.to_string().as_bytes());
-
-    let first_events = response_text_json(&first)
-        .as_array()
-        .cloned()
-        .expect("first array");
-    let second_events = response_text_json(&second)
-        .as_array()
-        .cloned()
-        .expect("second array");
-    let third_events = response_text_json(&third)
-        .as_array()
-        .cloned()
-        .expect("third array");
-
-    assert!(
-        !first_events
-            .iter()
-            .any(|event| event["type"] == "retry_detected")
-    );
-    assert!(
-        !second_events
-            .iter()
-            .any(|event| event["type"] == "retry_detected")
-    );
-    assert!(third_events.iter().any(|event| {
-        event["type"] == "retry_detected"
-            && event["category"] == "iteration-loop"
-            && event["data"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("Bash called 3 times")
-    }));
-}
-
-#[test]
-fn session_extract_user_events_returns_intent_for_questions() {
-    let db_path = temp_db_path("session-extract-user-events");
-    let request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "extract_user_events",
-            "sessionDbPath": db_path,
-            "message": "Why is cargo test failing?"
-        }
-    });
-
-    let response = call_core(request.to_string().as_bytes());
-    assert_eq!(response["ok"], true);
-    let events = response_text_json(&response)
-        .as_array()
-        .cloned()
-        .expect("events array");
-    assert!(events.iter().any(|event| {
-        event["type"] == "intent" && event["category"] == "intent" && event["data"] == "investigate"
-    }));
-}
-
-#[test]
-fn session_build_resume_snapshot_returns_xml() {
-    let db_path = temp_db_path("session-build-resume-snapshot");
-    let request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "build_resume_snapshot",
-            "sessionDbPath": db_path,
-            "compactCount": 2,
-            "events": [
-                { "type": "file_read", "category": "file", "data": "src/pi/extension.ts", "priority": 1 },
-                { "type": "decision", "category": "decision", "data": "keep the rust path", "priority": 2 },
-                { "type": "intent", "category": "intent", "data": "implement", "priority": 4 },
-                { "type": "user_prompt", "category": "user-prompt", "data": "please continue the port", "priority": 4 }
-            ]
-        }
-    });
-
-    let response = call_core(request.to_string().as_bytes());
-    assert_eq!(response["ok"], true);
-    let snapshot =
-        serde_json::from_str::<String>(&response_text(&response)).expect("snapshot string");
-
-    assert!(snapshot.contains("<session_resume"));
-    assert!(snapshot.contains("compact_count=\"2\""));
-    assert!(snapshot.contains("<files count=\"1\">"));
-    assert!(snapshot.contains("<decisions count=\"1\">"));
-    assert!(snapshot.contains("<intent mode=\"implement\"/>"));
-    assert!(snapshot.contains("<recent_user_messages count=\"1\">"));
+    assert_eq!(query_json["toolCallStats"]["totalRawBytes"], 160);
+    assert_eq!(query_json["toolCallStats"]["totalIndexedBytes"], 150);
+    assert_eq!(query_json["toolCallStats"]["totalOmittedBytes"], 96);
+    assert_eq!(query_json["toolCallStats"]["totalElapsedMs"], 25);
+    assert_eq!(query_json["toolCallStats"]["failures"], 1);
+    let conn = Connection::open(&session_db_path).expect("open telemetry db");
+    let metrics: (i64, i64, i64, i64, i64, bool) = conn
+        .query_row(
+            "SELECT raw_bytes, indexed_bytes, returned_bytes, omitted_bytes, elapsed_ms, success FROM tool_metrics",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+        )
+        .expect("read telemetry row");
+    assert_eq!(metrics, (160, 150, 64, 96, 25, false));
 }
 
 #[test]
@@ -2438,330 +1854,6 @@ fn process_file_respects_read_deny_patterns() {
 }
 
 #[test]
-fn session_prepare_before_agent_start_returns_active_memory_and_consumes_resume() {
-    let session_db_path = temp_db_path("session-before-agent-start");
-
-    let init_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "init",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-b",
-            "projectDir": "/tmp/project"
-        }
-    });
-    assert_eq!(call_core(init_request.to_string().as_bytes())["ok"], true);
-
-    let events_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "events",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-b",
-            "projectDir": "/tmp/project",
-            "sourceHook": "PostToolUse",
-            "events": [
-                { "type": "role", "category": "role", "data": "You are a senior engineer", "priority": 3 },
-                { "type": "decision", "category": "decision", "data": "Prefer the Rust boundary", "priority": 3 },
-                { "type": "skill", "category": "skill", "data": "sym", "priority": 3 },
-                { "type": "intent", "category": "intent", "data": "implement", "priority": 4 }
-            ]
-        }
-    });
-    assert_eq!(call_core(events_request.to_string().as_bytes())["ok"], true);
-
-    let resume_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "upsert_resume",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-b",
-            "snapshot": "<resume>carry this forward</resume>",
-            "eventCount": 4
-        }
-    });
-    assert_eq!(call_core(resume_request.to_string().as_bytes())["ok"], true);
-
-    let prepare_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "prepare_before_agent_start",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-b",
-            "projectDir": "/tmp/project",
-            "message": "please keep going",
-            "systemPrompt": "base prompt"
-        }
-    });
-    let prepare_response = call_core(prepare_request.to_string().as_bytes());
-    let prepare_json = response_text_json(&prepare_response);
-    let active_memory = prepare_json["activeMemory"]
-        .as_str()
-        .expect("active memory");
-    let resume_snapshot = prepare_json["resumeSnapshot"]
-        .as_str()
-        .expect("resume snapshot");
-    let system_prompt = prepare_json["systemPrompt"]
-        .as_str()
-        .expect("system prompt");
-
-    assert_eq!(prepare_response["ok"], true);
-    assert!(active_memory.contains("<behavioral_directive>"));
-    assert!(active_memory.contains("Prefer the Rust boundary"));
-    assert!(active_memory.contains("<active_skills>"));
-    assert!(active_memory.contains("<session_mode>implement</session_mode>"));
-    assert_eq!(resume_snapshot, "<resume>carry this forward</resume>");
-    assert!(system_prompt.contains("base prompt"));
-    assert!(system_prompt.contains("<context_window_protection>"));
-    assert!(system_prompt.contains("Prefer the Rust boundary"));
-    assert!(system_prompt.contains("<resume>carry this forward</resume>"));
-
-    let query_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "query",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-b",
-            "includeResume": true,
-            "includeEventCount": true,
-            "limit": 20
-        }
-    });
-    let query_response = call_core(query_request.to_string().as_bytes());
-    let query_json = response_text_json(&query_response);
-    assert_eq!(query_json["resume"]["consumed"], true);
-    assert_eq!(query_json["eventCount"], 6);
-    assert!(
-        query_json["events"]
-            .as_array()
-            .expect("events array")
-            .iter()
-            .any(|event| {
-                event["category"] == "user-prompt"
-                    && event["type"] == "user_prompt"
-                    && event["data"] == "please keep going"
-            })
-    );
-}
-
-#[test]
-fn session_prepare_before_agent_start_uses_recent_high_priority_events() {
-    let session_db_path = temp_db_path("session-before-agent-start-recent");
-    let init_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "init",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-c",
-            "projectDir": "/tmp/project"
-        }
-    });
-    assert_eq!(call_core(init_request.to_string().as_bytes())["ok"], true);
-
-    let events = (0..60)
-        .map(|index| {
-            serde_json::json!({
-                "type": "role",
-                "category": "role",
-                "data": format!("role {index}"),
-                "priority": 3
-            })
-        })
-        .collect::<Vec<_>>();
-    let events_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "events",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-c",
-            "projectDir": "/tmp/project",
-            "sourceHook": "PostToolUse",
-            "events": events
-        }
-    });
-    assert_eq!(call_core(events_request.to_string().as_bytes())["ok"], true);
-
-    let prepare_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "prepare_before_agent_start",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-c",
-            "projectDir": "/tmp/project",
-            "message": "",
-            "systemPrompt": "base prompt"
-        }
-    });
-    let prepare_response = call_core(prepare_request.to_string().as_bytes());
-    let prepare_json = response_text_json(&prepare_response);
-    let active_memory = prepare_json["activeMemory"]
-        .as_str()
-        .expect("active memory");
-    let system_prompt = prepare_json["systemPrompt"]
-        .as_str()
-        .expect("system prompt");
-
-    assert_eq!(prepare_response["ok"], true);
-    assert!(active_memory.contains("role 59"));
-    assert!(!active_memory.contains("role 0"));
-    assert!(system_prompt.contains("<context_window_protection>"));
-    assert!(system_prompt.contains("role 59"));
-}
-
-#[test]
-fn session_record_provider_response_persists_event() {
-    let session_db_path = temp_db_path("session-provider-response");
-    let init_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "init",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-d",
-            "projectDir": "/tmp/project"
-        }
-    });
-    assert_eq!(call_core(init_request.to_string().as_bytes())["ok"], true);
-
-    let record_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "record_provider_response",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-d",
-            "projectDir": "/tmp/project",
-            "providerMeta": {
-                "model": "gpt-test",
-                "provider": "openai",
-                "latencyMs": 12
-            }
-        }
-    });
-    assert_eq!(call_core(record_request.to_string().as_bytes())["ok"], true);
-
-    let query_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "query",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-d",
-            "limit": 10
-        }
-    });
-    let query_response = call_core(query_request.to_string().as_bytes());
-    let query_json = response_text_json(&query_response);
-    assert!(
-        query_json["events"]
-            .as_array()
-            .expect("events array")
-            .iter()
-            .any(|event| {
-                event["type"] == "provider_response"
-                    && event["category"] == "pi"
-                    && event["data"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .contains("\"model\":\"gpt-test\"")
-            })
-    );
-}
-
-#[test]
-fn session_prepare_before_compact_upserts_resume_snapshot() {
-    let session_db_path = temp_db_path("session-before-compact");
-    let init_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "init",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-e",
-            "projectDir": "/tmp/project"
-        }
-    });
-    assert_eq!(call_core(init_request.to_string().as_bytes())["ok"], true);
-
-    let events_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "events",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-e",
-            "projectDir": "/tmp/project",
-            "sourceHook": "PostToolUse",
-            "events": [
-                { "type": "file_read", "category": "file", "data": "src/pi/extension.ts", "priority": 1 },
-                { "type": "intent", "category": "intent", "data": "implement", "priority": 4 }
-            ]
-        }
-    });
-    assert_eq!(call_core(events_request.to_string().as_bytes())["ok"], true);
-
-    let prepare_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "prepare_before_compact",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-e"
-        }
-    });
-    let prepare_response = call_core(prepare_request.to_string().as_bytes());
-    let prepare_json = response_text_json(&prepare_response);
-    assert_eq!(prepare_response["ok"], true);
-    assert_eq!(prepare_json["eventCount"], 2);
-    assert!(
-        prepare_json["snapshot"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("<session_resume")
-    );
-
-    let query_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "query",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-e",
-            "includeResume": true
-        }
-    });
-    let query_response = call_core(query_request.to_string().as_bytes());
-    let query_json = response_text_json(&query_response);
-    assert!(
-        query_json["resume"]["snapshot"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("<session_resume")
-    );
-}
-
-#[test]
-fn session_check_tool_call_blocks_inline_http_bash_commands() {
-    let request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "check_tool_call",
-            "sessionDbPath": temp_db_path("session-check-tool-call"),
-            "hookInput": {
-                "tool_name": "bash",
-                "tool_input": {
-                    "command": "curl https://example.com"
-                }
-            }
-        }
-    });
-    let response = call_core(request.to_string().as_bytes());
-    let json = response_text_json(&response);
-
-    assert_eq!(response["ok"], true);
-    assert_eq!(json["block"], true);
-    assert!(
-        json["reason"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("inline HTTP clients")
-    );
-}
-
-#[test]
 fn session_build_pi_check_renders_session_summary() {
     let session_db_path = temp_db_path("session-build-pi-check");
     let init_request = serde_json::json!({
@@ -2775,31 +1867,21 @@ fn session_build_pi_check_renders_session_summary() {
     });
     assert_eq!(call_core(init_request.to_string().as_bytes())["ok"], true);
 
-    let events_request = serde_json::json!({
+    let telemetry_request = serde_json::json!({
         "command": "session",
         "params": {
-            "action": "events",
+            "action": "record_tool_telemetry",
             "sessionDbPath": session_db_path,
             "sessionId": "session-f",
-            "projectDir": "/tmp/project",
-            "sourceHook": "PostToolUse",
-            "events": [
-                { "type": "intent", "category": "intent", "data": "implement", "priority": 4 }
-            ]
-        }
-    });
-    assert_eq!(call_core(events_request.to_string().as_bytes())["ok"], true);
-
-    let compact_request = serde_json::json!({
-        "command": "session",
-        "params": {
-            "action": "prepare_before_compact",
-            "sessionDbPath": session_db_path,
-            "sessionId": "session-f"
+            "toolName": "cg_search",
+            "rawBytes": 100,
+            "bytesReturned": 40,
+            "omittedBytes": 60,
+            "success": true
         }
     });
     assert_eq!(
-        call_core(compact_request.to_string().as_bytes())["ok"],
+        call_core(telemetry_request.to_string().as_bytes())["ok"],
         true
     );
 
@@ -2822,7 +1904,123 @@ fn session_build_pi_check_renders_session_summary() {
     assert_eq!(response["ok"], true);
     assert!(text.contains("## cg-check (Pi)"));
     assert!(text.contains("- DB exists: true"));
-    assert!(text.contains("- Session ID: `session-"));
-    assert!(text.contains("- Events: 1"));
-    assert!(text.contains("- Resume snapshot: available"));
+    assert!(text.contains("- Tool calls: 1"));
+    assert!(text.contains("- Omitted bytes: 60"));
+    assert!(text.contains("- Failures: 0"));
+}
+
+#[test]
+fn session_schema_migration_removes_inactive_tables_and_preserves_telemetry() {
+    let session_db_path = temp_db_path("session-v3-migration");
+    let conn = Connection::open(&session_db_path).expect("open legacy session db");
+    conn.execute_batch(
+        "CREATE TABLE session_events(id INTEGER PRIMARY KEY, data TEXT);
+         CREATE TABLE session_resume(id INTEGER PRIMARY KEY, snapshot TEXT);
+         CREATE TABLE session_extractor_state(session_id TEXT PRIMARY KEY);
+         CREATE TABLE session_meta(
+            session_id TEXT PRIMARY KEY, project_dir TEXT NOT NULL,
+            started_at TEXT NOT NULL, last_event_at TEXT,
+            event_count INTEGER NOT NULL DEFAULT 0, compact_count INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE tool_calls(
+            session_id TEXT NOT NULL, tool TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0,
+            bytes_returned INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY(session_id, tool)
+         );
+         INSERT INTO session_meta(session_id, project_dir, started_at)
+            VALUES ('legacy', '/tmp/project', datetime('now'));
+         INSERT INTO tool_calls(session_id, tool, calls, bytes_returned)
+            VALUES ('legacy', 'cg_search', 2, 80);
+         PRAGMA user_version = 2;",
+    )
+    .expect("create legacy schema");
+    drop(conn);
+
+    let response = call_core(
+        serde_json::json!({
+            "command": "session",
+            "params": {
+                "action": "query",
+                "sessionDbPath": session_db_path,
+                "sessionId": "legacy",
+                "includeToolCallStats": true
+            }
+        })
+        .to_string()
+        .as_bytes(),
+    );
+    let payload = response_text_json(&response);
+    assert_eq!(response["ok"], true);
+    assert_eq!(payload["toolCallStats"]["totalCalls"], 2);
+    assert_eq!(payload["toolCallStats"]["totalBytesReturned"], 80);
+
+    let conn = Connection::open(&session_db_path).expect("reopen migrated session db");
+    for table in [
+        "session_events",
+        "session_resume",
+        "session_extractor_state",
+    ] {
+        let exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                [table],
+                |row| row.get(0),
+            )
+            .expect("inspect migrated schema");
+        assert_eq!(exists, 0, "legacy table survived: {table}");
+    }
+}
+
+#[test]
+fn status_reports_current_and_lifetime_telemetry() {
+    let db_path = temp_db_path("status-telemetry-content");
+    let sessions_dir = temp_file_path("status-telemetry-sessions", "dir");
+    std::fs::create_dir_all(&sessions_dir).expect("create sessions dir");
+    let current_session_db = sessions_dir.join("current.db");
+
+    for (path, session_id, calls) in [
+        (&current_session_db, "current", 2),
+        (&sessions_dir.join("other.db"), "other", 1),
+    ] {
+        let init = serde_json::json!({
+            "command": "session",
+            "params": {
+                "action": "init", "sessionDbPath": path,
+                "sessionId": session_id, "projectDir": "/tmp/project"
+            }
+        });
+        assert_eq!(call_core(init.to_string().as_bytes())["ok"], true);
+        for _ in 0..calls {
+            let telemetry = serde_json::json!({
+                "command": "session",
+                "params": {
+                    "action": "record_tool_telemetry", "sessionDbPath": path,
+                    "sessionId": session_id, "toolName": "cg_search",
+                    "rawBytes": 100, "bytesReturned": 40, "omittedBytes": 60,
+                    "elapsedMs": 10, "success": true
+                }
+            });
+            assert_eq!(call_core(telemetry.to_string().as_bytes())["ok"], true);
+        }
+    }
+
+    let response = call_core(
+        serde_json::json!({
+            "command": "status",
+            "params": {
+                "dbPath": db_path, "sessionDbPath": current_session_db,
+                "sessionsDir": sessions_dir, "version": "test-version"
+            }
+        })
+        .to_string()
+        .as_bytes(),
+    );
+    let text = response_text(&response);
+    assert_eq!(response["ok"], true);
+    assert!(text.contains("Tool calls: 2"));
+    assert!(text.contains("Omitted bytes: 120"));
+    assert!(text.contains("Conversations across projects: 2"));
+    assert!(text.contains("Tool calls across projects: 3"));
+    assert!(text.contains("Omitted bytes across projects: 180"));
 }

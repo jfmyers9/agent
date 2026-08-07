@@ -110,7 +110,7 @@ export function createPiToolSpecs() {
 		status: {
 			title: "Context Guard Status",
 			description:
-				"Returns factual diagnostics for Context Guard: tool calls, indexed bytes, session events, resume snapshots, and continuity sources.",
+				"Returns factual diagnostics for Context Guard: tool calls, byte savings, latency, failures, indexed content, and storage.",
 			inputSchema: z.object({}),
 		},
 		check: {

@@ -136,6 +136,16 @@ type ContextGuardBatchCoreDetails = {
 	commandCount?: number;
 	concurrency?: number;
 	queries?: string[];
+	metrics?: OperationMetrics;
+};
+
+type OperationMetrics = {
+	rawBytes?: number;
+	indexedBytes?: number;
+	returnedBytes?: number;
+	omittedBytes?: number;
+	elapsedMs?: number;
+	success?: boolean;
 };
 
 type ContextGuardBatchRenderDetails = {
@@ -406,11 +416,17 @@ async function executeWrappedCommandWithContextGuard(
 		signal,
 	);
 	setImmediate(() => {
+		const metrics = batch.details?.metrics;
 		void sessionRecordToolTelemetry({
 			sessionDbPath: batch.sessionDbPath,
 			projectDir: batch.projectDir,
 			toolName: batch.toolName,
-			bytesReturned: Buffer.byteLength(batch.responseText),
+			bytesReturned: metrics?.returnedBytes ?? Buffer.byteLength(batch.responseText),
+			rawBytes: metrics?.rawBytes,
+			indexedBytes: metrics?.indexedBytes,
+			omittedBytes: metrics?.omittedBytes,
+			elapsedMs: metrics?.elapsedMs,
+			success: metrics?.success ?? !batch.responseIsError,
 		});
 	});
 	return makeWrappedCommandResult(params.cmd, batch.responseText, batch.details, batch.responseIsError);
@@ -419,11 +435,17 @@ async function executeWrappedCommandWithContextGuard(
 async function executeExplicitBatch(params: ContextGuardBatchParams, ctx: ExtensionContext, signal?: AbortSignal) {
 	const batch = await executeContextGuardBatch(params, ctx, signal);
 	setImmediate(() => {
+		const metrics = batch.details?.metrics;
 		void sessionRecordToolTelemetry({
 			sessionDbPath: batch.sessionDbPath,
 			projectDir: batch.projectDir,
 			toolName: batch.toolName,
-			bytesReturned: Buffer.byteLength(batch.responseText),
+			bytesReturned: metrics?.returnedBytes ?? Buffer.byteLength(batch.responseText),
+			rawBytes: metrics?.rawBytes,
+			indexedBytes: metrics?.indexedBytes,
+			omittedBytes: metrics?.omittedBytes,
+			elapsedMs: metrics?.elapsedMs,
+			success: metrics?.success ?? !batch.responseIsError,
 		});
 	});
 	return {

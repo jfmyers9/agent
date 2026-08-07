@@ -6,8 +6,7 @@
  *
  * Entry point: `export default function(pi: ExtensionAPI) { ... }`
  *
- * Lifecycle: session_start, tool_call, tool_result, session_compact,
- * session_shutdown.
+ * Lifecycle: session_start and session_shutdown.
  */
 
 import { createHash } from "node:crypto";
@@ -15,18 +14,13 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HookInput } from "../session/core-session.js";
 import {
 	sessionBuildPiCheck,
-	sessionCheckToolCall,
-	sessionExtractHookEvents,
-	sessionIncrementCompactCount,
 	sessionInit,
-	sessionWriteEvents,
 } from "../session/core-session.js";
 import { resolveContentStorePath, resolveSessionDbPath } from "../session/paths.js";
 import { invokeCoreSync } from "./core.js";
-import { getPiConfigDir, getPiSessionDir, markExecCommandContextGuardEnabled } from "./index.js";
+import { getPiSessionDir, markExecCommandContextGuardEnabled } from "./index.js";
 import { registerPiContextTools } from "./tools.js";
 
 const PI_WORKSPACE_ENV_VARS = ["PI_WORKSPACE_DIR", "PI_PROJECT_DIR"] as const;
@@ -79,26 +73,9 @@ function buildStatsText(projectDir: string): string {
 		dbPath: getStorePath(projectDir),
 		sessionDbPath: getDBPath(projectDir),
 		sessionsDir: getSessionDir(),
-		configDir: getPiConfigDir(),
 		cwd: projectDir,
 	});
 	return response.content[0]?.text ?? "context-guard stats unavailable (rust core error)";
-}
-
-function toolResultText(content: unknown): string | undefined {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return undefined;
-	const text = content
-		.filter(
-			(part): part is { type: "text"; text: string } =>
-				typeof part === "object" &&
-				part !== null &&
-				(part as { type?: unknown }).type === "text" &&
-				typeof (part as { text?: unknown }).text === "string",
-		)
-		.map((part) => part.text)
-		.join("\n");
-	return text || undefined;
 }
 
 function resolveCommandContext(argsOrCtx: unknown, ctx: unknown): any {
@@ -222,84 +199,7 @@ export default function piExtension(pi: any): void {
 		}
 	});
 
-	// ── 2. tool_call — PreToolUse routing enforcement ──────
-	// Block bash commands that contain curl/wget/fetch/requests patterns.
-
-	pi.on("tool_call", (event: any) => {
-		try {
-			const result = sessionCheckToolCall({
-				sessionDbPath,
-				hookInput: {
-					tool_name: String(event?.toolName ?? ""),
-					tool_input: (event?.input ?? {}) as Record<string, unknown>,
-				},
-			});
-			if (result?.block) {
-				return {
-					block: true,
-					reason: result.reason ?? "Command blocked by context-guard",
-				};
-			}
-		} catch {
-			// Routing failure — allow passthrough
-		}
-	});
-
-	// ── 3. tool_result — PostToolUse event capture ─────────
-
-	pi.on("tool_result", (event: any) => {
-		try {
-			if (!_sessionId) return;
-
-			const rawToolName = String(event?.toolName ?? event?.tool_name ?? "");
-
-			// Normalize result to string
-			const resultStr = toolResultText(event?.content ?? event?.result ?? event?.output);
-
-			// Detect errors
-			const hasError = Boolean(event?.error || event?.isError);
-
-			const hookInput: HookInput = {
-				tool_name: rawToolName,
-				tool_input: event?.params ?? event?.input ?? {},
-				tool_response: resultStr,
-				tool_output: hasError ? { isError: true } : undefined,
-			};
-
-			const events = sessionExtractHookEvents({
-				sessionDbPath,
-				sessionId: _sessionId,
-				projectDir,
-				hookInput,
-				fallbackToolName: rawToolName,
-			});
-
-			if (events.length > 0) {
-				sessionWriteEvents({
-					sessionDbPath,
-					sessionId: _sessionId,
-					projectDir,
-					sourceHook: "PostToolUse",
-					events,
-				});
-			}
-		} catch {
-			// Silent — session capture must never break the tool call
-		}
-	});
-
-	// ── 4. session_compact — Increment compact counter ─────
-
-	pi.on("session_compact", () => {
-		try {
-			if (!_sessionId) return;
-			sessionIncrementCompactCount({ sessionDbPath, sessionId: _sessionId });
-		} catch {
-			// best effort
-		}
-	});
-
-	// ── 5. session_shutdown — Cleanup old sessions ─────────
+	// ── 2. session_shutdown ─────────────────────────────────
 
 	pi.on("session_shutdown", async () => {
 		try {
@@ -309,7 +209,7 @@ export default function piExtension(pi: any): void {
 		}
 	});
 
-	// ── 6. Slash commands ──────────────────────────────────
+	// ── 3. Slash commands ──────────────────────────────────
 
 	registerTextCommand(pi, "cg-status", "Show context-guard session statistics", () =>
 		!_sessionId ? "context-guard: no active session" : buildStatsText(projectDir),

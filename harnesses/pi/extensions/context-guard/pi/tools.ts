@@ -4,7 +4,6 @@ import { createHashlineEditAnchor } from "../../fileops/hashline/anchors.js";
 import { textComponent } from "../../shared/tui";
 import type { PiToolResponse } from "./core.js";
 import { buildCoreCheckText, invokeCore } from "./core.js";
-import { getPiConfigDir } from "./index.js";
 import { getProjectDir, getSessionDbPath, getSessionDir, getStorePath } from "./tool-paths.js";
 import { createPiToolSpecs } from "./tool-specs.js";
 import { type ToolResult, trackResponse, VERSION } from "./tool-stats.js";
@@ -245,7 +244,7 @@ server.registerTool("cg_index", toolSpecs.index, async ({ content, path, source 
 	return trackResponse(
 		"cg_index",
 		await withHashlineEditAnchor(result, path),
-		content ? { bytes: Buffer.byteLength(content), source } : undefined,
+		content ? { bytes: Buffer.byteLength(content) } : undefined,
 	);
 });
 
@@ -257,9 +256,6 @@ server.registerTool("cg_search", toolSpecs.search, async (params, signal) =>
 			{
 				dbPath: getStorePath(),
 				...(params as Record<string, unknown>),
-				sessionDbPath: getSessionDbPath(),
-				projectDir: getProjectDir(),
-				configDir: getPiConfigDir(),
 			},
 			signal,
 		),
@@ -276,7 +272,6 @@ server.registerTool(
 				"fetch",
 				{
 					dbPath: getStorePath(),
-					sessionDbPath: getSessionDbPath(),
 					url,
 					source,
 					requests,
@@ -298,7 +293,6 @@ server.registerTool("cg_status", toolSpecs.status, async (_params, signal) =>
 				dbPath: getStorePath(),
 				sessionDbPath: getSessionDbPath(),
 				sessionsDir: getSessionDir(),
-				configDir: getPiConfigDir(),
 				version: VERSION,
 				cwd: getProjectDir(),
 			},
