@@ -6,8 +6,8 @@
  *
  * Entry point: `export default function(pi: ExtensionAPI) { ... }`
  *
- * Lifecycle: session_start, tool_call, tool_result, before_agent_start,
- * session_before_compact, session_compact, session_shutdown.
+ * Lifecycle: session_start, tool_call, tool_result, session_compact,
+ * session_shutdown.
  */
 
 import { createHash } from "node:crypto";
@@ -22,8 +22,6 @@ import {
 	sessionExtractHookEvents,
 	sessionIncrementCompactCount,
 	sessionInit,
-	sessionPrepareBeforeAgentStart,
-	sessionPrepareBeforeCompact,
 	sessionWriteEvents,
 } from "../session/core-session.js";
 import { resolveContentStorePath, resolveSessionDbPath } from "../session/paths.js";
@@ -290,42 +288,7 @@ export default function piExtension(pi: any): void {
 		}
 	});
 
-	// ── 4. before_agent_start — Routing + active_memory + resume injection ─
-
-	pi.on("before_agent_start", (event: any) => {
-		try {
-			if (!_sessionId) return;
-
-			const prepared = sessionPrepareBeforeAgentStart({
-				sessionDbPath,
-				sessionId: _sessionId,
-				projectDir,
-				prompt: String(event?.prompt ?? ""),
-				systemPrompt: String(event?.systemPrompt ?? ""),
-			});
-			if (prepared?.systemPrompt) {
-				return { systemPrompt: prepared.systemPrompt };
-			}
-		} catch {
-			// best effort — never break agent start
-		}
-	});
-
-	// ── 5. session_before_compact — Build resume snapshot ──
-
-	pi.on("session_before_compact", () => {
-		try {
-			if (!_sessionId) return;
-			sessionPrepareBeforeCompact({
-				sessionDbPath,
-				sessionId: _sessionId,
-			});
-		} catch {
-			// best effort — never break compaction
-		}
-	});
-
-	// ── 6. session_compact — Increment compact counter ─────
+	// ── 4. session_compact — Increment compact counter ─────
 
 	pi.on("session_compact", () => {
 		try {
@@ -336,7 +299,7 @@ export default function piExtension(pi: any): void {
 		}
 	});
 
-	// ── 7. session_shutdown — Cleanup old sessions ─────────
+	// ── 5. session_shutdown — Cleanup old sessions ─────────
 
 	pi.on("session_shutdown", async () => {
 		try {
@@ -346,7 +309,7 @@ export default function piExtension(pi: any): void {
 		}
 	});
 
-	// ── 8. Slash commands ──────────────────────────────────
+	// ── 6. Slash commands ──────────────────────────────────
 
 	registerTextCommand(pi, "cg-status", "Show context-guard session statistics", () =>
 		!_sessionId ? "context-guard: no active session" : buildStatsText(projectDir),

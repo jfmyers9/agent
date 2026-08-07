@@ -38,7 +38,7 @@ function createMockPi() {
 }
 
 describe("Pi session hook delegation", () => {
-	it("keeps session actions on the Rust core and injects its resume state", async () => {
+	it("keeps session capture without ambient prompt or resume hooks", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "context-guard-session-hooks-"));
 		const coreBin = join(dir, "context-guard-core.js");
 		const logPath = join(dir, "requests.log");
@@ -62,8 +62,6 @@ describe("Pi session hook delegation", () => {
 				"  let payload = {};",
 				'  if (action === "extract_hook_events") payload = [{ type: "tool_call", category: "pi", data: "captured", priority: 1 }];',
 				'  if (action === "check_tool_call") payload = { block: request.params?.hookInput?.tool_input?.command?.includes("curl "), reason: "blocked from rust" };',
-				'  if (action === "prepare_before_agent_start") payload = { systemPrompt: "base prompt\\n\\n<session_state>rust owned</session_state>\\n\\n<resume>carry this forward</resume>" };',
-				'  if (action === "prepare_before_compact") payload = { eventCount: 1, snapshot: "<resume>carry this forward</resume>" };',
 				'  if (action === "build_pi_check") payload = "rust cg-check summary";',
 				'  process.stdout.write(JSON.stringify({ ok: true, content: [{ type: "text", text: JSON.stringify(payload) }] }));',
 				"});",
@@ -81,13 +79,11 @@ describe("Pi session hook delegation", () => {
 			content: [{ type: "text", text: "content from Pi result" }],
 			isError: false,
 		});
-		const beforeStart = pi.hooks.get("before_agent_start")?.({ prompt: "continue", systemPrompt: "base prompt" });
-		pi.hooks.get("session_before_compact")?.();
 		const check = await pi.commands.get("cg-check")?.handler({});
 
 		expect(blocked).toEqual({ block: true, reason: "blocked from rust" });
-		expect(beforeStart?.systemPrompt).toContain("<session_state>rust owned</session_state>");
-		expect(beforeStart?.systemPrompt).toContain("<resume>carry this forward</resume>");
+		expect(pi.hooks.has("before_agent_start")).toBe(false);
+		expect(pi.hooks.has("session_before_compact")).toBe(false);
 		expect(check).toEqual({ text: "rust cg-check summary" });
 
 		const requests = readFileSync(logPath, "utf8")
@@ -112,8 +108,6 @@ describe("Pi session hook delegation", () => {
 			"check_tool_call",
 			"extract_hook_events",
 			"events",
-			"prepare_before_agent_start",
-			"prepare_before_compact",
 			"build_pi_check",
 		]) {
 			expect(actions).toContain(action);

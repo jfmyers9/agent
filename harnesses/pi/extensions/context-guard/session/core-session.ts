@@ -63,17 +63,6 @@ export interface SessionToolCallStats {
 	byTool: Record<string, SessionToolCallByTool>;
 }
 
-export interface SessionBeforeAgentStartResult {
-	activeMemory?: string;
-	resumeSnapshot?: string;
-	systemPrompt?: string;
-}
-
-export interface SessionBeforeCompactResult {
-	snapshot?: string;
-	eventCount?: number;
-}
-
 export interface SessionToolCallCheckResult {
 	block?: boolean;
 	reason?: string;
@@ -142,23 +131,6 @@ export function sessionBuildPiCheck(opts: {
 	);
 }
 
-export function sessionPrepareBeforeAgentStart(opts: {
-	sessionDbPath: string;
-	sessionId: string;
-	projectDir?: string;
-	prompt?: string;
-	systemPrompt?: string;
-}): SessionBeforeAgentStartResult | null {
-	return callSession<SessionBeforeAgentStartResult>({
-		action: "prepare_before_agent_start",
-		sessionDbPath: opts.sessionDbPath,
-		sessionId: opts.sessionId,
-		projectDir: opts.projectDir,
-		message: opts.prompt,
-		systemPrompt: opts.systemPrompt,
-	});
-}
-
 export function sessionRecordProviderResponse(opts: {
 	sessionDbPath: string;
 	sessionId: string;
@@ -171,17 +143,6 @@ export function sessionRecordProviderResponse(opts: {
 		sessionId: opts.sessionId,
 		projectDir: opts.projectDir,
 		providerMeta: opts.providerMeta,
-	});
-}
-
-export function sessionPrepareBeforeCompact(opts: {
-	sessionDbPath: string;
-	sessionId: string;
-}): SessionBeforeCompactResult | null {
-	return callSession<SessionBeforeCompactResult>({
-		action: "prepare_before_compact",
-		sessionDbPath: opts.sessionDbPath,
-		sessionId: opts.sessionId,
 	});
 }
 
