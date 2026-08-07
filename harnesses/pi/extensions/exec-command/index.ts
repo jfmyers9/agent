@@ -724,11 +724,12 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 		}
 	});
 	pi.on("tool_result", (event) => {
-		const content = truncateTextToolResultContent(event.content);
+		const isShellTool = event.toolName === "exec_command" || event.toolName === "write_stdin";
+		const content = isShellTool ? truncateTextToolResultContent(event.content) : undefined;
 		const patch: { content?: unknown[]; isError?: boolean } = {};
 		if (content) patch.content = content;
 
-		if (event.toolName === "exec_command" || event.toolName === "write_stdin") {
+		if (isShellTool) {
 			const details = event.details;
 			if (details && typeof details === "object") {
 				const resultDetails = details as {

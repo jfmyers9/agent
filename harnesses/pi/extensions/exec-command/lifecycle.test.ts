@@ -26,8 +26,8 @@ function createExtensionHarness() {
 	return { handlers, tools, sentMessages };
 }
 
-function emit(handlers: Map<string, Handler[]>, event: string, payload?: any, ctx?: any): void {
-	for (const handler of handlers.get(event) ?? []) handler(payload, ctx);
+function emit(handlers: Map<string, Handler[]>, event: string, payload?: any, ctx?: any): any[] {
+	return (handlers.get(event) ?? []).map((handler) => handler(payload, ctx));
 }
 
 function baseContext() {
@@ -54,6 +54,21 @@ function shellQuote(value: string): string {
 function processList(): string {
 	return execSync("ps -axo pid,ppid,pgid,stat,command", { encoding: "utf8" });
 }
+
+test("truncates only shell tool results", () => {
+	const { handlers } = createExtensionHarness();
+	const content = [{ type: "text", text: "x".repeat(500) }];
+
+	for (const toolName of ["exec_command", "write_stdin"]) {
+		const [result] = emit(handlers, "tool_result", { toolName, content });
+		expect(result.content[0].text).toContain("chars truncated");
+	}
+
+	for (const toolName of ["read", "search", "recall", "context7_get_library_docs"]) {
+		const [result] = emit(handlers, "tool_result", { toolName, content });
+		expect(result).toBeUndefined();
+	}
+});
 
 test("uses process_id and suppresses a queued completion consumed by write_stdin", async () => {
 	const { handlers, tools, sentMessages } = createExtensionHarness();
