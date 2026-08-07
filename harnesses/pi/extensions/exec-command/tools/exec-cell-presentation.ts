@@ -37,7 +37,6 @@ export interface ExecCell {
 	actionGroups?: ShellAction[][];
 	failed?: boolean;
 	elapsedMs?: number;
-	rtkWrapped?: boolean;
 	contextGuardWrapped?: boolean;
 	outputBlock?: ExecCellOutputBlock;
 	writeStdin?: {
@@ -52,7 +51,6 @@ export interface RawCommandToExecCellInput {
 	status: ExecCommandStatus;
 	failed?: boolean;
 	elapsedMs?: number;
-	rtkWrapped?: boolean;
 	contextGuardWrapped?: boolean;
 	outputBlock?: ExecCellOutputBlock;
 }
@@ -84,7 +82,6 @@ export function rawCommandToExecCell(input: RawCommandToExecCellInput): ExecCell
 			actionGroups: [summary.actions],
 			failed: input.failed,
 			elapsedMs: input.elapsedMs,
-			rtkWrapped: input.rtkWrapped,
 			contextGuardWrapped: input.contextGuardWrapped,
 			outputBlock: input.outputBlock,
 		};
@@ -95,7 +92,6 @@ export function rawCommandToExecCell(input: RawCommandToExecCellInput): ExecCell
 		command: input.command,
 		failed: input.failed,
 		elapsedMs: input.elapsedMs,
-		rtkWrapped: input.rtkWrapped,
 		contextGuardWrapped: input.contextGuardWrapped,
 		outputBlock: input.outputBlock,
 	};
@@ -230,11 +226,10 @@ function renderExecCellHeader(cell: ExecCell, theme: RenderTheme): string {
 				theme,
 				cell.failed,
 				cell.elapsedMs,
-				cell.rtkWrapped,
 				cell.contextGuardWrapped,
 			);
 		case "spawned-background-terminal":
-			return renderSpawnedBackgroundTerminalCall(cell.command ?? "", theme, cell.rtkWrapped, cell.contextGuardWrapped);
+			return renderSpawnedBackgroundTerminalCall(cell.command ?? "", theme, cell.contextGuardWrapped);
 		case "user-command":
 			return renderUserExecCommandCall(cell.command ?? "", cell.status, theme, cell.failed, cell.elapsedMs);
 		case "write-stdin":
@@ -255,7 +250,6 @@ function renderExecCellHeader(cell: ExecCell, theme: RenderTheme): string {
 				theme,
 				cell.failed,
 				cell.elapsedMs,
-				cell.rtkWrapped,
 				cell.contextGuardWrapped,
 			);
 	}

@@ -7,7 +7,6 @@ export interface ExecCommandRenderInfo {
 	status: ExecCommandStatus;
 	actionGroups?: ShellAction[][];
 	elapsedMs?: number;
-	rtkWrapped?: boolean;
 	contextGuardWrapped?: boolean;
 	sessionId?: number;
 }
@@ -19,7 +18,6 @@ interface ExecEntry {
 	status: ExecCommandStatus;
 	hidden: boolean;
 	startedAtMs: number;
-	rtkWrapped: boolean;
 	contextGuardWrapped: boolean;
 	sessionId?: number;
 	groupId?: number;
@@ -38,7 +36,6 @@ export interface ExecCommandTracker {
 	registerRenderContext(toolCallId: string | undefined, invalidate: () => void): void;
 	ensurePlannedExploration(toolCallId: string | undefined, command: string): void;
 	recordStart(toolCallId: string, command: string): void;
-	recordRtkWrapped(toolCallId: string): void;
 	recordContextGuardWrapped(toolCallId: string): void;
 	recordPersistentSession(toolCallId: string, sessionId: number): void;
 	recordEnd(toolCallId: string): void;
@@ -113,7 +110,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 					hidden: true,
 					status: entry.status,
 					elapsedMs: getElapsedMs([entry]),
-					rtkWrapped: entry.rtkWrapped,
 					contextGuardWrapped: entry.contextGuardWrapped,
 					sessionId: entry.sessionId,
 				};
@@ -126,7 +122,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 					status: entry.status,
 					actionGroups: entry.summary.maskAsExplored ? [entry.summary.actions] : undefined,
 					elapsedMs: getElapsedMs([entry]),
-					rtkWrapped: entry.rtkWrapped,
 					contextGuardWrapped: entry.contextGuardWrapped,
 					sessionId: entry.sessionId,
 				};
@@ -140,7 +135,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 				status: entries.some((groupEntry) => groupEntry.status === "running") ? "running" : "done",
 				actionGroups: entries.map((groupEntry) => groupEntry.summary.actions),
 				elapsedMs: getElapsedMs(entries),
-				rtkWrapped: entries.some((groupEntry) => groupEntry.rtkWrapped),
 				contextGuardWrapped: entries.some((groupEntry) => groupEntry.contextGuardWrapped),
 			};
 		},
@@ -162,7 +156,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 				status: "running",
 				hidden: false,
 				startedAtMs: Date.now(),
-				rtkWrapped: false,
 				contextGuardWrapped: contextGuardWrappedToolCallIds.has(toolCallId),
 			};
 			entriesByToolCallId.set(toolCallId, entry);
@@ -210,7 +203,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 				status: "running",
 				hidden: false,
 				startedAtMs: Date.now(),
-				rtkWrapped: false,
 				contextGuardWrapped: contextGuardWrappedToolCallIds.has(toolCallId),
 			};
 			entriesByToolCallId.set(toolCallId, entry);
@@ -237,13 +229,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 			entry.hidden = true;
 			entry.groupId = group.id;
 			invalidateToolCall(group.visibleEntryId);
-		},
-		recordRtkWrapped(toolCallId) {
-			const entry = entriesByToolCallId.get(toolCallId);
-			if (!entry || entry.rtkWrapped) return;
-			entry.rtkWrapped = true;
-			const group = getGroupForEntry(entry);
-			invalidateToolCall(group?.visibleEntryId ?? entry.toolCallId);
 		},
 		recordContextGuardWrapped(toolCallId) {
 			contextGuardWrappedToolCallIds.add(toolCallId);

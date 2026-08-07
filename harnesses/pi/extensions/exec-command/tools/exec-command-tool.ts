@@ -12,7 +12,6 @@ import { summarizeShellCommand } from "../shell/summary.ts";
 import { rawCommandToExecCell, renderExecCellComponent } from "./exec-cell-presentation.ts";
 import type { ExecCommandTracker } from "./exec-command-state.ts";
 import type { ExecSessionManager, UnifiedExecResult } from "./exec-session-manager.ts";
-import { commandHasRipgrepSegment, isRtkGrepCommand } from "./rtk-wrapper.ts";
 import { formatUnifiedExecResult } from "./unified-exec-format.ts";
 
 const EXEC_COMMAND_PARAMETERS = Type.Object({
@@ -115,10 +114,7 @@ type ParsedExecInvocation =
 	| { kind: "command"; params: ExecCommandParams }
 	| { kind: "batch"; params: ContextGuardBatchParams };
 
-type ExecCommandRewrite = string | { command: string; rtkWrapped?: boolean };
-
 interface ExecCommandToolOptions {
-	rewriteCommand?: (command: string, ctx: ExtensionContext) => Promise<ExecCommandRewrite> | ExecCommandRewrite;
 	onResult?: (
 		params: ExecCommandParams,
 		result: UnifiedExecResult,
@@ -447,14 +443,6 @@ function createEmptyResultComponent(): Container {
 	return new Container();
 }
 
-function shouldUseRawRipgrep(originalCommand: string, rewrittenCommand: string): boolean {
-	return (
-		originalCommand !== rewrittenCommand &&
-		commandHasRipgrepSegment(originalCommand) &&
-		isRtkGrepCommand(rewrittenCommand)
-	);
-}
-
 interface ExecCommandRenderContextLike {
 	toolCallId?: string;
 	invalidate?: () => void;
@@ -589,7 +577,6 @@ const renderExecCommandCallWithOptionalContext: any = (
 				kind: "spawned-background-terminal",
 				status: "done",
 				command: sessionCommand,
-				rtkWrapped: renderInfo.rtkWrapped,
 				contextGuardWrapped: renderInfo.contextGuardWrapped,
 			},
 			{ theme, part: "header" },
@@ -604,7 +591,6 @@ const renderExecCommandCallWithOptionalContext: any = (
 				actionGroups: renderInfo.actionGroups,
 				failed,
 				elapsedMs: renderInfo.elapsedMs,
-				rtkWrapped: renderInfo.rtkWrapped,
 				contextGuardWrapped: renderInfo.contextGuardWrapped,
 			}
 		: rawCommandToExecCell({
@@ -612,7 +598,6 @@ const renderExecCommandCallWithOptionalContext: any = (
 				status: renderInfo.status,
 				failed,
 				elapsedMs: renderInfo.elapsedMs,
-				rtkWrapped: renderInfo.rtkWrapped,
 				contextGuardWrapped: renderInfo.contextGuardWrapped,
 			});
 	return renderExecCellComponent(cell, { theme, part: "header" }, context?.lastComponent);
@@ -706,13 +691,7 @@ export function registerExecCommandTool(
 				tracker.recordContextGuardWrapped(toolCallId);
 				return executeWrappedCommandWithContextGuard(typedParams, typedParams.cmd, ctx, signal);
 			}
-			const rewrite = options.rewriteCommand ? await options.rewriteCommand(typedParams.cmd, ctx) : typedParams.cmd;
-			const rewrittenCommand = typeof rewrite === "string" ? rewrite : rewrite.command;
-			const command = shouldUseRawRipgrep(typedParams.cmd, rewrittenCommand) ? typedParams.cmd : rewrittenCommand;
-			const rtkWrapped = typeof rewrite === "string" ? command !== typedParams.cmd : rewrite.rtkWrapped === true;
-			if (rtkWrapped) {
-				tracker.recordRtkWrapped(toolCallId);
-			}
+			const command = typedParams.cmd;
 			const streamPartialOutput = !summarizeShellCommand(command).maskAsExplored;
 			const result = await sessions.exec(
 				{ ...typedParams, cmd: command },
