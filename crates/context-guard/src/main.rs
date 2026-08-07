@@ -769,6 +769,9 @@ fn run_with_timeout(
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
+                // A completed foreground command must not leave descendants holding
+                // capture pipes open. Long-lived work belongs in background mode.
+                terminate_process_group(child.id());
                 return collect_output(status, stdout_reader, stderr_reader);
             }
             Ok(None) if deadline.is_some_and(|deadline| Instant::now() >= deadline) => {

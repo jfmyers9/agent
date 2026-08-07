@@ -58,7 +58,7 @@ describe("invokeCore cancellation", () => {
 				`const marker = ${JSON.stringify(marker)};`,
 				"process.stdin.resume();",
 				'process.stdin.on("end", () => {',
-				'  spawn("sh", ["-c", "sleep 30 # " + marker], { stdio: "ignore", detached: true });',
+				'  spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", marker], { stdio: "ignore", detached: true });',
 				"  setInterval(() => {}, 1000);",
 				"});",
 			].join("\n"),

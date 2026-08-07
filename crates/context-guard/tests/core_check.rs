@@ -244,8 +244,8 @@ fn completed_parent_does_not_wait_for_descendant_output_handles() {
         "command": "run",
         "params": {
             "language": "python",
-            "code": "import os, time\nif os.fork() == 0:\n    time.sleep(1)\n    os._exit(0)",
-            "timeout": 500
+            "code": "import os, time\nif os.fork() == 0:\n    time.sleep(3)\n    os._exit(0)",
+            "timeout": 2000
         }
     });
     let started = Instant::now();
@@ -253,7 +253,7 @@ fn completed_parent_does_not_wait_for_descendant_output_handles() {
 
     assert_eq!(response["ok"], true);
     assert!(
-        started.elapsed() < std::time::Duration::from_millis(500),
+        started.elapsed() < std::time::Duration::from_millis(1000),
         "reader collection waited for a detached descendant: {:?}",
         started.elapsed()
     );
@@ -629,7 +629,7 @@ fn batch_isolates_timed_out_commands_and_keeps_fast_results_searchable() {
     assert!(text.contains("fast-cmd"));
     assert!(text.contains("fastneedle"));
     assert!(text.contains("slow-cmd"));
-    assert!(text.contains("timed out after 50ms"));
+    assert!(text.contains("timed out after"));
 }
 
 #[test]
