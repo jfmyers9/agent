@@ -121,6 +121,29 @@ Expected installed output includes `[OK] Core binary: ...`. If the binary is
 missing, `cg_check` and `/cg-check` still work and report a clear diagnostic;
 core-backed tools remain unavailable until the binary is installed.
 
+`cg_status` reports measured raw, indexed, returned, and omitted bytes plus
+failures, latency percentiles, indexed-store size, and lifetime telemetry.
+Execution output uses unique internal source IDs, so repeated display labels do
+not overwrite history. Old execution sources are removed by age and store-size
+retention limits.
+
+Run the replay corpus to inspect savings, retrieval recall, latency, and storage
+growth across small output, large logs, long lines, Unicode, failures, mixed
+streams, and repeated labels:
+
+```sh
+cargo test -p context-guard --test replay_benchmark -- --nocapture
+```
+
+Context Guard stores searchable command and fetched content plus operational
+telemetry. It does not infer semantic memory, inject prompts, or create resume
+snapshots.
+
+The Rust core remains a one-shot process with SQLite storage; the replay report
+is the baseline for deciding whether daemon complexity is ever warranted.
+Command deny-pattern parsing is defense in depth, not a sandbox or authorization
+boundary.
+
 `ct` is different: it is Luan's broader Rust CLI. This config no longer requires
 `ct` for `edit` or TUI usage bars.
 
