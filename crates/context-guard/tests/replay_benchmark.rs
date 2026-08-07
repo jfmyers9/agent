@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use serde_json::{Value, json};
 use std::io::Write;
 use std::process::{Command, Stdio};

@@ -239,6 +239,7 @@ fn run_command_returns_partial_output_on_timeout() {
 }
 
 #[test]
+#[cfg(unix)]
 fn completed_parent_does_not_wait_for_descendant_output_handles() {
     let marker_path = temp_file_path("completed-descendant", "txt");
     let code = format!(
