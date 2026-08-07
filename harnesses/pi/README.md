@@ -19,7 +19,7 @@ Pi loads:
 - `harnesses/pi/effort.json` for read-only per-model thinking defaults used by `/effort`
 - `harnesses/pi/extensions/` as global Pi extension sources
 - `npm:pi-lens` for AST/LSP/code-intelligence checks
-- `npm:@dreki-gg/pi-context7@0.1.9` as reviewed docs lookup tools
+- `npm:@dreki-gg/pi-context7@0.2.0` as reviewed docs lookup tools
 - `bin/blueprint` as a shared CLI
 
 Adopted Pi settings from Luan's config:
