@@ -37,7 +37,10 @@ lowercase kebab-case name. For updates, read the entire existing skill first.
 3. Integrate changes where they belong in the workflow. Remove duplication,
    obsolete routing, and unnecessary ceremony. Specify useful inputs, scope,
    side effects, verification, and output without restating global agent
-   instructions. Keep examples neutral and prose wrapped near 80 characters.
+   instructions. Give actions that are risky to leave unfinished checkable
+   completion conditions. Keep universally relevant guidance in the entrypoint;
+   move substantial conditional detail into references and state when each must
+   be read. Keep examples neutral and prose wrapped near 80 characters.
 4. Read the complete result and inspect the diff for contradictions, dangling
    references, mismatched arguments, and unrelated changes. Update affected
    documentation and meaningful contract tests with the changed behavior.

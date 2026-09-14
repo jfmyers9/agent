@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { CURSOR_MARKER, TUI } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, TuiMainScreen } from "@earendil-works/pi-tui";
 
 import { installStableHardwareCursorVisibility, ModalEditor } from "./index";
 
@@ -84,7 +84,7 @@ describe("vim hardware cursor stability", () => {
 
 	test("dedupes repeated showCursor calls across steady renders", async () => {
 		const terminal = new FakeTerminal();
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const cleanup = installStableHardwareCursorVisibility(tui);
 
 		const editorLike = {
@@ -114,7 +114,7 @@ describe("vim hardware cursor stability", () => {
 
 	test("still allows real visibility transitions", async () => {
 		const terminal = new FakeTerminal();
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const cleanup = installStableHardwareCursorVisibility(tui);
 
 		let showMarker = true;

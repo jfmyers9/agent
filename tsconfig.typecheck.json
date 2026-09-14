@@ -19,7 +19,13 @@
     "harnesses/pi/extensions/token-burden/**/*.ts",
     "harnesses/pi/extensions/spawn/**/*.ts",
     "harnesses/pi/extensions/vcc/**/*.ts",
-    "harnesses/pi/extensions/vim/**/*.ts"
+    "harnesses/pi/extensions/vim/**/*.ts",
+    "harnesses/pi/extensions/runtime-support/**/*.ts",
+    "harnesses/pi/extensions/code-mode/**/*.ts",
+    "harnesses/pi/extensions/tool-search/**/*.ts",
+    "harnesses/pi/extensions/subagents/**/*.ts"
   ],
-  "exclude": ["**/*.test.ts"]
+  "exclude": [
+    "**/*.test.ts"
+  ]
 }

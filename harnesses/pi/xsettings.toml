@@ -1,0 +1,15 @@
+[tools]
+pi-code-mode.enabled = true
+pi-code-mode.tools = ["read", "search", "find", "edit", "write", "apply_patch", "exec_command", "write_stdin", "skill"]
+pi-code-mode.defaultOutputTokens = 10000
+pi-code-mode.defaultExecYieldMs = 30000
+pi-code-mode.defaultWaitYieldMs = 10000
+pi-tool-search.tools = ["cg_check", "cg_status", "cg_index", "cg_search", "cg_fetch", "cg_process_file", "cg_purge", "spawn_lane", "spawn_list", "spawn_map", "context7_resolve_library_id", "context7_get_library_docs", "context7_get_cached_doc_raw"]
+
+[behavior]
+pi-subagents.maxConcurrency = "4"
+pi-subagents.maxDepth = "2"
+pi-subagents.multiAgentMode = "explicit-requests"
+
+[appearance]
+pi-subagents.agentHubPresentation = "fullscreen"

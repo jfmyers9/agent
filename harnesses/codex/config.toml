@@ -9,6 +9,7 @@ plan_mode_reasoning_effort = "high"
 
 [features]
 hooks = true
+prevent_idle_sleep = true
 
 [tui]
 whimsy = false

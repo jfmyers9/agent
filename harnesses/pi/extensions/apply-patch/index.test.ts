@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { parseApplyPatch, runLocalApplyPatch } from "./backend";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { ApplyPatchWriteError, parseApplyPatch, runLocalApplyPatch } from "./backend";
 import applyPatchExtension from "./index";
 
 const temporaryDirectories: string[] = [];
@@ -33,6 +34,72 @@ describe("apply_patch parser", () => {
 });
 
 describe("apply_patch backend", () => {
+	test("concurrent patches read the preceding commit instead of overwriting it", async () => {
+		const directory = await temporaryDirectory();
+		await writeFile(join(directory, "file.txt"), "one\n", "utf8");
+		const patch = (before: string, after: string) =>
+			`*** Begin Patch\n*** Update File: file.txt\n@@\n-${before}\n+${after}\n*** End Patch`;
+		await Promise.all([
+			runLocalApplyPatch(directory, patch("one", "two")),
+			runLocalApplyPatch(directory, patch("two", "three")),
+		]);
+		expect(await readFile(join(directory, "file.txt"), "utf8")).toBe("three\n");
+	});
+
+	test("move targets share Pi's mutation queue before preflight reads", async () => {
+		const directory = await temporaryDirectory();
+		const target = join(directory, "target.txt");
+		await writeFile(join(directory, "source.txt"), "source\n");
+		let release!: () => void;
+		let entered!: () => void;
+		const ready = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const writer = withFileMutationQueue(target, async () => {
+			entered();
+			await gate;
+			await writeFile(target, "other writer\n");
+		});
+		await ready;
+		const move = runLocalApplyPatch(
+			directory,
+			"*** Begin Patch\n*** Move File: source.txt -> target.txt\n*** End Patch",
+		);
+		release();
+		await Promise.all([writer, expect(move).rejects.toThrow("File already exists: target.txt")]);
+		expect(await readFile(join(directory, "source.txt"), "utf8")).toBe("source\n");
+		expect(await readFile(target, "utf8")).toBe("other writer\n");
+	});
+
+	test("reports the actual committed paths when a move destination cannot be written", async () => {
+		const directory = await temporaryDirectory();
+		await writeFile(join(directory, "source.txt"), "source\n");
+		await writeFile(join(directory, "blocked"), "not a directory\n");
+		let failure: unknown;
+		try {
+			await runLocalApplyPatch(
+				directory,
+				"*** Begin Patch\n*** Move File: source.txt -> blocked/target.txt\n*** Add File: pending.txt\n+pending\n*** End Patch",
+			);
+		} catch (error) {
+			failure = error;
+		}
+		expect(failure).toBeInstanceOf(ApplyPatchWriteError);
+		expect(failure).toMatchObject({
+			completedPaths: [join(directory, "source.txt")],
+			failedPath: join(directory, "blocked/target.txt"),
+			pendingPaths: [join(directory, "pending.txt")],
+		});
+		await expect(readFile(join(directory, "source.txt"))).rejects.toThrow();
+		await expect(readFile(join(directory, "pending.txt"))).rejects.toThrow();
+		expect(await readFile(join(directory, "blocked"), "utf8")).toBe("not a directory\n");
+		// A failed commit releases all locks so a corrected retry can make progress.
+		await runLocalApplyPatch(directory, "*** Begin Patch\n*** Add File: source.txt\n+restored\n*** End Patch");
+	});
+
 	test("applies updates, creates files, and preserves CRLF", async () => {
 		const directory = await temporaryDirectory();
 		await writeFile(join(directory, "file.txt"), "one\r\ntwo\r\n", "utf8");
@@ -127,6 +194,45 @@ describe("apply_patch backend", () => {
 });
 
 describe("apply_patch tool policy", () => {
+	test("exposes partial filesystem failures as structured tool errors", async () => {
+		const directory = await temporaryDirectory();
+		await writeFile(join(directory, "blocked"), "not a directory\n");
+		let registeredTool: any;
+		const handlers: Record<string, (event: any) => unknown> = {};
+		applyPatchExtension({
+			registerTool(definition: any) {
+				registeredTool = definition;
+			},
+			getActiveTools() {
+				return [];
+			},
+			setActiveTools() {},
+			on(event: string, handler: (event: any) => unknown) {
+				handlers[event] = handler;
+			},
+		} as never);
+		const result = await registeredTool.execute(
+			"patch",
+			{
+				input:
+					"*** Begin Patch\n*** Add File: done.txt\n+done\n*** Add File: blocked/failed.txt\n+failed\n*** End Patch",
+			},
+			undefined,
+			undefined,
+			{ cwd: directory },
+		);
+		expect(result.details).toMatchObject({
+			error: true,
+			status: "partial_failure",
+			completedPaths: [join(directory, "done.txt")],
+			failedPath: join(directory, "blocked/failed.txt"),
+			pendingPaths: [],
+		});
+		expect(handlers.tool_result?.({ toolName: "apply_patch", details: result.details })).toEqual({ isError: true });
+		expect(result.content[0].text).toContain("do not reapply completed actions");
+		expect(await readFile(join(directory, "done.txt"), "utf8")).toBe("done\n");
+	});
+
 	test("activates apply_patch only for GPT models", () => {
 		let activeTools = ["read", "edit", "write"];
 		const handlers: Record<string, (event: unknown, context: unknown) => unknown> = {};

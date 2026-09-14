@@ -67,6 +67,16 @@ messages to others require authorization appropriate to the action.
 - {{{.}}}
 {{/promptGuidelines}}
 {{/hasPromptGuidelines}}
+
+{{#hasComposedTools}}
+# Composed tools
+
+These tools are available through `exec` as methods on `tools`: {{composedTools}}.
+Call them inside JavaScript, for example `text(await tools.read({path: "README.md"}))`.
+Their results contain `content` and `details`; keep the content needed for the task.
+Use `Promise.allSettled` for independent calls and inspect every result. Keep
+dependent operations sequential. Use `tool_search` to discover deferred tools.
+{{/hasComposedTools}}
 {{#hasPiDocs}}
 # Pi documentation
 
@@ -107,7 +117,7 @@ Use a skill when explicitly invoked or clearly applicable under its description.
 Respect explicit-only routing, the task's scope, and existing authorization.
 Choose the smallest useful set and briefly identify the skills you use.
 {{#skillToolActive}}
-Load instructions with `skill({name})`, using the exact listed name.
+Load instructions with {{{skillInvocation}}}, using the exact listed name.
 {{/skillToolActive}}
 {{#readSkillFallback}}
 Read the listed `SKILL.md`; resolve relative references from its directory and

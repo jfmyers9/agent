@@ -2,6 +2,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { createTwoFilesPatch } from "diff";
 
 export type ApplyPatchChangeType = "add" | "update" | "delete" | "move";
@@ -20,6 +21,29 @@ export type ApplyPatchResult = {
 	diff: string;
 	changes: ApplyPatchChange[];
 };
+
+/** Filesystem commits are per path; a move can therefore be only partly committed. */
+export class ApplyPatchWriteError extends Error {
+	readonly completedPaths: string[];
+	readonly failedPath: string;
+	readonly pendingPaths: string[];
+
+	constructor(completedPaths: string[], failedPath: string, pendingPaths: string[], cause: unknown) {
+		const diagnostic = cause instanceof Error ? cause.message : String(cause);
+		super(
+			`Patch filesystem commit failed: ${diagnostic}\n` +
+				`Completed paths: ${JSON.stringify(completedPaths)}\n` +
+				`Failed path (may have been partially modified): ${JSON.stringify(failedPath)}\n` +
+				`Unattempted paths: ${JSON.stringify(pendingPaths)}\n` +
+				"Keep completed changes. Re-read affected files before retrying; do not reapply completed actions.",
+			{ cause },
+		);
+		this.name = "ApplyPatchWriteError";
+		this.completedPaths = [...completedPaths];
+		this.failedPath = failedPath;
+		this.pendingPaths = [...pendingPaths];
+	}
+}
 
 type PatchLine = { kind: "context" | "add" | "remove"; text: string };
 type PatchHunk = { anchor?: string; lineStart?: number; lines: PatchLine[] };
@@ -298,6 +322,28 @@ export async function runLocalApplyPatch(
 	options: { dryRun?: boolean; signal?: AbortSignal } = {},
 ): Promise<ApplyPatchResult> {
 	const operations = parseApplyPatch(input);
+	const paths = [
+		...new Set(
+			operations.flatMap((operation) =>
+				[operation.path, ...("movePath" in operation && operation.movePath ? [operation.movePath] : [])].map((path) =>
+					absolutePath(cwd, path),
+				),
+			),
+		),
+	].sort();
+	// Lock before reading, and acquire every path in a consistent order to avoid deadlocks.
+	const enter = (index: number): Promise<ApplyPatchResult> =>
+		index === paths.length
+			? applyOperations(cwd, operations, options)
+			: withFileMutationQueue(paths[index]!, () => enter(index + 1));
+	return enter(0);
+}
+
+async function applyOperations(
+	cwd: string,
+	operations: Operation[],
+	options: { dryRun?: boolean; signal?: AbortSignal },
+): Promise<ApplyPatchResult> {
 	const virtual = new Map<string, VirtualFile | undefined>();
 	const touched = new Set<string>();
 	const changes: ApplyPatchChange[] = [];
@@ -399,13 +445,21 @@ export async function runLocalApplyPatch(
 	}
 
 	if (!options.dryRun) {
-		for (const absolute of touched) {
-			const value = virtual.get(absolute);
-			if (value) {
-				await mkdir(dirname(absolute), { recursive: true });
-				await writeFile(absolute, restore(value.snapshot, value.text), "utf8");
-			} else if (existsSync(absolute)) {
-				await rm(absolute);
+		const targets = [...touched];
+		const completedPaths: string[] = [];
+		for (const [index, absolute] of targets.entries()) {
+			try {
+				if (options.signal?.aborted) throw new Error("apply_patch aborted.");
+				const value = virtual.get(absolute);
+				if (value) {
+					await mkdir(dirname(absolute), { recursive: true });
+					await writeFile(absolute, restore(value.snapshot, value.text), "utf8");
+				} else if (existsSync(absolute)) {
+					await rm(absolute);
+				}
+				completedPaths.push(absolute);
+			} catch (cause) {
+				throw new ApplyPatchWriteError(completedPaths, absolute, targets.slice(index + 1), cause);
 			}
 		}
 	}

@@ -1,4 +1,5 @@
 // @ts-nocheck
+
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -8,10 +9,12 @@ import { invokeCore } from "../../context-guard/pi/core.ts";
 import { getPiSessionDir } from "../../context-guard/pi/index.ts";
 import { sessionRecordToolTelemetry } from "../../context-guard/session/core-session.ts";
 import { resolveContentStorePath, resolveSessionDbPath } from "../../context-guard/session/paths.ts";
+import { registerCodeModeTool } from "../../shared/code-mode.ts";
 import { summarizeShellCommand } from "../shell/summary.ts";
 import { rawCommandToExecCell, renderExecCellComponent } from "./exec-cell-presentation.ts";
 import type { ExecCommandTracker } from "./exec-command-state.ts";
 import type { ExecSessionManager, UnifiedExecResult } from "./exec-session-manager.ts";
+import { boundShellToolResult } from "./output-truncation.ts";
 import { formatUnifiedExecResult } from "./unified-exec-format.ts";
 
 const EXEC_COMMAND_PARAMETERS = Type.Object({
@@ -685,94 +688,98 @@ export function registerExecCommandTool(
 	sessions: ExecSessionManager,
 	options: ExecCommandToolOptions = {},
 ): void {
-	pi.registerTool({
-		name: "exec_command",
-		label: "exec_command",
-		description:
-			"Runs a shell command in a PTY, with default Context Guard wrapping for non-interactive commands, plus an explicit batch mode for multi-command research workflows.",
-		renderShell: "self",
-		promptSnippet: "Run shell commands for builds, tests, git, process inspection, and other shell-only workflows.",
-		promptGuidelines: [
-			"Use exec_command for shell-only workflows; prefer active dedicated file tools for reading, content search, and file discovery when they are available.",
-			"Use exec_command(mode:'batch', commands, queries) for multi-command research that should auto-index and search output.",
-			"When using shell search, prefer `rg`/`rg --files` over `grep` or shell `find`; for broad searches use line-safe `rg -n -M 400 --max-columns-preview` plus narrow globs.",
-			"Keep tty disabled unless the command truly needs interactive terminal behavior.",
-		],
-		parameters: EXEC_COMMAND_PARAMETERS,
-		prepareArguments: prepareExecCommandArguments,
-		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			if (signal?.aborted) {
-				throw new Error("exec_command aborted");
-			}
-			const invocation = parseExecCommandParams(params);
-			if (invocation.kind === "batch") {
-				return executeExplicitBatch(invocation.params, ctx, signal);
-			}
-			const typedParams = invocation.params;
-			if (shouldRouteCommandThroughContextGuard(typedParams, options)) {
-				tracker.recordContextGuardWrapped(toolCallId);
-				return executeWrappedCommandWithContextGuard(typedParams, typedParams.cmd, ctx, signal);
-			}
-			const command = typedParams.cmd;
-			const streamPartialOutput = !summarizeShellCommand(command).maskAsExplored;
-			const result = await sessions.exec(
-				{ ...typedParams, cmd: command },
-				ctx.cwd,
-				signal,
-				streamPartialOutput
-					? (partial) => {
-							onUpdate?.({
-								content: [
-									{
-										type: "text",
-										text: formatUnifiedExecResult(partial, typedParams.cmd),
-									},
-								],
-								details: partial,
-							});
-						}
-					: undefined,
-			);
-			if (result.process_id !== undefined) {
-				tracker.recordPersistentSession(toolCallId, result.process_id);
-			}
-			const resultOptions = options.onResult?.(typedParams, result, ctx);
-			return {
-				content: [
-					{
-						type: "text",
-						text: formatUnifiedExecResult(result, typedParams.cmd),
-					},
-				],
-				details: result,
-				isError:
-					(result.exit_code !== undefined && result.exit_code !== 0) ||
-					result.timed_out === true ||
-					result.cancelled === true ||
-					result.session_error !== undefined,
-				terminate: resultOptions?.terminate,
-			};
+	registerCodeModeTool(
+		pi,
+		{
+			name: "exec_command",
+			label: "exec_command",
+			description:
+				"Runs a shell command in a PTY, with default Context Guard wrapping for non-interactive commands, plus an explicit batch mode for multi-command research workflows.",
+			renderShell: "self",
+			promptSnippet: "Run shell commands for builds, tests, git, process inspection, and other shell-only workflows.",
+			promptGuidelines: [
+				"Use exec_command for shell-only workflows; prefer active dedicated file tools for reading, content search, and file discovery when they are available.",
+				"Use exec_command(mode:'batch', commands, queries) for multi-command research that should auto-index and search output.",
+				"When using shell search, prefer `rg`/`rg --files` over `grep` or shell `find`; for broad searches use line-safe `rg -n -M 400 --max-columns-preview` plus narrow globs.",
+				"Keep tty disabled unless the command truly needs interactive terminal behavior.",
+			],
+			parameters: EXEC_COMMAND_PARAMETERS,
+			prepareArguments: prepareExecCommandArguments,
+			async execute(toolCallId, params, signal, onUpdate, ctx) {
+				if (signal?.aborted) {
+					throw new Error("exec_command aborted");
+				}
+				const invocation = parseExecCommandParams(params);
+				if (invocation.kind === "batch") {
+					return executeExplicitBatch(invocation.params, ctx, signal);
+				}
+				const typedParams = invocation.params;
+				if (shouldRouteCommandThroughContextGuard(typedParams, options)) {
+					tracker.recordContextGuardWrapped(toolCallId);
+					return executeWrappedCommandWithContextGuard(typedParams, typedParams.cmd, ctx, signal);
+				}
+				const command = typedParams.cmd;
+				const streamPartialOutput = !summarizeShellCommand(command).maskAsExplored;
+				const result = await sessions.exec(
+					{ ...typedParams, cmd: command },
+					ctx.cwd,
+					signal,
+					streamPartialOutput
+						? (partial) => {
+								onUpdate?.({
+									content: [
+										{
+											type: "text",
+											text: formatUnifiedExecResult(partial, typedParams.cmd),
+										},
+									],
+									details: partial,
+								});
+							}
+						: undefined,
+				);
+				if (result.process_id !== undefined) {
+					tracker.recordPersistentSession(toolCallId, result.process_id);
+				}
+				const resultOptions = options.onResult?.(typedParams, result, ctx);
+				return {
+					content: [
+						{
+							type: "text",
+							text: formatUnifiedExecResult(result, typedParams.cmd),
+						},
+					],
+					details: result,
+					isError:
+						(result.exit_code !== undefined && result.exit_code !== 0) ||
+						result.timed_out === true ||
+						result.cancelled === true ||
+						result.session_error !== undefined,
+					terminate: resultOptions?.terminate,
+				};
+			},
+			renderCall: ((
+				args: { cmd?: unknown },
+				theme: {
+					fg(role: string, text: string): string;
+					bold(text: string): string;
+				},
+				context?: ExecCommandRenderContextLike,
+			) =>
+				renderBatchCallWithOptionalContext(args, theme, context) ??
+				renderExecCommandCallWithOptionalContext(args, theme, context, tracker, sessions)) as any,
+			renderResult: ((
+				result: {
+					content: Array<{ type: string; text?: string }>;
+					details?: unknown;
+				},
+				options: { expanded: boolean; isPartial: boolean },
+				theme: { fg(role: string, text: string): string },
+				context?: ExecCommandRenderContextLike,
+			) =>
+				renderBatchResultWithOptionalContext(result, options, theme) ??
+				renderExecCommandResultWithOptionalContext(result, options, theme, context, tracker, sessions)) as any,
 		},
-		renderCall: ((
-			args: { cmd?: unknown },
-			theme: {
-				fg(role: string, text: string): string;
-				bold(text: string): string;
-			},
-			context?: ExecCommandRenderContextLike,
-		) =>
-			renderBatchCallWithOptionalContext(args, theme, context) ??
-			renderExecCommandCallWithOptionalContext(args, theme, context, tracker, sessions)) as any,
-		renderResult: ((
-			result: {
-				content: Array<{ type: string; text?: string }>;
-				details?: unknown;
-			},
-			options: { expanded: boolean; isPartial: boolean },
-			theme: { fg(role: string, text: string): string },
-			context?: ExecCommandRenderContextLike,
-		) =>
-			renderBatchResultWithOptionalContext(result, options, theme) ??
-			renderExecCommandResultWithOptionalContext(result, options, theme, context, tracker, sessions)) as any,
-	});
+		{ mapResult: boundShellToolResult },
+	);
 }

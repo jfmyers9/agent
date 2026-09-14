@@ -1,4 +1,5 @@
 // @ts-nocheck
+
 import { readFileSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -16,6 +17,7 @@ import {
 import { Box, type Text } from "@earendil-works/pi-tui";
 import { createTwoFilesPatch } from "diff";
 import { Type } from "typebox";
+import { registerCodeModeTool } from "../shared/code-mode.ts";
 import { runCommand as runExternalCommand } from "../shared/command-runner.ts";
 import { EmptyComponent, runningFrame, shineText, textComponent } from "../shared/tui";
 import { columnCountForWidth, renderColumns } from "./columns.ts";
@@ -1183,7 +1185,7 @@ function registerHashlineWorkflowTools(pi: ExtensionAPI, getConfig: () => EditCo
 	const baseFind = createFindToolDefinition(cwd);
 	const baseWrite = createWriteToolDefinition(cwd);
 
-	pi.registerTool({
+	registerCodeModeTool(pi, {
 		...baseRead,
 		name: "read",
 		description:
@@ -1276,7 +1278,7 @@ function registerHashlineWorkflowTools(pi: ExtensionAPI, getConfig: () => EditCo
 		},
 	});
 
-	pi.registerTool({
+	registerCodeModeTool(pi, {
 		name: "search",
 		label: "search",
 		description:
@@ -1377,7 +1379,7 @@ function registerHashlineWorkflowTools(pi: ExtensionAPI, getConfig: () => EditCo
 		},
 	});
 
-	pi.registerTool({
+	registerCodeModeTool(pi, {
 		...baseFind,
 		name: "find",
 		description: "Find files by glob/path. Accepts either {pattern,path} or oh-my-pi-style {paths:[...]} inputs.",
@@ -1435,7 +1437,7 @@ function registerHashlineWorkflowTools(pi: ExtensionAPI, getConfig: () => EditCo
 		},
 	});
 
-	pi.registerTool({
+	registerCodeModeTool(pi, {
 		...baseWrite,
 		name: "write",
 		description:
@@ -1492,7 +1494,7 @@ export default function fileopsExtension(pi: ExtensionAPI) {
 
 	const registerEditTool = () => {
 		const current = config;
-		pi.registerTool({
+		registerCodeModeTool(pi, {
 			name: "edit",
 			label: "edit",
 			description: modeDescription(current),

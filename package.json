@@ -9,7 +9,7 @@
     "check:skills": "bun bin/validate-skills.ts",
     "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
     "typecheck": "tsc --noEmit --pretty false --project tsconfig.typecheck.json",
-    "test": "bun run test:rust && bun run test:blueprint && bun run test:pi-low-risk && bun run test:pi-context && bun run test:pi-codex-native && bun run test:pi-exec && bun run test:pi-fileops && bun run test:pi-apply-patch && bun run test:pi-skillful && bun run test:pi-system && bun run test:pi-tui && bun run test:pi-token && bun run test:pi-spawn && bun run test:pi-vim",
+    "test": "bun run test:rust && bun run test:blueprint && bun run test:pi-low-risk && bun run test:pi-context && bun run test:pi-codex-native && bun run test:pi-exec && bun run test:pi-fileops && bun run test:pi-apply-patch && bun run test:pi-skillful && bun run test:pi-system && bun run test:pi-tui && bun run test:pi-token && bun run test:pi-spawn && bun run test:pi-vim && bun run test:pi-composition",
     "test:rust": "cargo test --workspace",
     "test:blueprint": "bun test tests/*.test.ts",
     "test:pi-low-risk": "bun test harnesses/pi/extensions/agents-local/index.test.ts harnesses/pi/extensions/auto-compact-resume/index.test.ts harnesses/pi/extensions/effort.test.ts harnesses/pi/extensions/fork-split.test.ts harnesses/pi/extensions/shared/editor-composition.test.ts harnesses/pi/extensions/shared/ordered-widgets.test.ts harnesses/pi/extensions/shared/lane-placement.test.ts",
@@ -23,13 +23,21 @@
     "test:pi-tui": "bun test harnesses/pi/extensions/tui/editor.test.ts harnesses/pi/extensions/tui/footer.test.ts harnesses/pi/extensions/tui/cursor-focus.test.ts harnesses/pi/extensions/tui/git.test.ts harnesses/pi/extensions/tui/turn-duration.test.ts",
     "test:pi-token": "bun test harnesses/pi/extensions/token-burden/parser.test.ts harnesses/pi/extensions/token-burden/tool-toggles.test.ts harnesses/pi/extensions/token-burden/report-view.test.ts harnesses/pi/extensions/token-burden/index.test.ts",
     "test:pi-spawn": "bun test harnesses/pi/extensions/spawn/index.test.ts",
-    "test:pi-vim": "bun test harnesses/pi/extensions/vim/index.test.ts"
+    "test:pi-vim": "bun test harnesses/pi/extensions/vim/index.test.ts",
+    "test:pi-composition": "bun test harnesses/pi/extensions/code-mode/*.test.ts harnesses/pi/extensions/shared/code-mode*.test.ts harnesses/pi/extensions/subagents/*.test.ts",
+    "postinstall": "bun bin/normalize-pi-packages.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.84.0",
     "@earendil-works/pi-ai": "^0.84.0",
     "@earendil-works/pi-coding-agent": "^0.84.0",
     "@earendil-works/pi-tui": "^0.84.0",
+    "@luan.sh/pi-code-mode": "0.3.9",
+    "@luan.sh/pi-libactions": "0.3.3",
+    "@luan.sh/pi-libtui": "0.3.9",
+    "@luan.sh/pi-subagents": "0.3.9",
+    "@luan.sh/pi-tool-search": "0.3.8",
+    "@luan.sh/pi-xsettings": "0.3.3",
     "@mozilla/readability": "^0.5.0",
     "@shikijs/cli": "^4.0.2",
     "cli-highlight": "^2.1.11",
@@ -56,5 +64,12 @@
     "@types/node": "^25.6.0",
     "node-gyp": "^13.0.1",
     "typescript": "^5.9.3"
+  },
+  "patchedDependencies": {
+    "@luan.sh/pi-code-mode@0.3.9": "patches/@luan.sh%2Fpi-code-mode@0.3.9.patch",
+    "@luan.sh/pi-subagents@0.3.9": "patches/@luan.sh%2Fpi-subagents@0.3.9.patch"
+  },
+  "overrides": {
+    "@luan.sh/pi-code-mode": "0.3.9"
   }
 }

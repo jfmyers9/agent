@@ -1,0 +1,150 @@
+diff --git a/src/extension.ts b/src/extension.ts
+--- a/src/extension.ts
++++ b/src/extension.ts
+@@ -26,8 +26,8 @@ export default function codeModeExtension(pi: ExtensionAPI): void {
+ 	};
+ 	let settingsClient = createCodeModeSettings();
+ 	let unregisterXSettings = settingsClient.register(applySettings);
+-	pi.on("session_start", () => {
+-		runtime.claimAdapters();
++	pi.on("session_start", (_event, ctx) => {
++		runtime.claimAdapters(ctx.sessionManager);
+ 		unregisterXSettings();
+ 		settingsClient = createCodeModeSettings(runtime.availableTools());
+ 		unregisterXSettings = settingsClient.register(applySettings);
+diff --git a/src/protocol/hierarchy.ts b/src/protocol/hierarchy.ts
+index b6c2f4b83395e3a3affc469dcce55563fa32bf7a..f0f06739127bbad29114d88e799e5bcc639812b0 100644
+--- a/src/protocol/hierarchy.ts
++++ b/src/protocol/hierarchy.ts
+@@ -4,8 +4,8 @@ export const CODE_MODE_HIERARCHY = Symbol.for(CODE_MODE_HIERARCHY_PROTOCOL);
+ interface CodeModeHierarchy {
+ 	readonly protocol: typeof CODE_MODE_HIERARCHY_PROTOCOL;
+ 	readonly version: 2;
+-	liftedToolNames(): readonly string[];
+-	setLiftedToolNames(scope: symbol, names: readonly string[]): void;
++	liftedToolNames(sessionManager?: object): readonly string[];
++	setLiftedToolNames(scope: symbol, names: readonly string[], sessionManager?: object): void;
+ }
+ 
+ // type-boundary: Symbol.for can contain a value from another extension realm; this validator narrows the capability.
+@@ -26,24 +26,26 @@ function hierarchy(scope: typeof globalThis = globalThis): CodeModeHierarchy {
+ 	const slots = scope as Record<PropertyKey, UntrustedHierarchyValue>;
+ 	const existing = slots[CODE_MODE_HIERARCHY];
+ 	if (isHierarchy(existing)) return existing;
+-	const liftedByScope = new Map<symbol, readonly string[]>();
++	const liftedByScope = new Map<symbol, { names: readonly string[]; sessionManager?: object }>();
+ 	const created: CodeModeHierarchy = {
+ 		protocol: CODE_MODE_HIERARCHY_PROTOCOL,
+ 		version: 2,
+-		liftedToolNames: () => [...new Set([...liftedByScope.values()].flat())],
+-		setLiftedToolNames: (scope, names) => {
++		liftedToolNames: (sessionManager) => [...new Set([...liftedByScope.values()]
++			.filter((entry) => sessionManager === undefined || entry.sessionManager === sessionManager)
++			.flatMap((entry) => entry.names))],
++		setLiftedToolNames: (scope, names, sessionManager) => {
+ 			if (names.length === 0) liftedByScope.delete(scope);
+-			else liftedByScope.set(scope, [...names]);
++			else liftedByScope.set(scope, { names: [...names], sessionManager });
+ 		},
+ 	};
+ 	slots[CODE_MODE_HIERARCHY] = created;
+ 	return created;
+ }
+ 
+-export function setLiftedToolNames(scope: symbol, names: readonly string[]): void {
+-	hierarchy().setLiftedToolNames(scope, names);
++export function setLiftedToolNames(scope: symbol, names: readonly string[], sessionManager?: object): void {
++	hierarchy().setLiftedToolNames(scope, names, sessionManager);
+ }
+ 
+-export function listLiftedToolNames(): readonly string[] {
+-	return hierarchy().liftedToolNames();
++export function listLiftedToolNames(sessionManager?: object): readonly string[] {
++	return hierarchy().liftedToolNames(sessionManager);
+ }
+diff --git a/src/protocol/nested-tools.ts b/src/protocol/nested-tools.ts
+index 2f82183e177ced6cfd045fa2fc6f5402e8829a10..afb8867e851a37d720326a19a24dbcf0434608b3 100644
+--- a/src/protocol/nested-tools.ts
++++ b/src/protocol/nested-tools.ts
+@@ -102,7 +102,7 @@ export interface NestedToolAdapterRegistry {
+ 	readonly protocol: typeof NESTED_TOOL_ADAPTER_PROTOCOL;
+ 	readonly version: 2;
+ 	readonly adapters: AdapterMap;
+-	claim(scope: object | symbol): void;
++	claim(scope: object | symbol, sessionManager?: object): void;
+ 	list(scope?: object | symbol): NestedToolAdapter[];
+ 	register(adapter: NestedToolAdapter): () => void;
+ }
+@@ -156,8 +156,15 @@ function createRegistry(): NestedToolAdapterRegistry {
+ 		protocol: NESTED_TOOL_ADAPTER_PROTOCOL,
+ 		version: 2,
+ 		adapters,
+-		claim(scope) {
++		claim(scope, sessionManager) {
++			const ownerSessions = (globalThis as Record<PropertyKey, unknown>)[Symbol.for("pi-code-mode/adapter-owner-sessions/v1")] as {
++				hasOwner?(owner: object): boolean;
++				sessionForOwner?(owner: object): object | undefined;
++			} | undefined;
+ 			for (const adapter of registrations) {
++				// Explicitly reserved owners may belong to another child whose session_start has not run yet.
++				if (adapter.owner && ownerSessions?.hasOwner?.(adapter.owner) &&
++					(!sessionManager || ownerSessions.sessionForOwner?.(adapter.owner) !== sessionManager)) continue;
+ 				if (adapter.owner && !scopes.has(adapter.owner)) scopes.set(adapter.owner, scope);
+ 			}
+ 		},
+@@ -208,8 +215,8 @@ export function registerNestedToolAdapter(adapter: NestedToolAdapter): () => voi
+ 	return getNestedToolAdapterRegistry().register(adapter);
+ }
+ 
+-export function claimNestedToolAdapters(scope: object | symbol): void {
+-	getNestedToolAdapterRegistry().claim(scope);
++export function claimNestedToolAdapters(scope: object | symbol, sessionManager?: object): void {
++	getNestedToolAdapterRegistry().claim(scope, sessionManager);
+ }
+ 
+ export function listNestedToolAdapters(scope?: object | symbol): NestedToolAdapter[] {
+diff --git a/src/runtime/code-mode.ts b/src/runtime/code-mode.ts
+index 59be09ba3f9170d449e0225117b25de97e34e2b3..eaff63be3d3745b95f4e21af7b8403c48fea6043 100644
+--- a/src/runtime/code-mode.ts
++++ b/src/runtime/code-mode.ts
+@@ -9,6 +9,7 @@ export class CodeModeRuntime {
+ 	private client: CodeModeHostClient | undefined;
+ 	private liftedToolNames: readonly string[] = [];
+ 	private readonly hierarchyScope = Symbol("pi-code-mode-runtime");
++	private sessionManager: object | undefined;
+ 
+ 	constructor(private readonly pi: Pick<ExtensionAPI, "getAllTools">) {}
+ 
+@@ -19,15 +20,16 @@ export class CodeModeRuntime {
+ 
+ 	setLiftedTools(names: readonly string[]): void {
+ 		this.liftedToolNames = [...names];
+-		setLiftedToolNames(this.hierarchyScope, this.liftedToolNames);
++		setLiftedToolNames(this.hierarchyScope, this.liftedToolNames, this.sessionManager);
+ 	}
+ 
+ 	liftedTools(): readonly string[] {
+ 		return this.liftedToolNames;
+ 	}
+ 
+-	claimAdapters(): void {
+-		claimNestedToolAdapters(this.hierarchyScope);
++	claimAdapters(sessionManager?: object): void {
++		this.sessionManager = sessionManager;
++		claimNestedToolAdapters(this.hierarchyScope, sessionManager);
+ 	}
+ 
+ 	availableTools(): Array<{ name: string; description: string }> {
+diff --git a/src/runtime/lifecycle.ts b/src/runtime/lifecycle.ts
+index 89f44739010095fadcaf729e5b92e670d171f8d1..fb78c7cfcf3313f97c12ee8679afddd63aaf5eb7 100644
+--- a/src/runtime/lifecycle.ts
++++ b/src/runtime/lifecycle.ts
+@@ -22,7 +22,7 @@ export function registerCodeModeLifecycle(
+ 		});
+ 	};
+ 	pi.on("session_start", (_event, ctx) => {
+-		runtime.claimAdapters();
++		runtime.claimAdapters(ctx.sessionManager);
+ 		const { settings, execTool, waitTool } = current();
+ 		const initialActiveTools = pi.getActiveTools();
+ 		const activeBeforeLift = [...new Set([...initialActiveTools, ...runtime.liftedTools()])];

@@ -1,8 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { registerCodeModeTool } from "../../shared/code-mode.ts";
 import { renderExecCellComponent } from "./exec-cell-presentation.ts";
 import type { ExecSessionManager, UnifiedExecResult } from "./exec-session-manager.ts";
+import { boundShellToolResult } from "./output-truncation.ts";
 import { formatUnifiedExecResult } from "./unified-exec-format.ts";
 
 const WRITE_STDIN_PARAMETERS = Type.Object({
@@ -179,90 +181,94 @@ export function registerWriteStdinTool(
 	sessions: ExecSessionManager,
 	options: { onResult?: (input: WriteStdinParams, result: UnifiedExecResult) => void } = {},
 ): void {
-	pi.registerTool({
-		name: "write_stdin",
-		label: "write_stdin",
-		description: "Writes characters to an existing unified exec process and returns recent output.",
-		renderShell: "self",
-		promptSnippet: "Write to an exec process.",
-		parameters: WRITE_STDIN_PARAMETERS,
-		async execute(_toolCallId, params) {
-			const typed = parseWriteStdinParams(params);
-			const command = sessions.getSessionCommand(typed.process_id);
-			let result: UnifiedExecResult;
-			try {
-				result = await sessions.write(typed);
-				options.onResult?.(typed, result);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				throw new Error(`write_stdin failed: ${message}`);
-			}
-			return {
-				content: [{ type: "text", text: formatUnifiedExecResult(result, command) }],
-				details: result,
-				isError: result.exit_code !== undefined && result.exit_code !== 0,
-			};
-		},
-		renderCall(args, theme, context) {
-			const processId = typeof args.process_id === "number" ? args.process_id : "?";
-			const running = context?.isPartial === true;
-			if (isEmptyPoll(args)) {
-				return createEmptyResultComponent();
-			}
-			scheduleRunningInvalidation(context, running);
-			const currentElapsedMs = elapsedMs(context, running);
-			const input = typeof args.chars === "string" ? args.chars : undefined;
-			const snapshot = typeof processId === "number" ? sessions.getSessionSnapshot(processId) : undefined;
-			const command = typeof processId === "number" ? sessions.getSessionCommand(processId) : undefined;
-			return renderExecCellComponent(
-				{
-					kind: "write-stdin",
-					status: running ? "running" : "done",
-					command,
-					failed: context?.isError === true,
-					elapsedMs: currentElapsedMs,
-					writeStdin: {
-						processId,
-						input,
-						stdinOpen: snapshot?.stdinOpen,
-					},
-				},
-				{ theme, part: "header" },
-				context?.lastComponent,
-			);
-		},
-		renderResult(result, { expanded, isPartial }, theme, context?: RenderContextLike) {
-			if (isPartial) return createEmptyResultComponent();
-			const state = getResultState(result);
-			if (isEmptyPollRenderContext(context)) {
-				return createEmptyResultComponent();
-			}
-			const output = renderTerminalText(state.output);
-			const footer =
-				state.processId !== undefined
-					? `${theme.fg("accent", `Process ${state.processId} still running`)}${
-							state.stdinOpen ? `${theme.fg("dim", " · ")}${theme.fg("mdLink", "tty")}` : ""
-						}`
-					: state.exitCode !== undefined && state.exitCode !== 0
-						? theme.fg("muted", `Exit code: ${state.exitCode}`)
-						: undefined;
-			return renderExecCellComponent(
-				{
-					kind: "write-stdin",
-					status: "done",
-					outputBlock: {
-						output,
-						footer,
-						options: {
-							expanded,
-							truncatedAbove: state.outputTruncated,
-							originalTokenCount: state.originalTokenCount,
+	registerCodeModeTool(
+		pi,
+		{
+			name: "write_stdin",
+			label: "write_stdin",
+			description: "Writes characters to an existing unified exec process and returns recent output.",
+			renderShell: "self",
+			promptSnippet: "Write to an exec process.",
+			parameters: WRITE_STDIN_PARAMETERS,
+			async execute(_toolCallId, params) {
+				const typed = parseWriteStdinParams(params);
+				const command = sessions.getSessionCommand(typed.process_id);
+				let result: UnifiedExecResult;
+				try {
+					result = await sessions.write(typed);
+					options.onResult?.(typed, result);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					throw new Error(`write_stdin failed: ${message}`);
+				}
+				return {
+					content: [{ type: "text", text: formatUnifiedExecResult(result, command) }],
+					details: result,
+					isError: result.exit_code !== undefined && result.exit_code !== 0,
+				};
+			},
+			renderCall(args, theme, context) {
+				const processId = typeof args.process_id === "number" ? args.process_id : "?";
+				const running = context?.isPartial === true;
+				if (isEmptyPoll(args)) {
+					return createEmptyResultComponent();
+				}
+				scheduleRunningInvalidation(context, running);
+				const currentElapsedMs = elapsedMs(context, running);
+				const input = typeof args.chars === "string" ? args.chars : undefined;
+				const snapshot = typeof processId === "number" ? sessions.getSessionSnapshot(processId) : undefined;
+				const command = typeof processId === "number" ? sessions.getSessionCommand(processId) : undefined;
+				return renderExecCellComponent(
+					{
+						kind: "write-stdin",
+						status: running ? "running" : "done",
+						command,
+						failed: context?.isError === true,
+						elapsedMs: currentElapsedMs,
+						writeStdin: {
+							processId,
+							input,
+							stdinOpen: snapshot?.stdinOpen,
 						},
 					},
-				},
-				{ theme, part: "output" },
-				context?.lastComponent,
-			);
+					{ theme, part: "header" },
+					context?.lastComponent,
+				);
+			},
+			renderResult(result, { expanded, isPartial }, theme, context?: RenderContextLike) {
+				if (isPartial) return createEmptyResultComponent();
+				const state = getResultState(result);
+				if (isEmptyPollRenderContext(context)) {
+					return createEmptyResultComponent();
+				}
+				const output = renderTerminalText(state.output);
+				const footer =
+					state.processId !== undefined
+						? `${theme.fg("accent", `Process ${state.processId} still running`)}${
+								state.stdinOpen ? `${theme.fg("dim", " · ")}${theme.fg("mdLink", "tty")}` : ""
+							}`
+						: state.exitCode !== undefined && state.exitCode !== 0
+							? theme.fg("muted", `Exit code: ${state.exitCode}`)
+							: undefined;
+				return renderExecCellComponent(
+					{
+						kind: "write-stdin",
+						status: "done",
+						outputBlock: {
+							output,
+							footer,
+							options: {
+								expanded,
+								truncatedAbove: state.outputTruncated,
+								originalTokenCount: state.originalTokenCount,
+							},
+						},
+					},
+					{ theme, part: "output" },
+					context?.lastComponent,
+				);
+			},
 		},
-	});
+		{ mapResult: boundShellToolResult },
+	);
 }

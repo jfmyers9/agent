@@ -145,6 +145,17 @@ describe("system-prompt Skillful skill rendering", () => {
 		expect(prompt).toContain("- tdd: Apply test-driven development (/skills/tdd/SKILL.md)");
 	});
 
+	test("composed skill loading keeps the catalog and names the executable tool path", () => {
+		const prompt = buildSystemPrompt("base", {
+			...baseOptions,
+			selectedTools: ["exec", "wait", "tool_search"],
+			composedTools: ["read", "skill"],
+		});
+		expect(prompt).toContain("- tdd: Apply test-driven development");
+		expect(prompt).toContain("`tools.skill({name})` inside `exec`");
+		expect(prompt).not.toContain("/skills/tdd/SKILL.md");
+	});
+
 	test("omits skills when no loading tool is active", () => {
 		const prompt = buildSystemPrompt("base", {
 			...baseOptions,

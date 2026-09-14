@@ -119,7 +119,7 @@ plan_pi() {
 	add_link "$SCRIPT_DIR/skills" "$dir/skills"
 	add_link "$SCRIPT_DIR/harnesses/pi/settings.json" "$dir/settings.json"
 	local config
-	for config in keybindings.json tui.json effort.json models.json; do
+	for config in keybindings.json tui.json effort.json models.json xsettings.toml; do
 		[ -f "$SCRIPT_DIR/harnesses/pi/$config" ] || continue
 		add_link "$SCRIPT_DIR/harnesses/pi/$config" "$dir/$config"
 	done
@@ -330,6 +330,12 @@ prepare_pi() {
 	run_bun_install
 	echo "Building Context Guard core..."
 	(cd "$SCRIPT_DIR" && cargo build --release -p context-guard)
+	echo "Preparing Code Mode runtime..."
+	if command -v mise >/dev/null 2>&1; then
+		(cd "$SCRIPT_DIR" && PI_CODING_AGENT_DIR="${PI_CONFIG_DIR:-$HOME/.pi/agent}" mise exec -- bun bin/prepare-pi-native.ts)
+	else
+		(cd "$SCRIPT_DIR" && PI_CODING_AGENT_DIR="${PI_CONFIG_DIR:-$HOME/.pi/agent}" bun bin/prepare-pi-native.ts)
+	fi
 }
 
 prepare_install() {

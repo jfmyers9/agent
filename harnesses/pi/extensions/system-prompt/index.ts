@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import Mustache, { type TemplateSpans } from "mustache";
+import { listSessionLiftedTools } from "../shared/code-mode";
 
 const SYSTEM_PROMPT_TEMPLATE = readFileSync(new URL("./SYSTEM_PROMPT.md.mustache", import.meta.url), "utf8").trimEnd();
 
@@ -47,6 +48,7 @@ type SystemPromptContextFile = {
 type SystemPromptBuildOptions = {
 	customPrompt?: string | null;
 	selectedTools?: string[];
+	composedTools?: string[];
 	promptGuidelines?: string[];
 	appendSystemPrompt?: string | null;
 	cwd: string;
@@ -61,6 +63,7 @@ export default async function systemPromptExtension(pi: ExtensionAPI) {
 		return {
 			systemPrompt: buildSystemPrompt(event.systemPrompt, {
 				...event.systemPromptOptions,
+				composedTools: listSessionLiftedTools(ctx.sessionManager),
 				cwd: ctx.cwd,
 			}),
 		};
@@ -84,7 +87,8 @@ export function buildSystemPrompt(original: string, options: SystemPromptBuildOp
 
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
-	const tools = selectedTools ?? ["read", "bash", "edit", "write"];
+	const composedTools = options.composedTools ?? [];
+	const tools = [...new Set([...(selectedTools ?? ["read", "bash", "edit", "write"]), ...composedTools])];
 
 	const hasRead = tools.includes("read");
 	const guidelines = uniqueNonEmptyLines(promptGuidelines ?? []);
@@ -99,6 +103,8 @@ export function buildSystemPrompt(original: string, options: SystemPromptBuildOp
 		appendSystemPrompt: appendSystemPrompt ?? null,
 		contextFiles,
 		customPrompt: customPrompt ?? null,
+		hasComposedTools: composedTools.length > 0,
+		composedTools: composedTools.join(", "),
 		docsPath,
 		environmentContext: buildEnvironmentContextView({
 			currentDate: date,
@@ -119,6 +125,7 @@ export function buildSystemPrompt(original: string, options: SystemPromptBuildOp
 		promptGuidelines: guidelines,
 		readmePath,
 		readSkillFallback: !hasSkillTool && hasRead,
+		skillInvocation: composedTools.includes("skill") ? "`tools.skill({name})` inside `exec`" : "`skill({name})`",
 		skills: visibleSkills,
 		skillToolActive: hasSkillTool,
 	});

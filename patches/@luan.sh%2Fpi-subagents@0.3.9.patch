@@ -1,0 +1,36 @@
+diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
+index f860da634b38fe1da0341952a84b230f7dec0003..eb7bc48c8f0f79153f3b9a7b80205daa76476e5a 100644
+--- a/src/runtime/agent-runner.ts
++++ b/src/runtime/agent-runner.ts
+@@ -200,13 +200,18 @@ export function resolveChildToolNames(active: readonly string[], lifted: readonl
+ 	return [...new Set([...active, ...lifted])];
+ }
+ 
++export function resolveChildActiveToolNames(inherited: readonly string[], active: readonly string[]): string[] {
++	const allowed = new Set(inherited);
++	return active.filter((name) => allowed.has(name));
++}
++
+ export async function prepareAgentRun(
+ 	ctx: ExtensionContext,
+ 	options: Pick<RunOptions, "agentConfig" | "collaboration" | "cwd" | "pi" | "onRuntimeResolved">,
+ 	loadResources = true,
+ ): Promise<PreparedAgentRun> {
+ 	const effectiveCwd = options.cwd ?? ctx.cwd;
+-	const toolNames = resolveChildToolNames(options.pi.getActiveTools(), listCodeModeToolNames());
++	const toolNames = resolveChildToolNames(options.pi.getActiveTools(), listCodeModeToolNames(ctx.sessionManager));
+ 	const systemPrompt = buildAgentPrompt(ctx.getSystemPrompt(), options.collaboration);
+ 	const agentDir = getAgentDir();
+ 	const loader = new DefaultResourceLoader({
+@@ -358,8 +363,9 @@ export async function runAgent(ctx: ExtensionContext, prompt: string, options: R
+ 			options.onToolActivity?.({ type: "end", toolName: `extension-error:${error.extensionPath}` });
+ 		},
+ 	});
+-	const availableTools = new Set(session.getAllTools().map((tool) => tool.name));
+-	const activeTools = toolNames.filter((toolName) => availableTools.has(toolName));
++	// session_start may lift or defer tools. Preserve that policy while applying
++	// the parent's allowlist, rather than reactivating every registered tool.
++	const activeTools = resolveChildActiveToolNames(toolNames, session.getActiveToolNames());
+ 	session.setActiveToolsByName(activeTools);
+ 	primePromptEnvelope({
+ 		provider: model?.provider,

@@ -44,6 +44,7 @@
     "npm:@dreki-gg/pi-context7@0.2.0"
   ],
   "extensions": [
+    "extensions/runtime-support/index.ts",
     "extensions/agents-local/index.ts",
     "extensions/auto-compact-resume/index.ts",
     "extensions/codex-native/compaction/index.ts",
@@ -59,11 +60,14 @@
     "extensions/prompt-storage/index.ts",
     "extensions/vim/index.ts",
     "extensions/skillful/index.ts",
+    "extensions/token-burden/index.ts",
+    "extensions/code-mode/index.ts",
+    "extensions/tool-search/index.ts",
     "extensions/system-prompt/index.ts",
     "extensions/convergence-loop/index.ts",
-    "extensions/token-burden/index.ts",
     "extensions/tui/index.ts",
     "extensions/spawn/index.ts",
-    "extensions/fork-split.ts"
+    "extensions/fork-split.ts",
+    "extensions/subagents/index.ts"
   ]
 }

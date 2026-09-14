@@ -1,3 +1,21 @@
+import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+
+/** Nested execution bypasses Pi's direct tool_result hook. Apply its text bound here too. */
+export function boundShellToolResult<T>(result: AgentToolResult<T>): AgentToolResult<T> {
+	const details = result.details;
+	return {
+		...result,
+		// Details becomes model-visible in Code Mode, unlike direct Pi rendering metadata.
+		details:
+			details && typeof details === "object" && "output" in details && typeof details.output === "string"
+				? { ...details, output: formattedTruncateText(details.output).output }
+				: details,
+		content: result.content.map((item) =>
+			item.type === "text" ? { ...item, text: formattedTruncateText(item.text).output } : item,
+		),
+	};
+}
+
 export const DEFAULT_MAX_OUTPUT_TOKENS = 10_000;
 export const DEFAULT_MAX_OUTPUT_LINE_CHARS = 400;
 export const UNIFIED_EXEC_OUTPUT_MAX_BYTES = 1024 * 1024;

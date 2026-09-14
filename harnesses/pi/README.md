@@ -17,6 +17,7 @@ Pi loads:
 - `harnesses/pi/keybindings.json` for Emacs-style editor/session shortcuts
 - `harnesses/pi/tui.json` for status/footer icon, color, compact-mode, and usage-bar preferences
 - `harnesses/pi/effort.json` for read-only per-model thinking defaults used by `/effort`
+- `harnesses/pi/xsettings.toml` for Code Mode, deferred tools, and subagent settings
 - `harnesses/pi/extensions/` as global Pi extension sources
 - `npm:pi-lens` for AST/LSP/code-intelligence checks
 - `npm:@dreki-gg/pi-context7@0.2.0` as reviewed docs lookup tools
@@ -56,6 +57,44 @@ Installed extensions:
 - `tui/` — owns Pi footer/editor chrome for cwd, git, model/thinking, context, tokens, cost, and local `/usage-bars [on|off|toggle]` rendering.
 - `spawn/` — provides `/spawn`, `spawn_lane`, `spawn_list`, and `spawn_map` for bounded Pi/shell/command lanes.
 - `fork-split.ts` — keeps the current session in place when `/fork` is used and opens the selected fork in a new tmux split.
+- `code-mode/` — composes existing file, shell, and skill tools through JavaScript `exec` and `wait`.
+- `tool-search/` — discovers and activates deferred Context Guard, documentation, and terminal-lane tools.
+- `subagents/` — concurrent nested Pi sessions with messaging, follow-up tasks, interrupts, and `/subagents` for inspection.
+- `runtime-support/` — loads shared package UI support and `/xsettings` once.
+
+Code Mode, Tool Search, Subagents, and XSettings are pinned npm dependencies in
+the root package manifest and lockfile. Local adapters load their extension
+entrypoints; do not add the same packages to Pi's `packages` list. Install with
+`./install.sh pi` to link the adapters and settings and build Code Mode's native
+runtime at the source revision recorded by its package. The runtime is cached
+under Pi's agent directory; `PI_CODE_MODE_HOST_BINARY` can select a prebuilt
+binary for an offline workstation or devbox.
+
+Tracked Bun patches preserve session-specific tool ownership and prevent child
+startup from restoring lifted or deferred tools. A dependency override plus the
+root postinstall script removes shadowing bundled Code Mode copies from the two
+consumer packages. Keep these patches until upstream includes the fixes; the
+composition tests cover concurrent sessions and parent/sibling tool isolation.
+
+Our `fileops/` continues to own read, search, find, write, and hashline editing.
+Our `apply-patch/` owns structured patches, validates them before writing, shares
+file mutation queues, and reports completed paths after partial filesystem
+failures. Upstream's current `pi-fileops` is patch-only and is not installed over
+either extension. Mutation queues coordinate operations within one Pi process;
+they do not lock out other editors or terminal processes.
+
+Core file, shell, and skill tools run under `exec`; their JavaScript results
+contain `content` and `details`. Nested calls retain argument validation, shell
+output limits, error reporting, Context Guard wrapping, and disabled-tool checks.
+`tool_search` stays direct and loads less common tools on demand. Change the
+lists through `/xsettings` and start a new session after changing tool placement.
+
+Subagents use four slots including the root and allow two levels of children.
+`/spawn` still opens independent terminal lanes. Forking or navigating the tree
+while subagents are active is blocked until they finish or are interrupted.
+The Agent Hub uses a terminal fullscreen overlay, so it works over SSH without a
+browser. No Anthropic helper or Plannotator integration is loaded.
+
 Retired local extension names:
 
 - `skill-dollar/` is replaced by `skillful/`.

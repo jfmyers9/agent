@@ -420,11 +420,13 @@ describe("skillful extension", () => {
 
 		const first = createPi();
 		extension(first.pi as never);
-		await first.handlers.get("session_start")?.[0]?.({ reason: "startup" }, { hasUI: true, ui });
+		for (const handler of first.handlers.get("session_start") ?? [])
+			await handler({ reason: "startup" }, { hasUI: true, ui });
 
 		const second = createPi();
 		extension(second.pi as never);
-		await second.handlers.get("session_start")?.[0]?.({ reason: "reload" }, { hasUI: true, ui });
+		for (const handler of second.handlers.get("session_start") ?? [])
+			await handler({ reason: "reload" }, { hasUI: true, ui });
 
 		expect(ui.added).toBe(2);
 	});

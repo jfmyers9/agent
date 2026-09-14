@@ -45,6 +45,8 @@ function firstPositive(...values: number[]): number {
 }
 
 function findSkillsPreamble(prompt: string): number {
+	const blockStart = prompt.indexOf("<skills_instructions>");
+	if (blockStart !== -1) return blockStart;
 	const idx = prompt.indexOf("The following skills provide specialized instructions");
 	if (idx === -1) return -1;
 	const sectionStart = prompt.lastIndexOf("\n<skills_instructions>", idx);
@@ -238,7 +240,7 @@ export function parseSystemPrompt(prompt: string): ParsedPrompt {
 
 	// 3. Skills section
 	if (skillsPreambleIdx !== -1) {
-		const skillsSectionStart = skillsPreambleIdx + 2;
+		const skillsSectionStart = skillsPreambleIdx;
 		const skillsSectionEnd = findSkillsSectionEnd(availableSkillsEnd, dateLineIdx, prompt.length);
 		const skillsSectionText = prompt.slice(skillsSectionStart, skillsSectionEnd);
 

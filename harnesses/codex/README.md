@@ -38,11 +38,10 @@ Adopted Luan-inspired Codex ergonomics:
 - `alt-enter` composer queueing
 - status line fields for run state, model/reasoning, cwd, branch, and context
 - Codex hooks enabled with local, dependency-light hooks only
+- experimental idle-sleep prevention while a turn is running
 
 Rejected Luan defaults remain rejected here: no `approval_policy = "never"`, no
 `danger-full-access`, no `ct`/mux hooks, and no user-specific paths or env vars.
-The full adopted/deferred/rejected ledger is in
-[`../../docs/luan-feature-decisions.md`](../../docs/luan-feature-decisions.md).
 
 Codex discovers skills by name with `$<skill-name>` mentions or by
 matching the skill description. Use `/skills` in the Codex CLI to inspect

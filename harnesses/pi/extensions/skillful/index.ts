@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem, Component } from "@earendil-works/pi-tui";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { registerCodeModeTool } from "../shared/code-mode.ts";
 import { patchDollarAutocompleteTrigger, wrapProvider } from "./autocomplete";
 import { installEditorHighlight } from "./editor";
 import {
@@ -99,7 +100,7 @@ export default function (pi: ExtensionAPI) {
 		return renderSkillLoad(details, theme);
 	});
 
-	pi.registerTool({
+	registerCodeModeTool(pi, {
 		name: "skill",
 		label: "Skill",
 		description: "Load a named skill by exact name.",

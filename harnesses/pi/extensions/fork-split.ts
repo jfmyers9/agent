@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { shellQuote } from "./exec-command/shell/tokenize.ts";
 import { TmuxLanePlacement } from "./shared/lane-placement.ts";
+import { hasActiveSubagents } from "./subagents/runtime.ts";
 
 const DRAFT_FILE_ENV = "PI_FORK_SPLIT_DRAFT_FILE";
 const SESSION_FILE_ENV = "PI_FORK_SPLIT_SESSION_FILE";
@@ -84,6 +85,10 @@ export async function handleForkIntoTmuxSplit(
 	if (event.position !== "before" || !ctx.hasUI) return;
 	if (!tmuxPane) {
 		ctx.ui.notify("Fork split failed: Pi is not running inside tmux.", "error");
+		return { cancel: true };
+	}
+	if (hasActiveSubagents(ctx.sessionManager.getSessionId())) {
+		ctx.ui.notify("Wait for or interrupt active subagents before forking the session.", "warning");
 		return { cancel: true };
 	}
 

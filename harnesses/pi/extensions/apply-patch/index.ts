@@ -1,8 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { buildHighlightedDiffRows, type DiffRenderRow, EditDiffView, type RenderTheme } from "../fileops/diff-render";
+import { isToolLifted, registerCodeModeTool } from "../shared/code-mode";
 import { textComponent } from "../shared/tui";
-import { type ApplyPatchResult, runLocalApplyPatch } from "./backend.ts";
+import { type ApplyPatchResult, ApplyPatchWriteError, runLocalApplyPatch } from "./backend.ts";
 
 const APPLY_PATCH = "apply_patch";
 const applyPatchSchema = Type.Object({
@@ -17,6 +18,10 @@ type ApplyPatchToolDetails = {
 	highlightedDiffRows?: DiffRenderRow[];
 	error?: boolean;
 	message?: string;
+	status?: "partial_failure" | "failure";
+	completedPaths?: string[];
+	failedPath?: string;
+	pendingPaths?: string[];
 };
 
 type ApplyPatchToolResult = {
@@ -40,7 +45,21 @@ async function formatResult(result: ApplyPatchResult): Promise<ApplyPatchToolRes
 
 function errorResult(error: unknown): ApplyPatchToolResult {
 	const message = error instanceof Error ? error.message : String(error);
-	return { content: [{ type: "text", text: `Error: ${message}` }], details: { error: true, message } };
+	return {
+		content: [{ type: "text", text: `Error: ${message}` }],
+		details: {
+			error: true,
+			message,
+			...(error instanceof ApplyPatchWriteError
+				? {
+						status: error.completedPaths.length ? ("partial_failure" as const) : ("failure" as const),
+						completedPaths: error.completedPaths,
+						failedPath: error.failedPath,
+						pendingPaths: error.pendingPaths,
+					}
+				: {}),
+		},
+	};
 }
 
 function isSameTools(left: string[], right: string[]): boolean {
@@ -85,7 +104,7 @@ function applyGptToolPolicy(
 			}
 			return true;
 		});
-		if (!next.includes(APPLY_PATCH)) {
+		if (!next.includes(APPLY_PATCH) && !isToolLifted(pi, APPLY_PATCH)) {
 			next = [...next, APPLY_PATCH];
 			state.activated = true;
 		}
@@ -104,7 +123,7 @@ function applyGptToolPolicy(
 export default function applyPatchExtension(pi: ExtensionAPI) {
 	const policyState = { removed: new Set<string>(), activated: false };
 
-	pi.registerTool({
+	registerCodeModeTool(pi, {
 		name: APPLY_PATCH,
 		label: APPLY_PATCH,
 		description:
@@ -136,6 +155,11 @@ export default function applyPatchExtension(pi: ExtensionAPI) {
 	pi.on("session_tree", refresh);
 	pi.on("model_select", refresh);
 	pi.on("before_agent_start", refresh);
+	pi.on("tool_result", (event) => {
+		if (event.toolName === APPLY_PATCH && (event.details as ApplyPatchToolDetails | undefined)?.error) {
+			return { isError: true };
+		}
+	});
 	pi.on("tool_call", (event, ctx) => {
 		if (isGptModel(ctx.model) && (event.toolName === "edit" || event.toolName === "write")) {
 			return { block: true, reason: "GPT models use apply_patch for file edits." };
