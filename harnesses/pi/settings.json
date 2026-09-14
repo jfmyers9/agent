@@ -39,7 +39,7 @@
     "clearOnShrink": false,
     "showTerminalProgress": true
   },
-  "lastChangelogVersion": "0.84.1",
+  "lastChangelogVersion": "0.85.1",
   "packages": [
     "npm:@dreki-gg/pi-context7@0.2.0"
   ],
