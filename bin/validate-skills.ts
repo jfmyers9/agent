@@ -86,29 +86,14 @@ export function validateSkillFile(file: string, root: string, skillNames = disco
 	) {
 		issues.push({ file, message: "metadata must be a mapping" });
 	}
-	const extensionMetadata =
-		typeof metadata.metadata === "object" && metadata.metadata !== null && !Array.isArray(metadata.metadata)
-			? (metadata.metadata as Record<string, unknown>)
-			: undefined;
-	const freshWorkers = extensionMetadata?.["requires-fresh-workers"];
-	if (freshWorkers !== undefined && typeof freshWorkers !== "boolean") {
-		issues.push({ file, message: "metadata.requires-fresh-workers must be boolean" });
-	}
-
 	const disabled = metadata["disable-model-invocation"];
 	const invocable = metadata["user-invocable"];
-	if (metadata["allowed-tools"] === undefined) {
-		if (disabled !== true || invocable !== true || freshWorkers !== true) {
-			issues.push({ file, message: "allowed-tools may be omitted only for explicit fresh-worker orchestration" });
-		}
+	const tools = toolNames(metadata["allowed-tools"]);
+	if (!tools || tools.length === 0) {
+		issues.push({ file, message: "allowed-tools must be a nonempty comma-separated string or string list" });
 	} else {
-		const tools = toolNames(metadata["allowed-tools"]);
-		if (!tools) {
-			issues.push({ file, message: "allowed-tools must be a comma-separated string or string list" });
-		} else {
-			for (const tool of tools) {
-				if (!PORTABLE_TOOLS.has(tool)) issues.push({ file, message: `non-portable allowed tool: ${tool}` });
-			}
+		for (const tool of tools) {
+			if (!PORTABLE_TOOLS.has(tool)) issues.push({ file, message: `non-portable allowed tool: ${tool}` });
 		}
 	}
 

@@ -69,7 +69,7 @@ global/
   AGENTS.md                # shared global instructions
   CLAUDE.md                # globally installed Claude entrypoint
 install.sh                 # harness-aware installer
-bin/blueprint              # portable blueprint state CLI
+bin/blueprint              # portable artifact storage CLI
 bin/git-surgeon.ts         # deterministic selective-hunk Git CLI
 bin/validate-skills.ts     # repository skill schema/reference validator
 Cargo.toml                  # Rust workspace for vendored helper binaries
@@ -103,19 +103,20 @@ Portable across harnesses:
 - `skills/*/SKILL.md` — Agent Skills-compatible workflow packages
 - `bin/blueprint` — opt-in proposals, reviews, and reports
 
-Blueprints are durable artifacts created only by explicitly invoked artifact
-skills. Ordinary coding and PR workflows do not create them:
+Artifacts are saved only when requested, using the `artifact` skill or an
+explicit destination. Plans, reviews, context maps, and diagnoses are ordinary
+Markdown inputs to a later prompt. They carry no approval or execution state.
+The blueprint CLI provides optional naming, discovery, and archival:
 
 ```sh
-blueprint create proposal "topic"
+blueprint create proposal "topic" --status complete
 blueprint create review "topic"
 blueprint create report "topic" --kind context
 blueprint find --type proposal,review,report --all
 blueprint archive <exact-or-unique-target>
 ```
 
-New `spec` and `plan` creation is rejected. Existing files remain findable and
-archivable for compatibility.
+Existing documents remain readable. Saving does not require a commit or push.
 
 ## Claude Code adapter
 
@@ -131,8 +132,7 @@ Claude-specific features retained outside shared skills:
 - Claude Code hooks and statusline protocol
 - Claude plugin settings
 
-Shared skills avoid native task/team dependencies. Blueprints remain optional
-unless an artifact skill is explicitly invoked.
+Shared skills avoid native task/team dependencies. Saving artifacts is explicitly requested and independent of coding work.
 
 ## Pi adapter
 
@@ -150,9 +150,7 @@ Pi uses `/skill:<name>` commands, for example:
 ```text
 /skill:commit
 /skill:submit
-/skill:vibe <change>
-/skill:converge <change>
-/skill:research
+/skill:artifact <what to save>
 /skill:review
 ```
 
@@ -177,16 +175,19 @@ not checked into this repo.
 
 Codex reads repository `AGENTS.md` files automatically. Shared skills are
 installed through Codex's user skill path and can be invoked with
-`$vibe <change>`, `$converge <change>`, `$commit`, `$submit`, `$research`,
-`$review`, and other skill names.
+`$commit`, `$submit`, `$artifact`, `$review`, and other skill names.
 
-## Portability status
+## Skills
 
-Manual artifact skills: `context`, `research`, `review`, and `diagnose`.
+- `artifact` — save a requested plan, review, context map, diagnosis, or other note.
+- `review` — assess a code change and return evidence-backed findings in chat.
+- `respond` — validate PR feedback, apply requested fixes, and post authorized replies.
+- `commit`, `gt`, `submit`, `split-commit`, `git-surgeon` — specialized Git and stack operations.
+- `improve-rust-tests` — improve meaningful Rust behavior coverage and test structure.
+- `writing-skills` — edit this repository's skills and validate their schema and references.
 
-Direct workflows may consume artifacts but do not require or create trackers:
-`implement`, `fix`, `debug`, `respond`, `split-commit`, `resume-work`, `vibe`,
-and `converge`.
+Implementation, debugging, and cleanup use ordinary prompts. Any task can consume
+an explicitly supplied document without updating it or following a skill sequence.
 
 ## Rules
 

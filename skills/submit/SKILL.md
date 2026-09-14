@@ -7,7 +7,7 @@ description: >
   default. Triggers: /submit, "Graphite submit", "stack submit".
 allowed-tools: Bash
 argument-hint: >
-  [--stack] [--restack-only] [--sync-only] [--dry-run] [--ready]
+  [--stack] [--restack-only] [--dry-run] [--ready]
 ---
 
 # Submit
@@ -20,17 +20,14 @@ Prepare and submit the current Graphite branch or stack.
 
 - `--stack` — include descendants of the current branch
 - `--restack-only` — restack locally and stop without pushing or updating PRs
-- `--sync-only` — deprecated compatibility alias for `--restack-only`
 - `--dry-run` — preview submission without restacking, pushing, or changing PRs
 - `--ready` — publish submitted PRs instead of leaving new PRs in draft
 
-Neither restack-only flag runs the repository-wide `gt sync` operation.
+`--restack-only` does not run the repository-wide `gt sync` operation.
 
 ## Workflow
 
-1. Parse only the supported flags. Normalize `--sync-only` to
-   `--restack-only` and report that the alias is deprecated; reject both
-   spellings together. Reject unknown arguments, `--ready` with
+1. Parse only the supported flags. Reject unknown arguments, `--ready` with
    `--restack-only`, and `--dry-run` with `--restack-only`.
 2. Verify that `gt` is available and that the path from
    `git rev-parse --git-path .graphite_repo_config` exists; do not invoke `gt`

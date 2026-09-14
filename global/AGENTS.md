@@ -26,15 +26,12 @@
 
 ## Durable Artifacts
 
-Blueprints are opt-in. Create them only when I explicitly invoke `context`,
-`research`, `review`, or `diagnose`.
-
-- Proposals: `blueprint create proposal "<topic>"`
-- Reviews: `blueprint create review "<topic>"`
-- Context/diagnosis reports: `blueprint create report "<topic>" --kind <kind>`
-
-Ordinary Q&A, coding, debugging, and PR work use chat and the working tree.
-Existing blueprints may be optional inputs.
+Save persistent artifacts only when explicitly requested or through
+`$artifact`. Use a requested destination; otherwise use blueprint storage.
+Ordinary Q&A, coding, debugging, reviews, and PR work use chat and the working
+tree. Existing artifacts are optional inputs, never approval or workflow
+state. Reading one does not authorize changing it. Saving does not include
+committing or pushing.
 
 @rules/blueprints.md
 @rules/context-budget.md

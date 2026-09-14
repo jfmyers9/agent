@@ -2,140 +2,50 @@
 name: writing-skills
 description: >
   Create or edit Agent Skills in this repository with precise routing,
-  portable tools, cohesive workflows, and repository validation. Use for actual
-  changes under `skills/`, not for general advice about skill design.
+  portable tools, cohesive instructions, and repository validation. Use for
+  actual changes under `skills/`, not general advice about skill design.
 argument-hint: "<skill-name-or-path> [description]"
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
 # Writing Skills
 
-Create or revise a portable skill without weakening its behavioral contracts.
+Write focused skills that add useful behavior beyond ordinary agent work.
 
-@rules/skill-editing.md and @rules/harness-compat.md apply.
+@rules/skill-editing.md applies.
 
-## Arguments
+Use the supplied skill name or path as the target and the optional description
+as the desired capability. For new skills, use `skills/<name>/SKILL.md` with a
+lowercase kebab-case name. For updates, read the entire existing skill first.
 
-- `<skill-name-or-path>` — new kebab-case name or existing skill/path.
-- `[description]` — optional capability and intended invocation context.
+1. Read repository instructions and search references to the target in skills,
+   rules, documentation, and tests. Understand its routing and side effects
+   before editing. Verify referenced files, skills, and commands exist.
+2. Keep frontmatter consistent with the body:
+   - Match `name` to the directory exactly.
+   - Describe the capability and when to invoke it; distinguish nearby skills
+     only where routing would otherwise be ambiguous.
+   - Document every argument advertised by `argument-hint`; omit it when unused.
+   - Use portable tool names such as `Bash`, `Read`, `Write`, `Edit`, `Glob`, and
+     `Grep` in `allowed-tools`, consistent with the required operations.
+   - Use `user-invocable: true` and `disable-model-invocation: true` for skills
+     intended only for explicit invocation.
 
-For an update, infer the current description from the target and use the user's
-request as the desired delta. Ask for missing information only when the target
-or required behavior cannot be determined safely.
+   The repository supports adapter extension fields; `bun run check:skills`
+   is the authoritative schema check.
 
-## Workflow
+3. Integrate changes where they belong in the workflow. Remove duplication,
+   obsolete routing, and unnecessary ceremony. Specify useful inputs, scope,
+   side effects, verification, and output without restating global agent
+   instructions. Keep examples neutral and prose wrapped near 80 characters.
+4. Read the complete result and inspect the diff for contradictions, dangling
+   references, mismatched arguments, and unrelated changes. Update affected
+   documentation and meaningful contract tests with the changed behavior.
+5. Run `bun run check:skills` and relevant tests. For shared skill contracts or
+   schema changes, run:
 
-### 1. Resolve The Target
+   ```sh
+   bun test tests/workflow-contracts.test.ts tests/skill-validator.test.ts
+   ```
 
-- Treat an existing name or `SKILL.md` path as an update.
-- For a new skill, validate a lowercase kebab-case name and use
-  `skills/<name>/SKILL.md`.
-- If several targets match, ask which one; do not guess or overwrite.
-- Read repository instructions before creating directories or editing files.
-
-### 2. Discover Existing Contracts
-
-For an update, read the entire target from frontmatter through its final line.
-For both new and existing skills:
-
-1. read two or three nearby skills with similar side effects or routing;
-2. search tests, documentation, and other skills for references to the target,
-   exact phrases, flags, and workflow guarantees;
-3. identify applicable rules and verify every referenced skill, command, and
-   helper actually exists; and
-4. record the routing boundary, authorized side effects, required outputs, and
-   behaviors that must remain stable unless the user requested a change.
-
-Do not append new behavior before understanding how it fits the existing
-workflow.
-
-### 3. Design Frontmatter
-
-Use only fields the repository supports. This repository intentionally permits
-adapter-supported invocation fields beyond the smallest generic Agent Skills
-schema; `bun run check:skills` is authoritative.
-
-```markdown
----
-name: example-skill
-description: >
-  Perform a specific capability. Use when the user requests its narrow,
-  distinguishable workflow.
-allowed-tools: Bash, Read, Glob, Grep
-argument-hint: "<required> [--optional]"
----
-```
-
-- Make `name` match the directory exactly.
-- Describe both what the skill does and when it should route. Include a negative
-  boundary when a neighboring skill is easy to confuse; avoid keyword lists in
-  place of a semantic description.
-- Include `argument-hint` only when the skill accepts arguments, and document
-  every argument in the body.
-- Grant the smallest portable `allowed-tools` set: inspection usually needs
-  `Bash, Read, Glob, Grep`; add `Edit` or `Write` only for file changes.
-- Never list harness-native task, team, or subagent tools in shared frontmatter.
-- Add `user-invocable: true` and `disable-model-invocation: true` when the skill
-  must run only through explicit invocation, including opt-in durable artifact
-  skills. Preserve these fields on existing explicit-only skills.
-- Only fresh-worker orchestration may omit `allowed-tools`. It must also set
-  `metadata.requires-fresh-workers: true` with both explicit-only fields.
-
-Omit optional fields that add no constraint. If a workflow needs an optional
-tool outside the portable set, either leave tools unrestricted or specify a
-portable fallback; do not declare a tool set that makes the workflow
-impossible.
-
-### 4. Write A Cohesive Workflow
-
-For a new skill, create the directory and a concise `SKILL.md`. For an update,
-integrate changes into the workflow step where they belong, remove duplication,
-and keep section order aligned with execution order.
-
-Use this structure only where each section adds value:
-
-1. one imperative purpose statement;
-2. applicable rule references;
-3. arguments and defaults;
-4. ordered workflow with inputs, safety boundaries, verification, and output;
-   and
-5. exceptional behavior or blockers near the step that can trigger them.
-
-Write direct imperative instructions. Prefer observable decision criteria over
-subjective language such as "best" or "appropriate." Define what the agent may
-change, when it must ask, how it preserves unrelated work, and what completion
-requires. Give exact commands only when they are stable and verified; otherwise
-instruct the agent to inspect current project documentation or CLI help.
-
-Keep ordinary workflows in chat and the working tree. Only skills explicitly
-invoked for durable artifacts may create blueprints; when one does, follow
-`@rules/blueprints.md` and `@rules/human-approval.md`. Do not add artifact side
-effects to unrelated skills. Make artifact workflows preserve and validate
-frontmatter and derive link targets from the source file's full stem. Commit by
-exact file path; `blueprint commit` must refuse an existing index and stage only
-the resolved artifact.
-
-### 5. Verify The Result
-
-Read the final file top to bottom and check:
-
-- valid YAML frontmatter and matching name/directory;
-- a narrow, accurate routing description;
-- argument, tool, invocation, and side-effect metadata consistent with the
-  body;
-- imperative instructions in workflow order, without contradictions,
-  duplicated rules, dangling references, or stale pseudo-templates;
-- preserved behavior contracts and unrelated user changes;
-- readable Markdown with prose wrapped near 80 characters; and
-- targeted repository tests or validators for skill contracts.
-
-Inspect the final diff and report files changed, key routing or workflow
-decisions, and validation results. Do not create a blueprint unless the user
-explicitly invoked an artifact skill.
-
-Run at least:
-
-```sh
-bun run check:skills
-bun test tests/workflow-contracts.test.ts tests/skill-validator.test.ts
-```
+Report the changed skills, important behavior changes, and validation results.

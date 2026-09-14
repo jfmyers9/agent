@@ -3,7 +3,7 @@ name: split-commit
 description: >
   Split or reorganize one or more topic-branch commits into clean, tested,
   vertical Conventional Commits when the user explicitly requests a history rewrite.
-argument-hint: "[base-branch] [--test='<command>'] [--auto] [blueprint-slug-or-path]"
+argument-hint: "[base-branch] [--test='<command>'] [--auto] [context-path]"
 user-invocable: true
 allowed-tools: [Bash, Read, Glob, Grep]
 ---
@@ -20,7 +20,7 @@ Repackage local branch history without creating a tracker or changing remotes.
   remote default or `main` outside a Graphite stack
 - `--test='<command>'` — verification command to run for each rebuilt commit
 - `--auto` — approve the proposed split without a separate confirmation turn
-- `[blueprint-slug-or-path]` — optional, explicitly named intent context
+- `[context-path]` — optional, explicitly named intent context
 
 ## Workflow
 
@@ -44,7 +44,7 @@ Repackage local branch history without creating a tracker or changing remotes.
 2. **Analyze the complete branch change**
    - Inspect a bounded log, name/status summary, meaningful diff hunks, build
      metadata, and dependencies between changed code.
-   - Read a blueprint only when the user named it; treat it as optional intent,
+   - Read a context document only when the user named it; treat it as optional intent,
      never as permission to ignore the live diff.
    - Use the supplied test command or select relevant existing checks from
      repository configuration. Do not invent a command the project does not

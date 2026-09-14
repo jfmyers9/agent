@@ -1,83 +1,39 @@
-# Blueprints Convention
+# Persistent Artifacts
 
-Blueprints are opt-in durable documents. Create one only when the user
-explicitly invokes an artifact skill: `context`, `research`, `review`,
-or `diagnose`.
+Save durable documents only when the user explicitly requests saving one or
+invokes `$artifact`. Ordinary Q&A, coding, debugging, and reviews use chat and
+the working tree. Existing documents are optional inputs: their status does
+not authorize work, require a phase, or make their claims current. Reading an
+artifact does not authorize updating it.
 
-Ordinary questions, coding, debugging, PR work, and branch management do not
-create blueprints. They may consume an existing blueprint when the user names
-one or when it is clearly relevant input.
+Use a requested destination. Otherwise the blueprint CLI remains the default
+storage helper; its directories organize documents, not workflow stages:
 
-## Project Derivation
+| Content | Creation command |
+| ------- | ---------------- |
+| Plan or decision | `blueprint create proposal "<topic>" --status complete` |
+| Review | `blueprint create review "<topic>" --status complete` |
+| Context or diagnosis | `blueprint create report "<topic>" --status complete --kind <kind>` |
+| Other report | `blueprint create report "<topic>" --status complete` |
 
-Always use the CLI:
+For typed reports, use `context` or `diagnosis` as the kind. Capture the returned
+path in `file`, write below the generated frontmatter, and run
+`blueprint validate "$file"`. The CLI currently requires `status`; `complete`
+means the document was written, not that proposed work is approved or finished.
+Body headings are optional, including those generated for proposals. Do not
+change status as work proceeds.
 
-```sh
-project=$(blueprint project)
-```
+The CLI derives the project and creates timestamped Markdown files under
+`~/workspace/blueprints/<project>/`. Use `blueprint find --type ... --match ...`
+or an explicit file path to locate requested inputs. Resolve ambiguity before
+editing; do not choose a document by recency unless the user asks for the
+latest. Existing `spec/` and `plan/` documents remain readable.
 
-## Directory Layout
+Cite related documents with ordinary links. The optional command
+`blueprint link <file> <source-slug>` records a source relationship; derive the
+slug from the source's full filename stem. Links do not create dependencies or
+approval obligations.
 
-```text
-~/workspace/blueprints/<project>/proposal/  # decisions awaiting/after approval
-~/workspace/blueprints/<project>/review/    # code and acceptance findings
-~/workspace/blueprints/<project>/report/    # context, diagnosis, and reports
-~/workspace/blueprints/<project>/archive/   # archived artifacts
-```
-
-Legacy `spec/` and `plan/` directories remain readable, findable, and
-archivable. Do not create new files in them.
-
-## Artifact Roles
-
-- `proposal/`: one decision and implementation approach. Required sections:
-  `Decision`, `Evidence`, `Approach`, `Acceptance Criteria`, and
-  `Implementation Notes`. States: `draft -> approved -> complete`.
-- `review/`: stable findings and their resolutions. Generated reviews are
-  complete artifacts; resolution progress belongs in the body.
-- `report/`: completed context and diagnosis reports, distinguished by
-  `kind: context` or `kind: diagnosis`.
-
-## Human Review
-
-Research has one approval boundary. A new proposal is `draft`. Either an
-explicit approval response or invoking `$implement <proposal>` authorizes the
-work and advances it to `approved`. Feedback revises the same proposal.
-
-## Naming And Writes
-
-Files use `<epoch>-<slug>.md`. Generate slugs with:
-
-```sh
-blueprint slug "<text>"
-```
-
-Resolve a report subtype with `blueprint find --type report --kind <kind>`.
-Explicit `--match` and `--exact` lookups reject ambiguity; use `--all` only when
-the workflow intends to present multiple candidates.
-
-After each artifact write, status change, or move, validate and commit the exact
-file:
-
-```sh
-blueprint validate "$file"
-blueprint commit <type> "$file"
-```
-
-The CLI refuses a pre-existing staged index and stages only the resolved file.
-If commit or push fails, stop and show the error. Archive only when explicitly
-asked:
-
-```sh
-blueprint archive <exact-or-unique-target>
-```
-
-## Linking
-
-Use `source` only when one artifact derives from another:
-
-```sh
-blueprint link "$file" "<source-slug>"
-```
-
-Obsidian resolves the stored bare filename wikilink across directories.
+Saving does not include committing, pushing, archiving, or deleting artifacts.
+Perform those actions only when requested. Report a failed save or validation
+accurately; it does not invalidate completed analysis or block unrelated work.

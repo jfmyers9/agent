@@ -69,21 +69,6 @@ Context7 is installed as a pinned reviewed Pi package. It registers `context7_re
 
 Skills are available as `/skill:<name>` and `$skill-name` references by default.
 
-## Ephemeral worker adapter
-
-Orchestration skills such as `/skill:converge` need a new context and one
-terminal result for every stage. From the target repository working directory,
-the Pi adapter is:
-
-```sh
-pi --print --no-session "<complete stage packet>"
-```
-
-Run it once per stage and wait for the process to exit before launching the
-next stage. `--no-session` prevents worker context from being persisted or
-resumed. Do not use `spawn_lane` for this contract: lanes return asynchronously
-and retain native task/session state.
-
 ## Context Guard core
 
 The `context-guard` Pi extension is registered by default. Its indexing,
@@ -148,16 +133,10 @@ boundary.
 `ct` is different: it is Luan's broader Rust CLI. This config no longer requires
 `ct` for `edit` or TUI usage bars.
 
-Blueprints are opt-in durable artifacts, not default workflow trackers:
-
-- `/skill:research` creates a proposal.
-- `/skill:review` creates a review.
-- `/skill:context` and `/skill:diagnose` create typed reports.
-- `blueprint archive <exact-target>` archives one durable artifact.
-
-Ordinary implementation, debugging, fixes, and PR work such as `/skill:respond`
-use chat and the working tree. `/skill:implement` can consume an explicitly
-named proposal, report, or legacy spec/plan, but does not create a tracker.
+Use `/skill:artifact` when saving a durable plan, review, context map, or report.
+`/skill:review` returns findings in chat. Ordinary coding and PR work can consume
+supplied documents without modifying them or requiring a workflow sequence.
+`blueprint archive <exact-target>` archives one artifact when requested.
 
 Validation:
 
