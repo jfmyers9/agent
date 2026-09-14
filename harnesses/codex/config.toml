@@ -11,6 +11,7 @@ plan_mode_reasoning_effort = "high"
 hooks = true
 
 [tui]
+whimsy = false
 notification_condition = "unfocused"
 status_line = [
   "run-state",
