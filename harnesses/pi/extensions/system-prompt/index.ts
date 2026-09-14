@@ -56,27 +56,11 @@ type SystemPromptBuildOptions = {
 	now?: Date;
 };
 
-type ToolFlags = {
-	hasBash: boolean;
-	hasExecCommand: boolean;
-	hasFind: boolean;
-	hasGrep: boolean;
-	hasRead: boolean;
-	hasSearch: boolean;
-	hasShellTool: boolean;
-};
-
-type BeforeAgentStartPromptEvent = {
-	systemPrompt: string;
-	systemPromptOptions: Partial<SystemPromptBuildOptions> & { cwd?: string };
-};
-
 export default async function systemPromptExtension(pi: ExtensionAPI) {
 	pi.on("before_agent_start", (event, ctx) => {
-		const promptEvent = event as BeforeAgentStartPromptEvent;
 		return {
-			systemPrompt: buildSystemPrompt(promptEvent.systemPrompt, {
-				...promptEvent.systemPromptOptions,
+			systemPrompt: buildSystemPrompt(event.systemPrompt, {
+				...event.systemPromptOptions,
 				cwd: ctx.cwd,
 			}),
 		};
@@ -102,7 +86,8 @@ export function buildSystemPrompt(original: string, options: SystemPromptBuildOp
 	const skills = providedSkills ?? [];
 	const tools = selectedTools ?? ["read", "bash", "edit", "write"];
 
-	const toolFlags = buildToolFlags(tools);
+	const hasRead = tools.includes("read");
+	const guidelines = uniqueNonEmptyLines(promptGuidelines ?? []);
 	const hasSkillTool = tools.includes("skill");
 
 	const readmePath = original.match(/- Main documentation: (.+)/)?.[1] ?? null;
@@ -114,7 +99,7 @@ export function buildSystemPrompt(original: string, options: SystemPromptBuildOp
 		appendSystemPrompt: appendSystemPrompt ?? null,
 		contextFiles,
 		customPrompt: customPrompt ?? null,
-		docsPath: docsPath ?? "null",
+		docsPath,
 		environmentContext: buildEnvironmentContextView({
 			currentDate: date,
 			timezone: currentTimezone(),
@@ -126,32 +111,17 @@ export function buildSystemPrompt(original: string, options: SystemPromptBuildOp
 				},
 			],
 		}),
-		examplesPath: examplesPath ?? "null",
-		...toolFlags,
+		examplesPath,
+		hasPiDocs: Boolean(readmePath || docsPath || examplesPath),
+		hasPromptGuidelines: guidelines.length > 0,
 		hasContextFiles: contextFiles.length > 0,
-		includeSkills: (hasSkillTool || toolFlags.hasRead) && visibleSkills.length > 0,
-		promptGuidelines: uniqueNonEmptyLines(promptGuidelines ?? []),
-		readmePath: readmePath ?? "null",
-		readSkillFallback: !hasSkillTool && toolFlags.hasRead,
+		includeSkills: (hasSkillTool || hasRead) && visibleSkills.length > 0,
+		promptGuidelines: guidelines,
+		readmePath,
+		readSkillFallback: !hasSkillTool && hasRead,
 		skills: visibleSkills,
 		skillToolActive: hasSkillTool,
 	});
-}
-
-function buildToolFlags(tools: string[]): ToolFlags {
-	const hasBash = tools.includes("bash");
-	const hasExecCommand = tools.includes("exec_command");
-	const hasSearch = tools.includes("search");
-
-	return {
-		hasBash,
-		hasExecCommand,
-		hasFind: tools.includes("find"),
-		hasGrep: tools.includes("grep") && !hasSearch,
-		hasRead: tools.includes("read"),
-		hasSearch,
-		hasShellTool: hasBash || hasExecCommand,
-	};
 }
 
 function formatDate(date: Date): string {

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { buildSystemPrompt } from "./index";
+import { readFileSync } from "node:fs";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import convergenceLoopExtension, { COMPLETION_MARKER } from "../convergence-loop";
+import systemPromptExtension, { buildSystemPrompt } from "./index";
 
 const baseOptions = {
 	cwd: "/repo",
@@ -60,48 +63,65 @@ describe("system-prompt Skillful skill rendering", () => {
 		expect(prompt).toContain("<timezone>Etc/UTC</timezone>");
 	});
 
-	test("tool guidance adapts to active file and shell tools", () => {
+	test("renders contributed tool guidance once without inventing capabilities", () => {
+		const guideline = "Use the fixture tool for its supported operation.";
 		const prompt = buildSystemPrompt("base", {
 			...baseOptions,
-			selectedTools: ["read", "search", "find", "exec_command"],
+			selectedTools: ["fixture"],
+			promptGuidelines: [guideline, `  ${guideline}  `, "", "  "],
 		});
 
-		expect(prompt).toContain("Use `read` for known file paths.");
-		expect(prompt).toContain("Prefer `read` ranges/limits over shell `sed`, `cat`, `head`, or `tail`");
-		expect(prompt).toContain("Use `search` for file-content matching");
-		expect(prompt).toContain("Use `find` for file discovery by glob or path.");
-		expect(prompt).toContain("Use `exec_command` for shell-only workflows");
-		expect(prompt).toContain("rg -n -M 400 --max-columns-preview");
-		expect(prompt).toContain("avoid `head` for line-length control");
-		expect(prompt).toContain("Do not use shell commands for routine file reads, writes, or edits");
-		expect(prompt).toContain("Prefer `spawn_lane` for bounded, context-heavy work");
-		expect(prompt).toContain("Keep the main session focused on coordination and synthesis");
-		expect(prompt).not.toContain("Use `bash` for shell-only workflows");
-		expect(prompt).not.toContain("RTK");
-		expect(prompt).not.toContain("rtk grep");
+		expect(prompt.split(guideline)).toHaveLength(2);
+		for (const unavailable of [
+			"multi_tool_use.parallel",
+			"sym --format",
+			"spawn_lane",
+			"apply_patch",
+			"exec_command",
+		]) {
+			expect(prompt).not.toContain(unavailable);
+		}
 	});
 
-	test("bash guidance remains available without exec_command", () => {
-		const prompt = buildSystemPrompt("base", {
-			...baseOptions,
-			selectedTools: ["bash", "grep"],
-		});
-
-		expect(prompt).toContain("Use `bash` for shell-only workflows");
-		expect(prompt).toContain("Use `grep` for file-content matching when `search` is not active.");
-		expect(prompt).toContain("rg -n -M 400 --max-columns-preview");
-		expect(prompt).not.toContain("Use `exec_command` for shell-only workflows");
+	test("omits tool and documentation sections when no contributions exist", () => {
+		const prompt = buildSystemPrompt("base", { cwd: "/repo", selectedTools: [] });
+		expect(prompt).not.toContain("# Tool guidance");
+		expect(prompt).not.toContain("# Pi documentation");
+		expect(prompt).not.toContain("documentation: null");
 	});
 
-	test("editing guidance uses active edit tool instead of hard-coded apply_patch", () => {
-		const prompt = buildSystemPrompt("base", {
-			...baseOptions,
+	test("preserves supplied documentation locations", () => {
+		const prompt = buildSystemPrompt("- Main documentation: /opt/pi/README.md\n- Additional docs: /opt/pi/docs", {
+			cwd: "/repo",
 			selectedTools: [],
 		});
+		expect(prompt).toContain("/opt/pi/README.md");
+		expect(prompt).toContain("/opt/pi/docs");
+		expect(prompt).not.toContain("Examples: null");
+	});
 
-		expect(prompt).toContain("Use the active edit tool for manual code edits.");
-		expect(prompt).toContain("active edit tool is enough");
-		expect(prompt).not.toContain("Use `apply_patch` for manual code edits");
+	test("custom prompts replace the base but preserve appended context and skills", () => {
+		const prompt = buildSystemPrompt("base", {
+			...baseOptions,
+			customPrompt: "CUSTOM_PROMPT_SENTINEL",
+			appendSystemPrompt: "APPEND_SENTINEL",
+			contextFiles: [{ path: "/repo/AGENTS.md", content: "CONTEXT_SENTINEL" }],
+		});
+		for (const sentinel of ["CUSTOM_PROMPT_SENTINEL", "APPEND_SENTINEL", "CONTEXT_SENTINEL"]) {
+			expect(prompt.split(sentinel)).toHaveLength(2);
+		}
+		expect(prompt).toContain("- tdd: Apply test-driven development");
+		expect(prompt).toContain("<environment_context>");
+		expect(prompt).not.toContain("# Working with the user");
+	});
+
+	test("explicit-only skills stay out of automatic discovery", () => {
+		const prompt = buildSystemPrompt("base", {
+			...baseOptions,
+			skills: [{ ...baseOptions.skills[0], disableModelInvocation: true }],
+		});
+		expect(prompt).not.toContain("<available_skills>");
+		expect(prompt).not.toContain("- tdd:");
 	});
 
 	test("skill tool active lists skills by name and description only", () => {
@@ -110,9 +130,7 @@ describe("system-prompt Skillful skill rendering", () => {
 			selectedTools: ["skill"],
 		});
 
-		expect(prompt).toContain("The following skills provide specialized instructions");
-		expect(prompt).toContain("call `skill({name})`");
-		expect(prompt).toContain('matching `<skill name="...">` block is already in context');
+		expect(prompt).toContain("`skill({name})`");
 		expect(prompt).toContain("- tdd: Apply test-driven development");
 		expect(prompt).not.toContain("/skills/tdd/SKILL.md");
 	});
@@ -123,7 +141,7 @@ describe("system-prompt Skillful skill rendering", () => {
 			selectedTools: ["read"],
 		});
 
-		expect(prompt).toContain("read the referenced `SKILL.md` file");
+		expect(prompt).toContain("Read the listed `SKILL.md`");
 		expect(prompt).toContain("- tdd: Apply test-driven development (/skills/tdd/SKILL.md)");
 	});
 
@@ -148,4 +166,60 @@ describe("system-prompt Skillful skill rendering", () => {
 		expect(prompt).toContain("## /repo/CLAUDE.local.md");
 		expect(prompt).toContain("LOCAL_SENTINEL");
 	});
+});
+
+test("configured handler order preserves per-turn loop instructions", async () => {
+	const settings = JSON.parse(readFileSync(new URL("../../settings.json", import.meta.url), "utf8"));
+	const handlers: Array<(event: any, ctx: any) => any> = [];
+	const commands = new Map<string, any>();
+	const pi = {
+		on(name: string, handler: (event: any, ctx: any) => any) {
+			if (name === "before_agent_start") handlers.push(handler);
+		},
+		registerCommand(name: string, command: any) {
+			commands.set(name, command);
+		},
+		sendUserMessage() {},
+	} as unknown as ExtensionAPI;
+	const contributors: Record<string, (pi: ExtensionAPI) => unknown> = {
+		"extensions/system-prompt/index.ts": systemPromptExtension,
+		"extensions/convergence-loop/index.ts": convergenceLoopExtension,
+	};
+	for (const extension of settings.extensions) {
+		if (contributors[extension]) await contributors[extension](pi);
+	}
+	expect(handlers).toHaveLength(2);
+	const ctx = {
+		cwd: "/repo",
+		isIdle: () => true,
+		ui: { setStatus() {}, notify() {} },
+	};
+	const options = {
+		cwd: ctx.cwd,
+		selectedTools: [],
+		appendSystemPrompt: "APPEND_SENTINEL",
+		contextFiles: [{ path: "/repo/AGENTS.local.md", content: "LOCAL_SENTINEL" }],
+	};
+	const renderTurn = async () => {
+		let systemPrompt = "native base";
+		for (const handler of handlers) {
+			const result = await handler({ systemPrompt, systemPromptOptions: options }, ctx);
+			if (result?.systemPrompt !== undefined) systemPrompt = result.systemPrompt;
+		}
+		return systemPrompt;
+	};
+
+	await commands.get("goal").handler("--max 3 repair the parser", ctx);
+	for (let turn = 0; turn < 2; turn++) {
+		const prompt = await renderTurn();
+		expect(prompt).toContain("repair the parser");
+		expect(prompt).toContain("iteration 1 of 3");
+		expect(prompt).toContain(COMPLETION_MARKER);
+		for (const sentinel of ["APPEND_SENTINEL", "LOCAL_SENTINEL", "repair the parser"]) {
+			expect(prompt.split(sentinel)).toHaveLength(2);
+		}
+	}
+	await commands.get("goal").handler("stop", ctx);
+	expect(await renderTurn()).not.toContain(COMPLETION_MARKER);
+	expect(options.appendSystemPrompt).toBe("APPEND_SENTINEL");
 });
