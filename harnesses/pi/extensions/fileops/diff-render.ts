@@ -605,6 +605,21 @@ function renderDiffSectionRows(
 	return rendered;
 }
 
+function isDiffRenderRow(value: unknown): value is DiffRenderRow {
+	if (value === null || typeof value !== "object") return false;
+	const row = value as Partial<DiffRenderRow>;
+	const isLineNumber = (line: unknown) =>
+		line === null || (typeof line === "number" && Number.isInteger(line) && line >= 0);
+	return (
+		["add", "remove", "context", "hunk"].includes(row.kind ?? "") &&
+		typeof row.content === "string" &&
+		(row.highlightedContent === undefined || typeof row.highlightedContent === "string") &&
+		(row.path === undefined || typeof row.path === "string") &&
+		isLineNumber(row.oldLine) &&
+		isLineNumber(row.newLine)
+	);
+}
+
 function renderDiffRows(
 	diff: string,
 	rows: DiffRenderRow[] | undefined,
@@ -613,7 +628,10 @@ function renderDiffRows(
 	expanded: boolean,
 	headerRenderer: DiffSectionHeaderRenderer = defaultDiffSectionHeader,
 ): string[] {
-	const parsedRows = rows ?? parseUnifiedDiff(diff);
+	// Code Mode bounds cached result metadata, replacing rows/fields with markers.
+	// Reparse the plain diff rather than rendering partial rows or losing changes.
+	const parsedRows =
+		Array.isArray(rows) && rows.length > 0 && rows.every(isDiffRenderRow) ? rows : parseUnifiedDiff(diff);
 	const sections = groupDiffRowsByFile(parsedRows);
 	if (sections.length === 0) {
 		return [
