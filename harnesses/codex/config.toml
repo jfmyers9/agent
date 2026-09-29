@@ -1,7 +1,8 @@
-model = "gpt-5.5"
+model = "gpt-6-sol"
 model_reasoning_effort = "high"
 personality = "pragmatic"
 approval_policy = "on-request"
+approvals_reviewer = "auto_review"
 sandbox_mode = "workspace-write"
 web_search = "cached"
 project_doc_fallback_filenames = ["CLAUDE.md"]
