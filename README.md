@@ -190,6 +190,8 @@ installed through Codex's user skill path and can be invoked with
 ## Skills
 
 - `artifact` — save a requested plan, review, context map, diagnosis, or other note.
+- `context` — understand existing code through entrypoints, ownership, flows, and tests.
+- `research` — explore code and plan interfaces, layering, changes, and verification in chat.
 - `review` — assess a code change and return evidence-backed findings in chat.
 - `respond` — validate PR feedback, apply requested fixes, and post authorized replies.
 - `commit`, `gt`, `submit`, `split-commit`, `git-surgeon` — specialized Git and stack operations.
@@ -198,6 +200,10 @@ installed through Codex's user skill path and can be invoked with
 
 Implementation, debugging, and cleanup use ordinary prompts. Any task can consume
 an explicitly supplied document without updating it or following a skill sequence.
+Use `research` when you want a code-grounded plan to review before implementation.
+Use `context` to explore an unfamiliar codebase or understand an existing flow.
+Refine the plan in conversation, then ask to implement it. Saving through `artifact`
+is optional and does not create approval states or a required document lifecycle.
 
 ## Rules
 

@@ -15,6 +15,26 @@ function markdownFiles(directory: string): string[] {
 }
 
 describe("skill boundaries", () => {
+  test("context explains existing code with read-only tools and separate planning", () => {
+    const context = read("skills/context/SKILL.md");
+    expect(context).toContain("allowed-tools: Bash, Read, Glob, Grep");
+    expect(context).not.toContain("disable-model-invocation: true");
+    expect(context).toContain("explain it in chat");
+    expect(context).toContain("use `$research`");
+    expect(context).toContain("use `$artifact` separately");
+    expect(context).not.toMatch(/blueprint\s+(?:create|status|commit|link)\b/);
+  });
+
+  test("research plans in chat with read-only tools and separate storage", () => {
+    const research = read("skills/research/SKILL.md");
+    expect(research).toContain("allowed-tools: Bash, Read, Glob, Grep");
+    expect(research).not.toContain("disable-model-invocation: true");
+    expect(research).toContain("A planning-only request ends with the plan");
+    expect(research).toContain("without adding an approval gate");
+    expect(research).toContain("`$artifact` separately");
+    expect(research).not.toMatch(/blueprint\s+(?:create|status|commit|link)\b/);
+  });
+
   test("artifact storage is isolated from task skills", () => {
     const artifact = read("skills/artifact/SKILL.md");
     expect(artifact).toContain("disable-model-invocation: true");
