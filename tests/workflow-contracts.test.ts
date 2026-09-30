@@ -15,6 +15,16 @@ function markdownFiles(directory: string): string[] {
 }
 
 describe("skill boundaries", () => {
+  test("debug investigates failures without applying fixes or coupling storage", () => {
+    const debug = read("skills/debug/SKILL.md");
+    expect(debug).toContain("allowed-tools: Bash, Read, Glob, Grep");
+    expect(debug).not.toContain("disable-model-invocation: true");
+    expect(debug).toContain("bug report in chat");
+    expect(debug).toContain("Do not apply the fix or add tests");
+    expect(debug).toContain("use `$artifact` separately");
+    expect(debug).not.toMatch(/blueprint\s+(?:create|status|commit|link)\b/);
+  });
+
   test("context explains existing code with read-only tools and separate planning", () => {
     const context = read("skills/context/SKILL.md");
     expect(context).toContain("allowed-tools: Bash, Read, Glob, Grep");
