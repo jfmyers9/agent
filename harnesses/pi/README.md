@@ -23,11 +23,26 @@ Pi loads:
 - `npm:@dreki-gg/pi-context7@0.2.0` as reviewed docs lookup tools
 - `bin/blueprint` as a shared CLI
 
+The model selector includes Fireworks DeepSeek V4.1 Flash, GLM 5.3 Flash, and
+Kimi K3 when an optional OpenAI-compatible gateway is configured. Set
+`PI_FIREWORKS_GATEWAY_URL` to the endpoint. Workstation launchers can set this
+automatically. Alternatively, put the endpoint in
+`~/.pi/agent/fireworks-gateway.json`:
+
+```json
+{ "baseUrl": "https://gateway.example.com/inference/v1" }
+```
+
+The environment variable takes precedence over the file. The endpoint must
+accept requests without an Authorization header. The local file is not tracked
+or managed by the installer. Select a model with `/model`
+or `pi --model fireworks-gateway/accounts/fireworks/models/deepseek-v4p1-flash`.
+
 Adopted Pi settings from Luan's config:
 
 - quiet startup and reduced terminal progress noise
 - built-in `dark` theme selected explicitly
-- explicit OpenAI GPT and Anthropic Claude model cycle (`gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `claude-opus-5`, `claude-opus-4-8`, `claude-sonnet-4-6`, `claude-haiku-4-5`)
+- explicit OpenAI GPT and Anthropic Claude model cycle
 - tree navigation on double Escape
 - Emacs-style movement and queueing shortcuts
 - Luan's current `tui` footer/editor chrome, with provider usage bars defaulted off
@@ -44,6 +59,7 @@ Feature decisions from the Luan config review are tracked in
 Installed extensions:
 
 - `agents-local/` — injects untracked `AGENTS.local.md` / `CLAUDE.local.md` context from cwd ancestors; `/agents-local` lists loaded files.
+- `fireworks-gateway.ts` — registers Fireworks models when an anonymous gateway endpoint is configured.
 - `codex-native/compaction/` — uses OpenAI Responses native compaction for compatible OpenAI and Codex sessions, persists the opaque compacted window for replay, and falls back to Pi compaction on failure.
 - `clear.ts` — `/clear` starts a fresh session after the current turn; `ctrl+shift+l` queues it.
 - `effort.ts` — `/effort [level]` stores per-model thinking effort in the current Pi session; `effort.json` supplies defaults only.
