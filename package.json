@@ -24,19 +24,16 @@
     "test:pi-token": "bun test harnesses/pi/extensions/token-burden/parser.test.ts harnesses/pi/extensions/token-burden/tool-toggles.test.ts harnesses/pi/extensions/token-burden/report-view.test.ts harnesses/pi/extensions/token-burden/index.test.ts",
     "test:pi-spawn": "bun test harnesses/pi/extensions/spawn/index.test.ts",
     "test:pi-vim": "bun test harnesses/pi/extensions/vim/index.test.ts",
-    "test:pi-composition": "bun test harnesses/pi/extensions/code-mode/*.test.ts harnesses/pi/extensions/shared/code-mode*.test.ts harnesses/pi/extensions/subagents/*.test.ts",
-    "postinstall": "bun bin/normalize-pi-packages.ts"
+    "test:pi-composition": "bun test harnesses/pi/extensions/code-mode/*.test.ts harnesses/pi/extensions/shared/code-mode*.test.ts harnesses/pi/extensions/subagents/*.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.84.0",
-    "@earendil-works/pi-ai": "^0.84.0",
-    "@earendil-works/pi-coding-agent": "^0.84.0",
-    "@earendil-works/pi-tui": "^0.84.0",
-    "@luan.sh/pi-code-mode": "0.3.9",
+    "@earendil-works/pi-agent-core": "^1.0.0",
+    "@earendil-works/pi-ai": "^1.0.0",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "@earendil-works/pi-tui": "^1.0.0",
     "@luan.sh/pi-libactions": "0.3.3",
     "@luan.sh/pi-libtui": "0.3.9",
     "@luan.sh/pi-subagents": "0.3.9",
-    "@luan.sh/pi-tool-search": "0.3.8",
     "@luan.sh/pi-xsettings": "0.3.3",
     "@mozilla/readability": "^0.5.0",
     "@shikijs/cli": "^4.0.2",
@@ -66,10 +63,7 @@
     "typescript": "^5.9.3"
   },
   "patchedDependencies": {
-    "@luan.sh/pi-code-mode@0.3.9": "patches/@luan.sh%2Fpi-code-mode@0.3.9.patch",
-    "@luan.sh/pi-subagents@0.3.9": "patches/@luan.sh%2Fpi-subagents@0.3.9.patch"
-  },
-  "overrides": {
-    "@luan.sh/pi-code-mode": "0.3.9"
+    "@luan.sh/pi-subagents@0.3.9": "patches/@luan.sh%2Fpi-subagents@0.3.9.patch",
+    "@luan.sh/pi-xsettings@0.3.3": "patches/@luan.sh%2Fpi-xsettings@0.3.3.patch"
   }
 }

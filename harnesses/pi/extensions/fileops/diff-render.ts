@@ -628,7 +628,7 @@ function renderDiffRows(
 	expanded: boolean,
 	headerRenderer: DiffSectionHeaderRenderer = defaultDiffSectionHeader,
 ): string[] {
-	// Code Mode bounds cached result metadata, replacing rows/fields with markers.
+	// Older sessions may contain bounded metadata with rows/fields replaced by markers.
 	// Reparse the plain diff rather than rendering partial rows or losing changes.
 	const parsedRows =
 		Array.isArray(rows) && rows.length > 0 && rows.every(isDiffRenderRow) ? rows : parseUnifiedDiff(diff);

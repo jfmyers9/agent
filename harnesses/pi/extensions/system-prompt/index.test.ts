@@ -148,11 +148,11 @@ describe("system-prompt Skillful skill rendering", () => {
 	test("composed skill loading keeps the catalog and names the executable tool path", () => {
 		const prompt = buildSystemPrompt("base", {
 			...baseOptions,
-			selectedTools: ["exec", "wait", "tool_search"],
+			selectedTools: ["codemode", "tool_search"],
 			composedTools: ["read", "skill"],
 		});
 		expect(prompt).toContain("- tdd: Apply test-driven development");
-		expect(prompt).toContain("`tools.skill({name})` inside `exec`");
+		expect(prompt).toContain("`tools.skill({name})` inside `codemode`");
 		expect(prompt).not.toContain("/skills/tdd/SKILL.md");
 	});
 
@@ -184,6 +184,7 @@ test("configured handler order preserves per-turn loop instructions", async () =
 	const handlers: Array<(event: any, ctx: any) => any> = [];
 	const commands = new Map<string, any>();
 	const pi = {
+		getActiveTools: () => [],
 		on(name: string, handler: (event: any, ctx: any) => any) {
 			if (name === "before_agent_start") handlers.push(handler);
 		},
@@ -233,4 +234,38 @@ test("configured handler order preserves per-turn loop instructions", async () =
 	await commands.get("goal").handler("stop", ctx);
 	expect(await renderTurn()).not.toContain(COMPLETION_MARKER);
 	expect(options.appendSystemPrompt).toBe("APPEND_SENTINEL");
+});
+
+test("native codemode prompt follows active tools and keeps native guidelines", async () => {
+	let handler: any;
+	let active = ["codemode", "read", "skill"];
+	const pi = {
+		on: (_name: string, callback: any) => {
+			handler = callback;
+		},
+		getActiveTools: () => active,
+		getSettings: () => ({ codemode: { mode: "only" } }),
+		getAllTools: () => [
+			{ name: "codemode", exposure: "model-only" },
+			{ name: "read", exposure: "direct" },
+			{ name: "skill", exposure: "direct" },
+			{ name: "disabled", exposure: "direct" },
+		],
+	} as unknown as ExtensionAPI;
+	await systemPromptExtension(pi);
+	const event = {
+		systemPrompt: "base",
+		systemPromptOptions: {
+			...baseOptions,
+			selectedTools: active,
+			promptGuidelines: ["Use codemode to batch independent tool calls."],
+		},
+	};
+	const prompt = handler(event, { cwd: "/repo" }).systemPrompt;
+	expect(prompt).toContain("through `codemode` as methods on `tools`: read, skill");
+	expect(prompt).toContain("Use codemode to batch independent tool calls.");
+	expect(prompt).toContain("`tools.skill({name})` inside `codemode`");
+	expect(prompt).not.toContain("disabled");
+	active = ["read"];
+	expect(handler(event, { cwd: "/repo" }).systemPrompt).not.toContain("# Composed tools");
 });

@@ -22,7 +22,6 @@
     "harnesses/pi/extensions/vim/**/*.ts",
     "harnesses/pi/extensions/runtime-support/**/*.ts",
     "harnesses/pi/extensions/code-mode/**/*.ts",
-    "harnesses/pi/extensions/tool-search/**/*.ts",
     "harnesses/pi/extensions/subagents/**/*.ts"
   ],
   "exclude": [

@@ -1761,6 +1761,7 @@ function hasExistingSpawnSurface(pi: ExtensionAPI): boolean {
 function registerSpawnSurface(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "spawn_lane",
+		exposure: "deferred",
 		label: "Spawn lane",
 		description: [
 			"Spawn an execution lane without raw tmux or zellij commands. Use runtime='pi' for agent lanes, runtime='shell' for a fresh shell, or runtime='command' with command for a process lane.",
@@ -1836,6 +1837,7 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 
 	pi.registerTool({
 		name: "spawn_list",
+		exposure: "deferred",
 		label: "List spawned lanes",
 		description: "List canonical spawn-lane entries recorded in the current Pi session.",
 		promptSnippet: "List spawned lanes",
@@ -1848,6 +1850,7 @@ function registerSpawnSurface(pi: ExtensionAPI) {
 
 	pi.registerTool({
 		name: "spawn_map",
+		exposure: "deferred",
 		label: "Spawn map",
 		description: "Show the current spawn family as a Pi parent/child session tree.",
 		promptSnippet: "Show spawn map",

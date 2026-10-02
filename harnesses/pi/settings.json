@@ -62,13 +62,18 @@
     "extensions/vim/index.ts",
     "extensions/skillful/index.ts",
     "extensions/token-burden/index.ts",
-    "extensions/code-mode/index.ts",
-    "extensions/tool-search/index.ts",
     "extensions/system-prompt/index.ts",
     "extensions/convergence-loop/index.ts",
     "extensions/tui/index.ts",
     "extensions/spawn/index.ts",
     "extensions/fork-split.ts",
     "extensions/subagents/index.ts"
-  ]
+  ],
+  "defaultTools": [
+    "+codemode",
+    "+tool_search"
+  ],
+  "codemode": {
+    "mode": "only"
+  }
 }

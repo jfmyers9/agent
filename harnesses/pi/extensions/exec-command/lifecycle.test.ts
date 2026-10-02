@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import execCommandExtension from "./index.ts";
 import { createExecSessionManager } from "./tools/exec-session-manager.ts";
+import { boundShellToolResult } from "./tools/output-truncation.ts";
 
 type Handler = (event?: any, ctx?: any) => any;
 
@@ -67,6 +68,28 @@ test("truncates only shell tool results", () => {
 	for (const toolName of ["read", "search", "recall", "context7_get_library_docs"]) {
 		const [result] = emit(handlers, "tool_result", { toolName, content });
 		expect(result).toBeUndefined();
+	}
+});
+
+test("shell result hooks preserve structured returns when bounded output needs further truncation", () => {
+	const { handlers } = createExtensionHarness();
+	const output = `${"x".repeat(300)}\n`.repeat(300);
+	const bounded = boundShellToolResult({
+		content: [{ type: "text" as const, text: output }],
+		details: { output, process_id: 42, exit_code: 0 },
+	});
+	for (const toolName of ["exec_command", "write_stdin"]) {
+		const [result] = emit(handlers, "tool_result", {
+			toolName,
+			...bounded,
+			parentToolCallId: "script",
+			structuredContent: { content: bounded.content, details: bounded.details },
+		});
+		expect(result.content).toBeDefined();
+		expect(result.structuredContent.content).toEqual(result.content);
+		expect(result.structuredContent.details).toEqual(bounded.details);
+		expect(result.structuredContent.details.output.length).toBeLessThan(output.length);
+		expect(result.structuredContent.details.process_id).toBe(42);
 	}
 });
 

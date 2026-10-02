@@ -62,30 +62,52 @@ test("root activity and settled children do not prevent forks", () => {
 	expect(hasActiveSubagents("session")).toBe(false);
 });
 
-test("patched child tool selection preserves lifting, deferral, and the parent allowlist", async () => {
+test("child tool selection preserves the parent allowlist and child deactivations", async () => {
 	const runner = await import(new URL("./runtime/agent-runner.ts", import.meta.resolve("@luan.sh/pi-subagents")).href);
 	expect(
 		runner.resolveChildActiveToolNames(
-			["exec", "tool_search", "read", "apply_patch", "cg_status"],
-			["exec", "tool_search", "unrelated_tool"],
+			["codemode", "read", "apply_patch", "cg_status"],
+			["codemode", "read", "unrelated_tool"],
 		),
-	).toEqual(["exec", "tool_search"]);
+	).toEqual(["codemode", "read"]);
 });
 
-test("lifted tools belong to their parent session, not sibling sessions", async () => {
-	const hierarchy = await import(new URL("./protocol/hierarchy.ts", import.meta.resolve("@luan.sh/pi-code-mode")).href);
-	const parent = {};
-	const sibling = {};
-	const parentScope = Symbol("parent");
-	const siblingScope = Symbol("sibling");
-	try {
-		hierarchy.setLiftedToolNames(parentScope, ["read"], parent);
-		hierarchy.setLiftedToolNames(siblingScope, ["private_sibling_tool"], sibling);
-		expect(hierarchy.listLiftedToolNames(parent)).toEqual(["read"]);
-		expect(hierarchy.listLiftedToolNames(sibling)).toEqual(["private_sibling_tool"]);
-		expect(hierarchy.listLiftedToolNames({})).toEqual([]);
-	} finally {
-		hierarchy.setLiftedToolNames(parentScope, []);
-		hierarchy.setLiftedToolNames(siblingScope, []);
-	}
+test("children inherit native codemode and its active underlying tools", async () => {
+	const runner = await import(new URL("./runtime/agent-runner.ts", import.meta.resolve("@luan.sh/pi-subagents")).href);
+	const activeTools = ["codemode", "read", "apply_patch", "spawn_agent"];
+	const prepared = await runner.prepareAgentRun(
+		{ cwd: process.cwd(), getSystemPrompt: () => "Parent instructions" },
+		{
+			pi: { getActiveTools: () => activeTools, getAllTools: () => [], getThinkingLevel: () => "off" },
+			agentConfig: {},
+		},
+		false,
+	);
+	expect(prepared.toolNames).toEqual(activeTools);
+});
+
+test("children retain inactive callable tools without activating them", async () => {
+	const runner = await import(new URL("./runtime/agent-runner.ts", import.meta.resolve("@luan.sh/pi-subagents")).href);
+	const activeTools = ["codemode", "read"];
+	const prepared = await runner.prepareAgentRun(
+		{ cwd: process.cwd(), getSystemPrompt: () => "Parent instructions" },
+		{
+			pi: {
+				getActiveTools: () => activeTools,
+				getAllTools: () => [
+					{ name: "read", exposure: "direct" },
+					{ name: "spawn_agent", exposure: "codemode" },
+					{ name: "cg_status", exposure: "deferred" },
+					{ name: "disabled_tool", exposure: "direct" },
+				],
+				getThinkingLevel: () => "off",
+			},
+			agentConfig: {},
+		},
+		false,
+	);
+	expect(prepared.toolNames).toEqual(["codemode", "read", "spawn_agent", "cg_status"]);
+	expect(prepared.parentActiveToolNames).toEqual(activeTools);
+	// The SDK initially activates explicit tools; restore the parent's active subset.
+	expect(runner.resolveChildActiveToolNames(prepared.parentActiveToolNames, prepared.toolNames)).toEqual(activeTools);
 });

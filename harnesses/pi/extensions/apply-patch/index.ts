@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { buildHighlightedDiffRows, type DiffRenderRow, EditDiffView, type RenderTheme } from "../fileops/diff-render";
-import { isToolLifted, registerCodeModeTool } from "../shared/code-mode";
+import { registerCodeModeTool } from "../shared/code-mode";
 import { textComponent } from "../shared/tui";
 import { type ApplyPatchResult, ApplyPatchWriteError, runLocalApplyPatch } from "./backend.ts";
 
@@ -104,7 +104,7 @@ function applyGptToolPolicy(
 			}
 			return true;
 		});
-		if (!next.includes(APPLY_PATCH) && !isToolLifted(pi, APPLY_PATCH)) {
+		if (!next.includes(APPLY_PATCH)) {
 			next = [...next, APPLY_PATCH];
 			state.activated = true;
 		}

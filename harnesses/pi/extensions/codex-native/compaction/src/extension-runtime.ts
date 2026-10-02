@@ -446,7 +446,7 @@ async function handleSessionBeforeCompact(
 		const preparation = event.preparation;
 		const messages = [...preparation.messagesToSummarize, ...preparation.turnPrefixMessages];
 		const userRequests = messages
-			.filter((message) => isRecord(message) && message.role === "user")
+			.filter((message) => message.role === "user")
 			.map(compactedMessageText)
 			.filter(Boolean);
 		const fileOps = preparation.fileOps;

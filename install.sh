@@ -330,12 +330,6 @@ prepare_pi() {
 	run_bun_install
 	echo "Building Context Guard core..."
 	(cd "$SCRIPT_DIR" && cargo build --release -p context-guard)
-	echo "Preparing Code Mode runtime..."
-	if command -v mise >/dev/null 2>&1; then
-		(cd "$SCRIPT_DIR" && PI_CODING_AGENT_DIR="${PI_CONFIG_DIR:-$HOME/.pi/agent}" mise exec -- bun bin/prepare-pi-native.ts)
-	else
-		(cd "$SCRIPT_DIR" && PI_CODING_AGENT_DIR="${PI_CONFIG_DIR:-$HOME/.pi/agent}" bun bin/prepare-pi-native.ts)
-	fi
 }
 
 prepare_install() {

@@ -1,6 +1,5 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { listSessionLiftedTools, setCodeModeToolPolicy } from "../shared/code-mode.ts";
 
 export type ToolToggleConfig = {
 	disabledTools: string[];
@@ -124,7 +123,6 @@ export function removeDisabledToolsFromPromptOptions(
 
 export function createToolToggleController(pi: ToolApi, initiallyDisabledTools: string[], configPath?: string) {
 	const disabledTools = new Set(normalizeToolNames(initiallyDisabledTools));
-	let sessionManager: object | undefined;
 
 	const persistDisabledTools = () => {
 		if (configPath) saveToolToggleConfig(configPath, disabledTools);
@@ -153,10 +151,7 @@ export function createToolToggleController(pi: ToolApi, initiallyDisabledTools: 
 			for (const part of toolNameParts(normalized)) {
 				disabledTools.delete(part);
 			}
-			if (
-				!listSessionLiftedTools(sessionManager ?? pi).includes(toolName) &&
-				!active.some((activeToolName) => matchesToolName(activeToolName, normalized))
-			) {
+			if (!active.some((activeToolName) => matchesToolName(activeToolName, normalized))) {
 				next = [...active, toolName];
 			}
 		} else {
@@ -170,13 +165,7 @@ export function createToolToggleController(pi: ToolApi, initiallyDisabledTools: 
 	};
 
 	const install = () => {
-		pi.on("session_start", (_event, ctx) => {
-			if (ctx?.sessionManager) {
-				sessionManager = ctx.sessionManager;
-				setCodeModeToolPolicy(ctx.sessionManager, isDisabled);
-			}
-			removeDisabledTools();
-		});
+		pi.on("session_start", removeDisabledTools);
 		pi.on("resources_discover", removeDisabledTools);
 		pi.on("session_tree", removeDisabledTools);
 		pi.on("model_select", removeDisabledTools);

@@ -45,7 +45,7 @@ Environment overrides:
 - macOS Keychain only for Claude quota statusline enrichment
 - Codex CLI (`codex`) for the Codex adapter
 - Rust/Cargo for the Pi Context Guard core
-- Rust/Cargo and initial network access for the pinned Pi Code Mode runtime
+- Pi 1.0.0 or newer for built-in Code Mode and tool search
 - [mise](https://mise.jdx.dev/) for the pinned Bun toolchain
 - [just](https://just.systems/) for local development commands
 
@@ -146,9 +146,9 @@ Installed by `./install.sh pi` into `~/.pi/agent`:
 - links Pi extensions named in `settings.json`, plus shared extension support, and prunes stale owned extension links
 - installs `blueprint` and `git-surgeon` to `~/.local/bin`
 - builds `crates/context-guard` and links `context-guard` to `~/.local/bin`
-- installs pinned package dependencies and builds the matching Code Mode runtime
+- installs pinned package dependencies and enables Pi's built-in Code Mode
 
-Pi composes the existing file, shell, and skill tools through `exec`, discovers
+Pi composes the existing file, shell, and skill tools through `codemode`, discovers
 less common tools through `tool_search`, and runs nested workers through
 `spawn_agent`. `/subagents` opens their terminal Agent Hub; `/spawn` retains the
 independent tmux-lane workflow. The local fileops and patch implementations keep

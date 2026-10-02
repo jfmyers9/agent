@@ -328,6 +328,7 @@ server.registerTool("cg_purge", toolSpecs.purge, async ({ confirm, sessionId, sc
 export function registerPiContextTools(pi: {
 	registerTool: (def: {
 		name: string;
+		exposure?: "deferred";
 		label: string;
 		description: string;
 		parameters: Record<string, unknown>;
@@ -347,6 +348,7 @@ export function registerPiContextTools(pi: {
 		const label = displayLabelForTool(def.name);
 		pi.registerTool({
 			name: def.name,
+			exposure: "deferred",
 			label: `Context: ${label}`,
 			description: def.description,
 			parameters: z.toJSONSchema(def.inputSchema),

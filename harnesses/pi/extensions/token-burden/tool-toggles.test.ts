@@ -174,9 +174,7 @@ describe("token-burden tool toggles", () => {
 			],
 		};
 
-		removeDisabledToolsFromPromptOptions(options, (toolName) =>
-			["read", "codex_apps_github_fetch"].includes(toolName),
-		);
+		removeDisabledToolsFromPromptOptions(options, (toolName) => ["read", "codex_apps_github_fetch"].includes(toolName));
 
 		expect(options).toEqual({
 			selectedTools: ["exec_command"],
@@ -233,4 +231,13 @@ describe("token-burden tool toggles", () => {
 
 		expect(loadToolToggleConfig(configPath)).toEqual({ disabledTools: [] });
 	});
+});
+
+test("native codemode nested calls honor disabled tools and reactivation", () => {
+	const pi = createPi(["codemode"], ["read"]);
+	const event = { toolName: "read", toolCallId: "script/0", parentToolCallId: "script" };
+	expect(pi.handlers.get("tool_call")?.[0]?.(event, {})).toMatchObject({ block: true });
+	pi.controller.setToolActive("read", true);
+	expect(pi.getActiveTools()).toEqual(["codemode", "read"]);
+	expect(pi.handlers.get("tool_call")?.[0]?.(event, {})).toBeUndefined();
 });

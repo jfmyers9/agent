@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
-import { boundTraceValue } from "../../../../../node_modules/@luan.sh/pi-code-mode/src/runtime/trace-values.ts";
 import { type DiffRenderRow, EditDiffView } from "../diff-render";
 
 initTheme("dark");
@@ -47,7 +46,7 @@ test("keeps valid pre-highlighted rows, including blank lines", () => {
 	expect(output).not.toContain("before");
 });
 
-test("renders actual Code Mode bounded metadata without crashing or losing the plain diff", () => {
+test("renders truncated metadata without crashing or losing the plain diff", () => {
 	const rawDiff =
 		"--- a/example.ts\n+++ b/example.ts\n@@ -0,0 +1,1000 @@\n" +
 		Array.from({ length: 1000 }, (_, index) => `+line ${index}`).join("\n");
@@ -57,10 +56,7 @@ test("renders actual Code Mode bounded metadata without crashing or losing the p
 		content: `line ${index}`,
 		highlightedContent: "x".repeat(100),
 	}));
-	const bounded = boundTraceValue({ diff: rawDiff, highlightedDiffRows: rows }) as {
-		diff: string;
-		highlightedDiffRows: unknown[];
-	};
+	const bounded = { diff: rawDiff, highlightedDiffRows: [...rows.slice(0, 10), "[values omitted]"] };
 	expect(bounded.highlightedDiffRows.at(-1)).toBe("[values omitted]");
 	for (const expanded of [false, true]) {
 		const lines = render(bounded.diff, bounded.highlightedDiffRows, 120, expanded);

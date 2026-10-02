@@ -1,36 +1,134 @@
 diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
-index f860da634b38fe1da0341952a84b230f7dec0003..eb7bc48c8f0f79153f3b9a7b80205daa76476e5a 100644
 --- a/src/runtime/agent-runner.ts
 +++ b/src/runtime/agent-runner.ts
-@@ -200,13 +200,18 @@ export function resolveChildToolNames(active: readonly string[], lifted: readonl
- 	return [...new Set([...active, ...lifted])];
+@@ -7,6 +7,8 @@
+ 	type CreateAgentSessionRuntimeResult,
+ 	createAgentSession,
+ 	createAgentSessionRuntime,
++	createCodemodeExtension,
++	createToolSearchExtension,
+ 	DefaultResourceLoader,
+ 	type ExtensionAPI,
+ 	type ExtensionContext,
+@@ -17,7 +19,6 @@
+ 	type SessionStartEvent,
+ 	SettingsManager,
+ } from "@earendil-works/pi-coding-agent";
+-import { listCodeModeToolNames } from "@luan.sh/pi-code-mode/sdk";
+ import { SUBAGENT_TASK_MESSAGE_TYPE } from "../core/fork-history.ts";
+ import { primePromptEnvelope } from "../protocol/prompt-envelope.ts";
+ import { buildAgentPrompt } from "../core/prompts.ts";
+@@ -183,6 +184,7 @@
+ 	agentDir: string;
+ 	systemPrompt: string;
+ 	toolNames: string[];
++	parentActiveToolNames: string[];
+ 	model: Model<Api> | undefined;
+ 	thinkingLevel: ThinkingLevel | undefined;
+ 	loader: DefaultResourceLoader;
+@@ -196,8 +198,24 @@
+ 	return selector;
  }
  
+-export function resolveChildToolNames(active: readonly string[], lifted: readonly string[]): string[] {
+-	return [...new Set([...active, ...lifted])];
++export function resolveChildToolNames(active: readonly string[], callable: readonly string[]): string[] {
++	return [...new Set([...active, ...callable])];
++}
++
 +export function resolveChildActiveToolNames(inherited: readonly string[], active: readonly string[]): string[] {
 +	const allowed = new Set(inherited);
 +	return active.filter((name) => allowed.has(name));
 +}
 +
++// Pi's uncached extension imports can expose partially evaluated modules when
++// sibling sessions reload resources together. Serialize discovery, not agent work.
++const resourceLoadQueueKey = Symbol.for("agent-config.subagents.resource-load-queue.v1");
++const resourceLoadQueue = globalThis as typeof globalThis & { [resourceLoadQueueKey]?: Promise<void> };
++
++async function reloadChildResources(loader: DefaultResourceLoader): Promise<void> {
++	const next = (resourceLoadQueue[resourceLoadQueueKey] ?? Promise.resolve()).then(() => loader.reload());
++	resourceLoadQueue[resourceLoadQueueKey] = next.then(() => undefined, () => undefined);
++	await next;
+ }
+ 
  export async function prepareAgentRun(
- 	ctx: ExtensionContext,
- 	options: Pick<RunOptions, "agentConfig" | "collaboration" | "cwd" | "pi" | "onRuntimeResolved">,
+@@ -206,12 +224,20 @@
  	loadResources = true,
  ): Promise<PreparedAgentRun> {
  	const effectiveCwd = options.cwd ?? ctx.cwd;
 -	const toolNames = resolveChildToolNames(options.pi.getActiveTools(), listCodeModeToolNames());
-+	const toolNames = resolveChildToolNames(options.pi.getActiveTools(), listCodeModeToolNames(ctx.sessionManager));
++	const parentActiveToolNames = options.pi.getActiveTools();
++	const callableToolNames = options.pi.getAllTools()
++		.filter((tool) => tool.exposure === "codemode" || tool.exposure === "deferred")
++		.map((tool) => tool.name);
++	const toolNames = resolveChildToolNames(parentActiveToolNames, callableToolNames);
  	const systemPrompt = buildAgentPrompt(ctx.getSystemPrompt(), options.collaboration);
  	const agentDir = getAgentDir();
  	const loader = new DefaultResourceLoader({
-@@ -358,8 +363,9 @@ export async function runAgent(ctx: ExtensionContext, prompt: string, options: R
+ 		cwd: effectiveCwd,
+ 		agentDir,
++		extensionFactories: [
++			{ name: "codemode", factory: createCodemodeExtension(), replaceable: true, builtin: true },
++			{ name: "tool-search", factory: createToolSearchExtension(), replaceable: true, builtin: true },
++		],
+ 		noSkills: false,
+ 		noPromptTemplates: true,
+ 		noThemes: true,
+@@ -219,7 +245,7 @@
+ 		systemPromptOverride: () => systemPrompt,
+ 		appendSystemPromptOverride: () => [],
+ 	});
+-	if (loadResources) await loader.reload();
++	if (loadResources) await reloadChildResources(loader);
+ 
+ 	const model = resolveModel(ctx, options.agentConfig.model);
+ 	const thinkingLevel = resolveThinkingLevel(
+@@ -232,7 +258,7 @@
+ 		thinkingLevel,
+ 	});
+ 
+-	return { effectiveCwd, agentDir, systemPrompt, toolNames, model, thinkingLevel, loader };
++	return { effectiveCwd, agentDir, systemPrompt, toolNames, parentActiveToolNames, model, thinkingLevel, loader };
+ }
+ 
+ export function resolveModel(
+@@ -287,12 +313,16 @@
+ 
+ export async function runAgent(ctx: ExtensionContext, prompt: string, options: RunOptions): Promise<RunResult> {
+ 	const prepared = await prepareAgentRun(ctx, options);
+-	const { effectiveCwd, agentDir, systemPrompt, toolNames, model, thinkingLevel, loader } = prepared;
++	const { effectiveCwd, agentDir, systemPrompt, toolNames, parentActiveToolNames, model, thinkingLevel, loader } = prepared;
+ 	const loadResources = async (cwd: string, resourceAgentDir: string) => {
+ 		if (cwd === effectiveCwd && resourceAgentDir === agentDir) return loader;
+ 		const resourceLoader = new DefaultResourceLoader({
+ 			cwd,
+ 			agentDir: resourceAgentDir,
++			extensionFactories: [
++				{ name: "codemode", factory: createCodemodeExtension(), replaceable: true, builtin: true },
++				{ name: "tool-search", factory: createToolSearchExtension(), replaceable: true, builtin: true },
++			],
+ 			noSkills: false,
+ 			noPromptTemplates: true,
+ 			noThemes: true,
+@@ -300,7 +330,7 @@
+ 			systemPromptOverride: () => systemPrompt,
+ 			appendSystemPromptOverride: () => [],
+ 		});
+-		await resourceLoader.reload();
++		await reloadChildResources(resourceLoader);
+ 		return resourceLoader;
+ 	};
+ 
+@@ -358,8 +388,9 @@
  			options.onToolActivity?.({ type: "end", toolName: `extension-error:${error.extensionPath}` });
  		},
  	});
 -	const availableTools = new Set(session.getAllTools().map((tool) => tool.name));
 -	const activeTools = toolNames.filter((toolName) => availableTools.has(toolName));
-+	// session_start may lift or defer tools. Preserve that policy while applying
++	// session_start may deactivate tools. Preserve that policy while applying
 +	// the parent's allowlist, rather than reactivating every registered tool.
-+	const activeTools = resolveChildActiveToolNames(toolNames, session.getActiveToolNames());
++	const activeTools = resolveChildActiveToolNames(parentActiveToolNames, session.getActiveToolNames());
  	session.setActiveToolsByName(activeTools);
  	primePromptEnvelope({
  		provider: model?.provider,

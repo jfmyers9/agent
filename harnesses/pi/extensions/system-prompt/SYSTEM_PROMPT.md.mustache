@@ -71,11 +71,12 @@ messages to others require authorization appropriate to the action.
 {{#hasComposedTools}}
 # Composed tools
 
-These tools are available through `exec` as methods on `tools`: {{composedTools}}.
+These tools are available through `codemode` as methods on `tools`: {{composedTools}}.
 Call them inside JavaScript, for example `text(await tools.read({path: "README.md"}))`.
-Their results contain `content` and `details`; keep the content needed for the task.
+Tool declarations describe their return values; keep only the output needed for the task.
 Use `Promise.allSettled` for independent calls and inspect every result. Keep
-dependent operations sequential. Use `tool_search` to discover deferred tools.
+dependent operations sequential. Use `searchTools()` and `describeTool()` inside
+`codemode`, or `tool_search` directly, to discover deferred tools.
 {{/hasComposedTools}}
 {{#hasPiDocs}}
 # Pi documentation

@@ -8,7 +8,6 @@ import {
 import { Key, matchesKey, Text } from "@earendil-works/pi-tui";
 import { resolveCoreBin } from "../context-guard/pi/core.ts";
 import { isExecCommandContextGuardEnabled } from "../context-guard/pi/index.ts";
-import { isToolLifted } from "../shared/code-mode.ts";
 import { defineExtensionTui, registerExtensionMessageRenderer, setOrderedAboveEditorWidget } from "../shared/tui";
 import {
 	type RenderTheme,
@@ -365,8 +364,8 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 		if (shuttingDown) return;
 		const active = pi.getActiveTools();
 		const next = active.filter((toolName) => toolName !== "bash");
-		if (!isToolLifted(pi, "exec_command") && !next.includes("exec_command")) next.push("exec_command");
-		if (!isToolLifted(pi, "write_stdin") && !next.includes("write_stdin")) next.push("write_stdin");
+		if (!next.includes("exec_command")) next.push("exec_command");
+		if (!next.includes("write_stdin")) next.push("write_stdin");
 		if (!arraysEqual(active, next)) pi.setActiveTools(next);
 	};
 
@@ -694,8 +693,15 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 	pi.on("tool_result", (event) => {
 		const isShellTool = event.toolName === "exec_command" || event.toolName === "write_stdin";
 		const content = isShellTool ? truncateTextToolResultContent(event.content) : undefined;
-		const patch: { content?: unknown[]; isError?: boolean } = {};
-		if (content) patch.content = content;
+		const patch: { content?: unknown[]; structuredContent?: unknown; isError?: boolean } = {};
+		if (content) {
+			patch.content = content;
+			// Pi drops structured content when a hook replaces text without updating
+			// it. Keep native codemode's return shape and bounded details intact.
+			if (event.structuredContent && typeof event.structuredContent === "object") {
+				patch.structuredContent = { ...event.structuredContent, content };
+			}
+		}
 
 		if (isShellTool) {
 			const details = event.details;

@@ -1,0 +1,17 @@
+diff --git a/src/config/pi-settings.ts b/src/config/pi-settings.ts
+--- a/src/config/pi-settings.ts
++++ b/src/config/pi-settings.ts
+@@ -508,11 +508,8 @@
+ 	const parsed = JSON.parse(source) as JsonValue;
+ 	if (!isJsonObject(parsed)) throw new Error(`${path} must contain a JSON object`);
+ 	let changed = false;
+-	for (const definition of TEMPLATES) {
+-		if (definition.key in values || getJsonPath(parsed, definition.key.split(".")) === undefined) continue;
+-		deleteJsonPath(parsed, definition.key.split("."));
+-		changed = true;
+-	}
++	// Pi settings remain authoritative unless explicitly configured in XSettings.
++
+ 	for (const [key, value] of Object.entries(values)) {
+ 		const segments = key.split(".");
+ 		if (JSON.stringify(getJsonPath(parsed, segments)) === JSON.stringify(value)) continue;
