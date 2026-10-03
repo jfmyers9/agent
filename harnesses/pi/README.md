@@ -72,6 +72,18 @@ Installed extensions:
 - `system-prompt/` — renders the base prompt from tool guidelines, context files, skills, cwd, date, and timezone. Load structured context contributors before it and append-only contributors, such as `convergence-loop/`, after it.
 - `token-burden/` — reports prompt/session token categories, tool burden, and skill burden.
 - `tui/` — owns Pi footer/editor chrome for cwd, git, model/thinking, context, tokens, cost, and local `/usage-bars [on|off|toggle]` rendering.
+
+The status cost is the session-wide list-price estimate, including all branches
+and all nested subagents. An `agents $…` suffix shows the included worker share
+when space permits; `/cost` shows the full per-agent breakdown. Worker totals
+refresh while the parent is idle. Small costs retain sub-cent precision.
+Request-time model prices (including cache, long-context and service-tier rates)
+are preserved, not recalculated at the currently selected model's price. These
+are API-equivalent estimates, not subscription invoices. Recorded tool and
+summary usage is included; missing prices use the model catalog when possible,
+otherwise `≥` marks an incomplete total. Unreported provider usage and historical
+worker spend omitted by older checkpoints cannot be reconstructed. Independently
+launched `/spawn` sessions are not descendants and are not included.
 - `spawn/` — provides `/spawn`, `spawn_lane`, `spawn_list`, and `spawn_map` for bounded Pi/shell/command lanes.
 - `fork-split.ts` — keeps the current session in place when `/fork` is used and opens the selected fork in a new tmux split.
 - `subagents/` — concurrent nested Pi sessions with messaging, follow-up tasks, interrupts, and `/subagents` for inspection.

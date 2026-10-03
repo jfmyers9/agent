@@ -132,3 +132,247 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  	session.setActiveToolsByName(activeTools);
  	primePromptEnvelope({
  		provider: model?.provider,
+diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
+--- a/src/runtime/coordinator.ts
++++ b/src/runtime/coordinator.ts
+@@ -1,5 +1,6 @@
+ import { existsSync, realpathSync } from "node:fs";
+ import { isAbsolute, join, relative } from "node:path";
++import { calculateCost, type AnthropicMessagesCompat, type Usage } from "@earendil-works/pi-ai";
+ import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+ import {
+ 	type AgentSession,
+@@ -100,6 +101,8 @@
+ 	readonly completedAt?: number;
+ 	readonly toolUses: number;
+ 	readonly cost: number;
++	/** Last append-order transcript entry included in cost; absent on legacy checkpoints. */
++	readonly costLastEntryId?: string | null;
+ 	readonly tokenCount: number;
+ 	readonly contextPercent?: number;
+ 	readonly compactions: number;
+@@ -129,6 +132,7 @@
+ 	activeTools: string[];
+ 	latestInnerTool?: string;
+ 	session?: AgentSession;
++	costLedger?: SessionCostLedger;
+ 	runtime?: RunResult["runtime"];
+ 	abortController: AbortController;
+ 	request?: SpawnRequest;
+@@ -231,6 +235,10 @@
+ 		isFiniteNumber(value, "startedAt") &&
+ 		isFiniteNumber(value, "toolUses") &&
+ 		isFiniteNumber(value, "cost") &&
++		(!("costLastEntryId" in value) ||
++			value.costLastEntryId === undefined ||
++			value.costLastEntryId === null ||
++			typeof value.costLastEntryId === "string") &&
+ 		isFiniteNumber(value, "tokenCount") &&
+ 		isFiniteNumber(value, "compactions") &&
+ 		isFiniteNumber(value, "transcriptGeneration") &&
+@@ -272,11 +280,12 @@
+ 	});
+ }
+ 
+-function loadPersistedTranscript(file?: string): readonly AgentMessage[] | undefined {
++function loadPersistedTranscript(file?: string): { entries: SessionEntry[]; messages: readonly AgentMessage[] } | undefined {
+ 	if (!file || !existsSync(file)) return undefined;
+ 	try {
+ 		const manager = SessionManager.open(file);
+-		return Object.freeze([...buildSessionContext(manager.getEntries(), manager.getLeafId()).messages]);
++		const entries = manager.getEntries();
++		return { entries, messages: Object.freeze([...buildSessionContext(entries, manager.getLeafId()).messages]) };
+ 	} catch {
+ 		return undefined;
+ 	}
+@@ -346,13 +355,66 @@
+ 	return undefined;
+ }
+ 
+-function reportedCost(usage?: { cost?: { total?: number } }): number {
++type Registry = Pick<ExtensionContext["modelRegistry"], "find">;
++
++function reportedCost(usage?: Usage): number {
+ 	const cost = usage?.cost?.total ?? 0;
+ 	return Number.isFinite(cost) && cost > 0 ? cost : 0;
+ }
+ 
+-function messageCost(message: AgentMessage): number {
+-	return message.role === "assistant" || message.role === "toolResult" ? reportedCost(message.usage) : 0;
++function modelCost(
++	usage: Usage,
++	provider: string,
++	modelId: string,
++	responseModel: string | undefined,
++	registry?: Registry,
++): number {
++	// Provider totals preserve request-time pricing and service-tier multipliers.
++	if (Number.isFinite(usage.cost?.total) && usage.cost.total >= 0) return usage.cost.total;
++	const requested = registry?.find(provider, modelId);
++	const fallback = (requested?.compat as AnthropicMessagesCompat | undefined)?.allowedFallbackModels?.find(
++		(model) => model.provider === provider && model.model === responseModel,
++	);
++	const model =
++		(responseModel && registry?.find(provider, responseModel)) ||
++		(requested && fallback ? { ...requested, cost: fallback.cost } : requested);
++	if (!model) return reportedCost(usage);
++	// calculateCost mutates usage.cost; never rewrite persisted provider telemetry.
++	const cost = calculateCost(model, { ...usage, cost: { ...usage.cost } }).total;
++	return Number.isFinite(cost) && cost >= 0 ? cost : reportedCost(usage);
++}
++
++export function entryCost(entry: SessionEntry, registry?: Registry): number {
++	if (entry.type === "usage") return modelCost(entry.usage, entry.provider, entry.model, undefined, registry);
++	if (entry.type === "compaction" || entry.type === "branch_summary") return reportedCost(entry.usage);
++	if (entry.type !== "message") return 0;
++	const message = entry.message;
++	if (message.role === "assistant")
++		return modelCost(message.usage, message.provider, message.model, message.responseModel, registry);
++	return message.role === "toolResult" ? reportedCost(message.usage) : 0;
++}
++
++/** Charge each persisted entry once, excluding history copied into a new child runtime. */
++export class SessionCostLedger {
++	private readonly seen: Set<string>;
++	lastEntryId: string | null;
++	constructor(
++		entries: readonly SessionEntry[],
++		private readonly registry?: Registry,
++	) {
++		this.seen = new Set(entries.map((entry) => entry.id));
++		this.lastEntryId = entries.at(-1)?.id ?? null;
++	}
++	collect(entries: readonly SessionEntry[]): number {
++		let cost = 0;
++		for (const entry of entries) {
++			if (this.seen.has(entry.id)) continue;
++			this.seen.add(entry.id);
++			cost += entryCost(entry, this.registry);
++		}
++		this.lastEntryId = entries.at(-1)?.id ?? null;
++		return cost;
++	}
+ }
+ 
+ function snapshotOf(agent: LiveAgent): SubagentSnapshot {
+@@ -400,6 +462,7 @@
+ 		completedAt: agent.completedAt,
+ 		toolUses: agent.toolUses,
+ 		cost: agent.cost,
++		costLastEntryId: agent.costLastEntryId,
+ 		tokenCount: agent.tokenCount,
+ 		contextPercent: agent.contextPercent,
+ 		compactions: agent.compactions,
+@@ -551,9 +614,11 @@
+ 	}
+ 
+ 	snapshot(): readonly SubagentSnapshot[] {
++		for (const agent of this.agents.values()) this.refreshSessionCost(agent);
+ 		return Object.freeze([...this.agents.values()].map(snapshotOf).sort((a, b) => a.id.localeCompare(b.id)));
+ 	}
+ 	checkpoint(): SubagentTreeCheckpoint {
++		for (const agent of this.agents.values()) this.refreshSessionCost(agent);
+ 		return Object.freeze({
+ 			version: 1,
+ 			agents: Object.freeze([...this.agents.values()].map(persistedStateOf).sort((a, b) => a.id.localeCompare(b.id))),
+@@ -561,6 +626,7 @@
+ 	}
+ 	persistedAgent(target: string): PersistedSubagentState | undefined {
+ 		const agent = this.agents.get(target);
++		if (agent) this.refreshSessionCost(agent);
+ 		return agent ? persistedStateOf(agent) : undefined;
+ 	}
+ 
+@@ -569,7 +635,20 @@
+ 		for (const saved of checkpoint.agents) {
+ 			const wasActive = saved.status === "queued" || saved.status === "running";
+ 			const transcriptFile = childTranscriptFile(this.rootSessionDir, saved.id, saved.transcriptFile);
+-			const restoredMessages = loadPersistedTranscript(transcriptFile);
++			const transcript = loadPersistedTranscript(transcriptFile);
++			const restoredMessages = transcript?.messages;
++			let cost = saved.cost;
++			let costLastEntryId = saved.costLastEntryId;
++			if (transcript) {
++				// A child can persist usage before its parent checkpoints it. Recover only
++				// the append-order tail, not inherited history or previously charged branches.
++				const entries = transcript.entries;
++				const index = entries.findIndex((entry) => entry.id === saved.costLastEntryId);
++				const baseline = saved.costLastEntryId === null ? [] : index >= 0 ? entries.slice(0, index + 1) : entries;
++				const ledger = new SessionCostLedger(baseline, runtime?.ctx.modelRegistry);
++				cost += ledger.collect(entries);
++				costLastEntryId = ledger.lastEntryId;
++			}
+ 			const agent: LiveAgent = {
+ 				id: saved.id,
+ 				parentId: saved.parentId,
+@@ -580,7 +659,8 @@
+ 				error: saved.error,
+ 				startedAt: saved.startedAt,
+ 				toolUses: saved.toolUses,
+-				cost: saved.cost,
++				cost,
++				costLastEntryId,
+ 				tokenCount: saved.tokenCount,
+ 				contextPercent: saved.contextPercent,
+ 				compactions: saved.compactions,
+@@ -782,6 +862,8 @@
+ 	private attachSession(agent: LiveAgent, session: AgentSession, generation: number): void {
+ 		if (this.disposed || agent.turnGeneration !== generation) return;
+ 		agent.session = session;
++		// Existing entries are inherited history (also on restored-agent follow-up).
++		agent.costLedger = new SessionCostLedger(session.sessionManager.getEntries(), agent.request?.ctx.modelRegistry);
+ 		agent.presentationUnregister?.();
+ 		agent.presentationUnregister = registerPresentationResolver(agent.id, {
+ 			resolveTool: (name) => session.getToolDefinition(name),
+@@ -793,13 +875,14 @@
+ 		this.childSessions.set(session.sessionManager.getSessionId(), agent.id);
+ 		bindSessionToRoot(this.rootSessionId, session.sessionManager.getSessionId());
+ 		agent.sessionUnsubscribe = session.subscribe((event) => {
+-			let changed = false;
++			const previousCost = agent.cost;
++			this.refreshSessionCost(agent);
++			let changed = agent.cost !== previousCost;
+ 			if (event.type === "compaction_start") {
+ 				agent.compacting = true;
+ 				changed = true;
+ 			}
+ 			if (event.type === "message_end") {
+-				agent.cost += messageCost(event.message);
+ 				this.refreshSessionStats(agent, session);
+ 				changed = true;
+ 			}
+@@ -808,7 +891,6 @@
+ 				changed = true;
+ 				if (!event.aborted) {
+ 					agent.transcriptGeneration++;
+-					agent.cost += reportedCost(event.result?.usage);
+ 					agent.compactions++;
+ 					this.refreshSessionStats(agent, session);
+ 				}
+@@ -928,7 +1010,14 @@
+ 		this.disposedRuntimes.add(runtime);
+ 		void runtime.dispose().catch(() => undefined);
+ 	}
++	private refreshSessionCost(agent: LiveAgent): void {
++		if (agent.session && agent.costLedger) {
++			agent.cost += agent.costLedger.collect(agent.session.sessionManager.getEntries());
++			agent.costLastEntryId = agent.costLedger.lastEntryId;
++		}
++	}
+ 	private refreshSessionStats(agent: LiveAgent, session: AgentSession): void {
++		this.refreshSessionCost(agent);
+ 		const stats = session.getSessionStats();
+ 		agent.tokenCount = stats.tokens.total;
+ 		agent.contextPercent = stats.contextUsage?.percent ?? undefined;
+diff --git a/src/extension.ts b/src/extension.ts
+--- a/src/extension.ts
++++ b/src/extension.ts
+@@ -183,7 +183,7 @@
+ 	};
+ 	const restoreRootCoordinator = (context: ExtensionContext): void => {
+ 		const sessionId = context.sessionManager.getSessionId();
+-		const checkpoint = latestSubagentTreeCheckpoint(context.sessionManager.getBranch());
++		const checkpoint = latestSubagentTreeCheckpoint(context.sessionManager.getEntries());
+ 		coordinator = createRootCoordinator(sessionId, {
+ 			...config,
+ 			rootSessionDir: subagentSessionRoot(context),

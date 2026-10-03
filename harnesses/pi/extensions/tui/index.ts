@@ -1,9 +1,9 @@
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { terminalRows } from "../shared/terminal";
 import { registerExtensionEntryRenderer } from "../shared/tui";
 import { ensureConfigExists, loadConfig, type PolishedTuiConfig, saveConfig } from "./config";
+import { costLabel, costReport, formatCost, getSessionCosts } from "./cost";
 import { installFocusCursor } from "./cursor-focus";
 import {
 	advanceWorkingAnimation,
@@ -26,8 +26,6 @@ import { readGitStatus } from "./git";
 import { readRuntimeInfo } from "./runtime";
 import { renderTurnDurationEntry, TURN_DURATION_ENTRY_TYPE, TurnDurationTimer } from "./turn-duration";
 import { detectUsageProvider, fetchUsageForProvider, USAGE_REFRESH_INTERVAL, type UsageSnapshot } from "./usage";
-
-type UsageTotals = { input: number; output: number; cost: number };
 
 type UsageBarCache = {
 	key: string;
@@ -84,20 +82,6 @@ function formatProviderLabel(provider: string | undefined): string {
 	return known[provider] ?? provider.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function getUsageTotals(ctx: ExtensionContext): UsageTotals {
-	let input = 0;
-	let output = 0;
-	let cost = 0;
-	for (const entry of ctx.sessionManager.getBranch()) {
-		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-		const message = entry.message as AssistantMessage;
-		input += message.usage?.input ?? 0;
-		output += message.usage?.output ?? 0;
-		cost += message.usage?.cost?.total ?? 0;
-	}
-	return { input, output, cost };
-}
-
 function truncateUsageLine(line: string, width: number): string {
 	return line ? truncateToWidth(line, Math.max(1, width), "") : "";
 }
@@ -132,6 +116,7 @@ export default function (pi: ExtensionAPI) {
 
 	let activeProvider: string | null = null;
 	let refreshTimer: ReturnType<typeof setInterval> | null = null;
+	let costTimer: ReturnType<typeof setInterval> | undefined;
 	let usageBarCache: UsageBarCache | null = null;
 	let usageBarsVisible = currentConfig.usageBars.visible;
 	let contextPulseTimer: ReturnType<typeof setInterval> | null = null;
@@ -263,12 +248,21 @@ export default function (pi: ExtensionAPI) {
 		return parts.join("  ");
 	};
 
+	const syncCosts = (ctx: ExtensionContext) => {
+		const totals = getSessionCosts(ctx);
+		state.tokenLabel = `↑${formatCount(totals.input)} ↓${formatCount(totals.output)}`;
+		state.costLabel = costLabel(totals);
+		state.agentCostLabel = totals.children.length ? `agents ${formatCost(totals.agents)}` : undefined;
+		state.hasTokens = totals.input > 0 || totals.output > 0;
+		state.hasCost = totals.total > 0 || totals.missing > 0 || totals.children.length > 0;
+	};
+
 	const syncState = (ctx: ExtensionContext, activeMessage?: unknown) => {
 		const mosaicIdentity = readMosaicIdentityEnv();
 		const name = cleanIdentityPart(ctx.sessionManager.getSessionName()) ?? mosaicIdentity?.name;
 		editorSessionIdentity = mosaicIdentity ? { ...mosaicIdentity, name } : name ? { name } : undefined;
 
-		const totals = getUsageTotals(ctx);
+		syncCosts(ctx);
 		const usage = ctx.getContextUsage();
 		const contextWindow = ctx.model?.contextWindow ?? usage?.contextWindow ?? 0;
 		const measuredContextTokens = typeof usage?.tokens === "number" && usage.tokens > 0 ? usage.tokens : undefined;
@@ -305,10 +299,6 @@ export default function (pi: ExtensionAPI) {
 			pulseLastContextSlicesForMessage(activeMessage);
 		}
 		state.contextUsageEstimated = measuredContextTokens === undefined;
-		state.tokenLabel = `↑${formatCount(totals.input)} ↓${formatCount(totals.output)}`;
-		state.costLabel = `$${totals.cost.toFixed(2)}`;
-		state.hasTokens = totals.input > 0 || totals.output > 0;
-		state.hasCost = totals.cost > 0;
 	};
 
 	const syncStateIfCurrent = (ctx: ExtensionContext, activeMessage?: unknown) => {
@@ -487,6 +477,13 @@ export default function (pi: ExtensionAPI) {
 		refresh();
 	};
 
+	pi.registerCommand("cost", {
+		description: "Session list-price cost, including all subagents and branches",
+		handler: async (_args, ctx) => {
+			ctx.ui.notify(costReport(getSessionCosts(ctx)), "info");
+		},
+	});
+
 	pi.registerCommand("usage-bars", {
 		description: "Show or hide provider usage bars in the editor status row",
 		getArgumentCompletions: (prefix: string) =>
@@ -531,10 +528,38 @@ export default function (pi: ExtensionAPI) {
 		disposed = false;
 		uiGeneration++;
 		installUi(ctx);
+		if (costTimer) clearInterval(costTimer);
+		// Children can keep working while the parent is idle. Poll only accounting,
+		// not context layout; also catches usage entries with no message event.
+		costTimer = setInterval(() => {
+			if (disposed) return;
+			try {
+				syncCosts(ctx);
+				refresh();
+			} catch (error) {
+				if (costTimer) clearInterval(costTimer);
+				costTimer = undefined;
+				if (!isStaleCtxError(error)) {
+					state.costLabel = `${state.costLabel} ?`;
+					refresh();
+					ctx.ui.notify(
+						`Cost updates paused: ${error instanceof Error ? error.message : String(error)}. Reload to retry.`,
+						"warning",
+					);
+				}
+			}
+		}, 1000);
+		costTimer.unref?.();
+	});
+
+	pi.on("session_tree", async (_event, ctx) => {
+		if (syncStateIfCurrent(ctx)) refresh();
 	});
 
 	pi.on("session_shutdown", async () => {
 		disposed = true;
+		if (costTimer) clearInterval(costTimer);
+		costTimer = undefined;
 		uiGeneration++;
 		requestFooterRender = undefined;
 		setEditorChromeProvider(undefined);

@@ -39,6 +39,7 @@ export type FooterRenderState = GitStatusSummary & {
 	contextUsageEstimated: boolean;
 	tokenLabel: string;
 	costLabel: string;
+	agentCostLabel?: string;
 	hasTokens: boolean;
 	hasCost: boolean;
 	runtime?: RuntimeInfo;
@@ -655,7 +656,13 @@ export function renderEditorTopStatus(
 
 export function renderEditorContextStatus(state: FooterRenderState, theme: Theme, width: number): string {
 	const safeWidth = Math.max(1, width);
-	if (state.contextTotal <= 0) return truncateToWidth(theme.fg("dim", "ctx no model"), safeWidth, "");
+	if (state.contextTotal <= 0) {
+		return truncateToWidth(
+			state.hasCost ? theme.fg("success", state.costLabel) : theme.fg("dim", "ctx no model"),
+			safeWidth,
+			"",
+		);
+	}
 
 	const usedTokens = Math.max(0, state.contextUsed);
 	const percent =
@@ -672,9 +679,14 @@ export function renderEditorContextStatus(state: FooterRenderState, theme: Theme
 		state.hasCost ? theme.fg("success", state.costLabel) : "",
 	].filter(Boolean);
 	const suffix = ` ${metricParts.join(" ")}`;
+	const cost = state.hasCost ? theme.fg("success", state.costLabel) : "";
+	const agents = state.agentCostLabel ? theme.fg("muted", state.agentCostLabel) : "";
 
 	return (
+		(agents ? renderContextBar(state, theme, safeWidth, `${suffix} (${agents})`) : undefined) ??
 		renderContextBar(state, theme, safeWidth, suffix) ??
+		(cost ? renderContextBar(state, theme, safeWidth, ` ${theme.fg(statusColor, percentText)} ${cost}`) : undefined) ??
+		(cost && visibleWidth(cost) <= safeWidth ? cost : undefined) ??
 		renderContextBar(state, theme, safeWidth, ` ${theme.fg(statusColor, percentText)}`) ??
 		truncateToWidth(theme.fg("dim", "ctx"), safeWidth, "")
 	);
