@@ -159,7 +159,6 @@ Pi uses `/skill:<name>` commands, for example:
 
 ```text
 /skill:commit
-/skill:submit
 /skill:artifact <what to save>
 /skill:review
 ```
@@ -185,7 +184,7 @@ not checked into this repo.
 
 Codex reads repository `AGENTS.md` files automatically. Shared skills are
 installed through Codex's user skill path and can be invoked with
-`$commit`, `$submit`, `$artifact`, `$review`, and other skill names.
+`$commit`, `$artifact`, `$review`, and other skill names.
 
 ## Skills
 
@@ -194,10 +193,7 @@ installed through Codex's user skill path and can be invoked with
 - `debug` — reproduce failures and investigate causes, returning a bug report before fixes.
 - `research` — explore code and plan interfaces, layering, changes, and verification in chat.
 - `review` — assess a code change and return evidence-backed findings in chat.
-- `respond` — validate PR feedback, apply requested fixes, and post authorized replies.
-- `commit`, `gt`, `submit`, `split-commit`, `git-surgeon` — specialized Git and stack operations.
-- `improve-rust-tests` — improve meaningful Rust behavior coverage and test structure.
-- `writing-skills` — edit this repository's skills and validate their schema and references.
+- `commit` — create Conventional Commits when the user asks to commit changes.
 
 Implementation, fixes, and cleanup use ordinary prompts. Any task can consume
 an explicitly supplied document without updating it or following a skill sequence.

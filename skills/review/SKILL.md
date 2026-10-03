@@ -3,7 +3,7 @@ name: review
 description: >
   Review code changes for material introduced defects and whether the approach
   achieves the intended outcome. Return evidence-backed findings in chat.
-  Invoke only as /skill:review or $review; use respond for active PR feedback.
+  Invoke only as /skill:review or $review.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash, Read, Glob, Grep

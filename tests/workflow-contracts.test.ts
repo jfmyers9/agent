@@ -69,16 +69,4 @@ describe("skill boundaries", () => {
     }
   });
 
-  test("Graphite operations retain explicit scope and draft defaults", () => {
-    const graphite = read("skills/gt/SKILL.md");
-    expect(graphite).toContain("second explicit user confirmation");
-    expect(graphite).toContain("`--force`/`-f`");
-    expect(graphite).toContain("`--delete-all`/`-d`");
-    const submit = read("skills/submit/SKILL.md");
-    expect(submit).toContain("--dry-run");
-    expect(submit).toContain("--restack-only");
-    expect(submit).toContain("--no-stack");
-    expect(submit).toContain("--draft");
-    expect(submit).not.toContain("--sync-only");
-  });
 });
