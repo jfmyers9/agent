@@ -330,7 +330,9 @@ export function convertResponsesMessages<TApi extends Api>(
 					if (block.thinkingSignature) output.push(JSON.parse(block.thinkingSignature));
 				} else if (block.type === "text") {
 					const parsedSignature = parseTextSignature(block.textSignature);
-					let msgId = parsedSignature?.id ?? `msg_${msgIndex}_${assistantBlockIndex}`;
+					const fallbackMessageId =
+						assistantBlockIndex === 0 ? `msg_pi_${msgIndex}` : `msg_pi_${msgIndex}_${assistantBlockIndex}`;
+					let msgId = parsedSignature?.id ?? fallbackMessageId;
 					if (msgId.length > 64) msgId = `msg_${shortHash(msgId)}`;
 					output.push({
 						type: "message",
@@ -357,6 +359,12 @@ export function convertResponsesMessages<TApi extends Api>(
 						call_id: callId,
 						name: block.name,
 						arguments: JSON.stringify(block.arguments),
+						...(msg.provider === model.provider &&
+						msg.api === model.api &&
+						msg.model === model.id &&
+						block.namespace !== undefined
+							? { namespace: block.namespace }
+							: {}),
 					} as ResponseInput[number]);
 				}
 			}

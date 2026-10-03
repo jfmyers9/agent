@@ -192,8 +192,14 @@ function areEquivalentValues(left: unknown, right: unknown): boolean {
 			return false;
 		}
 
-		const leftKeys = Object.keys(left).sort();
-		const rightKeys = Object.keys(right).sort();
+		// Provider serializers may retain optional fields as undefined. They are
+		// absent on the JSON wire, so they must not invalidate an otherwise identical replay.
+		const leftKeys = Object.keys(left)
+			.filter((key) => left[key] !== undefined)
+			.sort();
+		const rightKeys = Object.keys(right)
+			.filter((key) => right[key] !== undefined)
+			.sort();
 		if (!areEquivalentValues(leftKeys, rightKeys)) {
 			return false;
 		}
