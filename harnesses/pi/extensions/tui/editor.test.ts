@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
+	RAIL_PULSE_MS,
 	renderPolishedEditorForTest,
 	setEditorChromeProvider,
 	setEditorSessionIdentityProvider,
 	setWorkingAnimationForTest,
+	WORKING_SWEEP_MS,
 } from "./editor";
 
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
@@ -20,6 +22,13 @@ const rgbTheme = {
 
 function stripAnsi(line: string): string {
 	return line.replace(ANSI_PATTERN, "");
+}
+
+// Brightness sum for each animated glyph of the "Working" word, in order.
+function workingLetterBrightness(row: string): number[] {
+	return [...row.matchAll(/\x1b\[38;2;(\d+);(\d+);(\d+)m([Working])/g)].map(
+		(match) => Number(match[1]) + Number(match[2]) + Number(match[3]),
+	);
 }
 
 function editor(overrides: Record<string, unknown> = {}) {
@@ -52,7 +61,7 @@ describe("polished TUI editor", () => {
 	});
 
 	test("renders animated working text on the first editor row", () => {
-		setWorkingAnimationForTest(true, 3);
+		setWorkingAnimationForTest(true, 0);
 
 		const lines = renderPolishedEditorForTest(
 			editor({ getMode: () => "insert" }),
@@ -67,7 +76,7 @@ describe("polished TUI editor", () => {
 	});
 
 	test("formats working durations with hours", () => {
-		setWorkingAnimationForTest(true, 3, Date.now() - 3_665_000);
+		setWorkingAnimationForTest(true, 0, Date.now() - 3_665_000);
 
 		const lines = renderPolishedEditorForTest(
 			editor({ getMode: () => "insert" }),
@@ -81,7 +90,7 @@ describe("polished TUI editor", () => {
 	});
 
 	test("renders session identity before animated working text", () => {
-		setWorkingAnimationForTest(true, 3);
+		setWorkingAnimationForTest(true, 0);
 		setEditorSessionIdentityProvider(() => ({ name: "Spawn mosaic refactor" }));
 
 		const lines = renderPolishedEditorForTest(
@@ -114,7 +123,7 @@ describe("polished TUI editor", () => {
 	});
 
 	test("truncates long session identity before working status", () => {
-		setWorkingAnimationForTest(true, 3, Date.now() - 65_000);
+		setWorkingAnimationForTest(true, 0, Date.now() - 65_000);
 		setEditorSessionIdentityProvider(() => ({ name: "A very long named session that should shrink first" }));
 
 		const lines = renderPolishedEditorForTest(
@@ -161,27 +170,45 @@ describe("polished TUI editor", () => {
 		expect(lines.every((line) => visibleWidth(line) <= 40)).toBe(true);
 	});
 
-	test("pulses the rail background from the mode color while working", () => {
-		setWorkingAnimationForTest(true, 0);
-		const dark = renderPolishedEditorForTest(
-			editor({ getMode: () => "insert" }),
-			40,
-			() => ["> hello", ""],
-			28,
-			rgbTheme,
-		)[0];
-
-		setWorkingAnimationForTest(true, 13);
-		const bright = renderPolishedEditorForTest(
-			editor({ getMode: () => "insert" }),
-			40,
-			() => ["> hello", ""],
-			28,
-			rgbTheme,
-		)[0];
-
-		expect(dark).toContain("\x1b[48;2;18;9;36m");
-		expect(bright).toContain("\x1b[48;2;121;60;241m");
+	test("pulses the rail background on a slow cosine while working", () => {
+		const rowAt = (elapsedMs: number) => {
+			setWorkingAnimationForTest(true, elapsedMs);
+			return (
+				renderPolishedEditorForTest(editor({ getMode: () => "insert" }), 40, () => ["> hello", ""], 28, rgbTheme)[0] ??
+				""
+			);
+		};
+		const dark = rowAt(0);
+		const bright = rowAt(RAIL_PULSE_MS / 2);
+		expect(dark).toContain("\x1b[48;2;70;35;140m");
+		expect(bright).toContain("\x1b[48;2;105;53;210m");
 		expect(dark).not.toBe(bright);
+	});
+
+	test("drives the working shine from elapsed time, not from tick count", () => {
+		const rowAt = (elapsedMs: number) => {
+			setWorkingAnimationForTest(true, elapsedMs);
+			return renderPolishedEditorForTest(editor(), 40, () => ["> hi", ""], 28, rgbTheme)[0] ?? "";
+		};
+		expect(rowAt(0)).toBe(rowAt(0));
+		expect(rowAt(WORKING_SWEEP_MS)).not.toBe(rowAt(0));
+		expect(workingLetterBrightness(rowAt(WORKING_SWEEP_MS * 2)).join()).toBe(workingLetterBrightness(rowAt(0)).join());
+	});
+
+	test("keeps the working shine interpolated and always lit", () => {
+		const baseBrightness = 75 + 38 + 150;
+		const profiles = new Set<string>();
+		for (let elapsedMs = 0; elapsedMs <= WORKING_SWEEP_MS * 2; elapsedMs += 25) {
+			setWorkingAnimationForTest(true, elapsedMs);
+			const row = renderPolishedEditorForTest(editor(), 40, () => ["> hi", ""], 28, rgbTheme)[0] ?? "";
+			const brightness = workingLetterBrightness(row);
+			expect(brightness).toHaveLength(7);
+			// Never a fully dim frame: one glyph stays brighter than the base color.
+			expect(Math.max(...brightness)).toBeGreaterThan(baseBrightness);
+			// Interpolated band, not a hard one-glyph step.
+			expect(new Set(brightness).size).toBeGreaterThan(1);
+			profiles.add(brightness.join(","));
+		}
+		expect(profiles.size).toBeGreaterThan(10);
 	});
 });

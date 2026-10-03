@@ -6,7 +6,7 @@ import { registerExtensionEntryRenderer } from "../shared/tui";
 import { ensureConfigExists, loadConfig, type PolishedTuiConfig, saveConfig } from "./config";
 import { installFocusCursor } from "./cursor-focus";
 import {
-	advanceWorkingAnimationFrame,
+	advanceWorkingAnimation,
 	type EditorSessionIdentity,
 	installEditorComposition,
 	setEditorChromeProvider,
@@ -36,6 +36,9 @@ type UsageBarCache = {
 
 const CONTEXT_PULSE_INTERVAL_MS = 320;
 const CONTEXT_PULSE_DURATION_MS = 1200;
+// Time-based shine/pulse: the heartbeat only samples wall-clock phase, so the
+// animation speed no longer depends on how reliably these ticks fire.
+const WORKING_ANIMATION_TICK_MS = 33;
 const MOSAIC_IDENTITY_COLORS = ["f38ba8", "fab387", "f9e2af", "eba0ac", "e78284", "ff9e64", "ffc777", "ff757f"];
 
 function cleanIdentityPart(value: string | undefined): string | undefined {
@@ -361,9 +364,9 @@ export default function (pi: ExtensionAPI) {
 		setWorkingAnimationState(true, 0);
 		stopWorkingAnimation();
 		workingAnimationTimer = setInterval(() => {
-			advanceWorkingAnimationFrame();
+			advanceWorkingAnimation();
 			refresh();
-		}, 80);
+		}, WORKING_ANIMATION_TICK_MS);
 		refresh();
 	};
 

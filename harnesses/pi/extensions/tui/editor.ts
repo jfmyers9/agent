@@ -35,14 +35,20 @@ const globalPatchState = globalThis as typeof globalThis & {
 globalPatchState.__agentsPolishedTuiState ??= {};
 const patchState = globalPatchState.__agentsPolishedTuiState;
 let workingActive = false;
-let workingFrame = 0;
+let workingElapsedMs = 0;
 let workingStartedAt = 0;
 let editorSessionIdentityProvider: (() => EditorSessionIdentity | undefined) | undefined;
 
 const WORKING_WORD = "Working";
-const WORKING_SHINE_WIDTH = 3;
-const WORKING_PERCOLATION_MS = 80;
-const RAIL_PULSE_MS = 2000;
+// Sub-character brightness band: continuous motion at the render heartbeat
+// instead of stepping one glyph per tick, without a fully dim frame.
+const WORKING_SHINE_WIDTH = 2.5;
+export const WORKING_SWEEP_MS = 1400;
+const WORKING_SHINE_BASE = 0.75;
+const WORKING_SHINE_PEAK = 1.2;
+export const RAIL_PULSE_MS = 3500;
+const RAIL_PULSE_MIN = 0.7;
+const RAIL_PULSE_MAX = 1.05;
 const RGB_FALLBACK: Rgb = [0xff, 0xff, 0xff];
 const EDITOR_BG_DARKEN = 0.78;
 const MODE_LABEL_RESERVE = 9;
@@ -54,19 +60,21 @@ export function setEditorTheme(uiTheme: Theme): void {
 	patchState.currentUiTheme = uiTheme;
 }
 
-export function setWorkingAnimationState(active: boolean, frame = workingFrame, startedAt = Date.now()): void {
+export function setWorkingAnimationState(active: boolean, elapsedMs = workingElapsedMs, startedAt = Date.now()): void {
 	if (active && !workingActive) workingStartedAt = startedAt;
+	workingElapsedMs = active ? Math.max(0, elapsedMs) : 0;
 	if (!active) workingStartedAt = 0;
 	workingActive = active;
-	workingFrame = frame;
 }
 
-export function advanceWorkingAnimationFrame(): void {
-	workingFrame++;
+/** Recompute the phase from wall-clock time so dropped ticks never change its speed. */
+export function advanceWorkingAnimation(): void {
+	if (!workingActive || workingStartedAt === 0) return;
+	workingElapsedMs = Math.max(0, Date.now() - workingStartedAt);
 }
 
-export function setWorkingAnimationForTest(active: boolean, frame = 0, startedAt = Date.now()): void {
-	setWorkingAnimationState(active, frame, startedAt);
+export function setWorkingAnimationForTest(active: boolean, elapsedMs = 0, startedAt = Date.now()): void {
+	setWorkingAnimationState(active, elapsedMs, startedAt);
 }
 
 export function setEditorChromeProvider(provider: EditorChromeProvider | undefined): void {
@@ -183,11 +191,10 @@ function identityRailGlyph(uiTheme: Theme, color: string): string {
 	return uiTheme.fg(color as never, "▐");
 }
 
-function triangleWave(frame: number, periodMs: number, lo: number, hi: number): number {
-	const elapsedMs = frame * WORKING_PERCOLATION_MS;
+/** Cosine ease in [0,1]; smooth at both extremes, unlike a hard triangle. */
+function cosinePulse(elapsedMs: number, periodMs: number): number {
 	const t = (elapsedMs % periodMs) / periodMs;
-	const tri = 1 - Math.abs(2 * t - 1);
-	return lo + tri * (hi - lo);
+	return 0.5 - 0.5 * Math.cos(2 * Math.PI * t);
 }
 
 function modeColor(mode: string | undefined): string {
@@ -196,20 +203,20 @@ function modeColor(mode: string | undefined): string {
 	return "syntaxFunction";
 }
 
-function renderWorkingWord(uiTheme: Theme, color: string, frame: number): string {
-	const base = scaleRgb(colorRgb(uiTheme, color), 0.55);
-	const shine = scaleRgb(colorRgb(uiTheme, color), 1.55);
-	const step = Math.floor((frame * WORKING_PERCOLATION_MS) / WORKING_PERCOLATION_MS);
-	const chars = [...WORKING_WORD];
-	const cycle = chars.length + WORKING_SHINE_WIDTH;
-	const pos = step % cycle;
+function shineScaleAt(index: number, center: number): number {
+	const intensity = Math.max(0, 1 - Math.abs(index - center) / WORKING_SHINE_WIDTH);
+	return WORKING_SHINE_BASE + intensity * (WORKING_SHINE_PEAK - WORKING_SHINE_BASE);
+}
 
-	return chars
-		.map((ch, index) => {
-			const inShine = index >= pos - WORKING_SHINE_WIDTH && index < pos;
-			return `${rgbFg(inShine ? shine : base)}${ch}`;
-		})
-		.join("");
+function renderWorkingWord(uiTheme: Theme, color: string, elapsedMs: number): string {
+	const rgb = colorRgb(uiTheme, color);
+	const chars = [...WORKING_WORD];
+	const travel = Math.max(1, chars.length - 1);
+	// Ping-pong across the word keeps a lit glyph throughout and avoids a wrap jump.
+	const phase = (elapsedMs % (WORKING_SWEEP_MS * 2)) / WORKING_SWEEP_MS;
+	const center = (phase <= 1 ? phase : 2 - phase) * travel;
+
+	return chars.map((ch, index) => `${rgbFg(scaleRgb(rgb, shineScaleAt(index, center)))}${ch}`).join("");
 }
 
 function formatWorkingDuration(elapsedMs: number): string {
@@ -226,9 +233,9 @@ function formatWorkingDuration(elapsedMs: number): string {
 
 function workingHeaderSegment(uiTheme: Theme, color: string): string {
 	if (!workingActive) return "";
-	const label = renderWorkingWord(uiTheme, color, workingFrame);
+	const label = renderWorkingWord(uiTheme, color, workingElapsedMs);
 	const duration = uiTheme.fg("dim", ` (${formatWorkingDuration(Date.now() - workingStartedAt)})`);
-	return `${label}${rgbFg(scaleRgb(colorRgb(uiTheme, color), 0.85))}…${ANSI_RESET}${duration}`;
+	return `${label}${rgbFg(scaleRgb(colorRgb(uiTheme, color), WORKING_SHINE_BASE))}…${ANSI_RESET}${duration}`;
 }
 
 function cleanIdentityPart(value: string | undefined): string | undefined {
@@ -326,8 +333,8 @@ export function renderPolishedEditorForTest(
 	const modeReserve = typeof editor.getMode === "function" ? MODE_LABEL_RESERVE : 0;
 	const statusWidth = Math.max(1, innerWidth - modeReserve);
 	const chrome = editorChromeProvider?.(innerWidth, uiTheme, { modeReserve }) ?? {};
-	const railPulseFactor = workingActive ? triangleWave(workingFrame, RAIL_PULSE_MS, 0.18, 1.25) : 0;
-	const railBg = workingActive ? rgbBg(scaleRgb(colorRgb(uiTheme, railColor), railPulseFactor)) : "";
+	const railPulse = RAIL_PULSE_MIN + (RAIL_PULSE_MAX - RAIL_PULSE_MIN) * cosinePulse(workingElapsedMs, RAIL_PULSE_MS);
+	const railBg = workingActive ? rgbBg(scaleRgb(colorRgb(uiTheme, railColor), railPulse)) : "";
 	const railGap = fillBackgroundLine(uiTheme, "", 1, { darken: EDITOR_BG_DARKEN });
 	const secondaryRail = secondaryRailColor ? `${identityRailGlyph(uiTheme, secondaryRailColor)}${ANSI_RESET}` : "";
 	const mainRailGlyph = secondaryRailColor ? "▌" : "┃";
