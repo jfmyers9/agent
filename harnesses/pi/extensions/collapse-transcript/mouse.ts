@@ -32,7 +32,26 @@ export function handleNativeMouse(
 export class NativeMouseAdapter implements Component {
 	private width = 0;
 	private height = 0;
+	private presentation: unknown[] = [];
+	private presentationVersion = 0;
 	constructor(private readonly component: Component) {}
+	/** Pi's private presentation slots can change without a new transcript result.
+	 * Observe only validated values; never mutate native state or invalidate its renderers.
+	 */
+	getPresentationVersion(): number {
+		const slots = ["expanded", "showImages", "callRendererComponent", "resultRendererComponent"].map((key) => {
+			const value: unknown = Reflect.get(this.component, key);
+			if (key === "expanded" || key === "showImages") return typeof value === "boolean" ? value : undefined;
+			return value !== null && typeof value === "object" && "render" in value && typeof value.render === "function"
+				? value
+				: undefined;
+		});
+		if (slots.some((value, index) => value !== this.presentation[index])) {
+			this.presentation = slots;
+			this.presentationVersion++;
+		}
+		return this.presentationVersion;
+	}
 	render(width: number): string[] {
 		this.width = width;
 		const rows = this.component.render(width);

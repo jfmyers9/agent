@@ -263,6 +263,44 @@ test("tool summaries use live semantic fields without flattening or pre-truncati
 	activity.dispose();
 });
 
+test("open folds refresh native expansion without new results or summaries", () => {
+	const f = fixture();
+	let payloadRenders = 0;
+	const tool = new ToolExecutionComponent(
+		"codemode",
+		"expansion",
+		{},
+		undefined,
+		{
+			renderResult: (_result, options) => ({
+				getActivityLabel: () => "Read sample.ts",
+				render: () => {
+					payloadRenders++;
+					return [options.expanded ? "JavaScript and Argument previews" : "Compact output"];
+				},
+				invalidate() {},
+			}),
+		},
+		f.tui,
+		"/tmp",
+	);
+	tool.updateResult({ content: [], isError: false });
+	f.chat.addChild(tool);
+	lines(f.document);
+	click(f.projection, 1);
+	expect(lines(f.document).join("\n")).toContain("Compact output");
+	tool.setExpanded(true);
+	expect(lines(f.document).join("\n")).toContain("JavaScript and Argument previews");
+	tool.setExpanded(false);
+	const collapsed = lines(f.document).join("\n");
+	expect(collapsed).toContain("Compact output");
+	expect(collapsed).not.toContain("Argument previews");
+	const renders = payloadRenders;
+	expect(lines(f.document).join("\n")).toBe(collapsed);
+	expect(payloadRenders).toBe(renders);
+	f.unmount();
+});
+
 test("prose stays visible and separates folds; failure counts survive collapse", () => {
 	const f = fixture();
 	f.chat.addChild(

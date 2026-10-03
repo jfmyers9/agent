@@ -38,6 +38,7 @@ class ActivitySection extends ComponentStack {
 	private readonly body = new ComponentStack();
 	private readonly activity: ToolActivity;
 	private entries: readonly ActivityEntry[] = [];
+	private presentationVersions: number[] = [];
 	private clock: MotionMount | undefined;
 	private summary = "";
 	private running = false;
@@ -60,9 +61,18 @@ class ActivitySection extends ComponentStack {
 	}
 
 	update(entries: readonly ActivityEntry[]): void {
-		if (entries.length === this.entries.length && entries.every((entry, index) => entry === this.entries[index]))
+		const versions = entries.map((entry) =>
+			entry.component instanceof NativeMouseAdapter ? entry.component.getPresentationVersion() : 0,
+		);
+		if (
+			entries.length === this.entries.length &&
+			entries.every(
+				(entry, index) => entry === this.entries[index] && versions[index] === this.presentationVersions[index],
+			)
+		)
 			return;
 		this.entries = entries;
+		this.presentationVersions = versions;
 		this.body.setChildren(entries.map((entry) => entry.component));
 		// Keep the model's intent visible while tools run and after they finish.
 		const latest =
