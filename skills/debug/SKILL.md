@@ -5,6 +5,9 @@ description: >
   an evidence-backed bug report with code pointers and recommended next steps.
   Use for diagnosis before changing code; this skill does not apply fixes.
   Use artifact separately when saving the report is requested.
+  Invoke only as /skill:debug or $debug.
+disable-model-invocation: true
+user-invocable: true
 allowed-tools: Bash, Read, Glob, Grep
 argument-hint: "<failure-description> [input-document]"
 ---

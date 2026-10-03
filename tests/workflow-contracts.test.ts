@@ -15,10 +15,20 @@ function markdownFiles(directory: string): string[] {
 }
 
 describe("skill boundaries", () => {
+  test("workflow skills require explicit invocation; commit permits natural-language requests", () => {
+    for (const name of ["artifact", "review", "context", "debug", "research"]) {
+      const skill = read(`skills/${name}/SKILL.md`);
+      expect(skill).toContain("disable-model-invocation: true");
+      expect(skill).toContain("user-invocable: true");
+    }
+    const commit = read("skills/commit/SKILL.md");
+    expect(commit).not.toContain("disable-model-invocation: true");
+    expect(commit).toContain("when the user explicitly asks to commit changes");
+  });
+
   test("debug investigates failures without applying fixes or coupling storage", () => {
     const debug = read("skills/debug/SKILL.md");
     expect(debug).toContain("allowed-tools: Bash, Read, Glob, Grep");
-    expect(debug).not.toContain("disable-model-invocation: true");
     expect(debug).toContain("bug report in chat");
     expect(debug).toContain("Do not apply the fix or add tests");
     expect(debug).toContain("use `$artifact` separately");
@@ -28,7 +38,6 @@ describe("skill boundaries", () => {
   test("context explains existing code with read-only tools and separate planning", () => {
     const context = read("skills/context/SKILL.md");
     expect(context).toContain("allowed-tools: Bash, Read, Glob, Grep");
-    expect(context).not.toContain("disable-model-invocation: true");
     expect(context).toContain("explain it in chat");
     expect(context).toContain("use `$research`");
     expect(context).toContain("use `$artifact` separately");
@@ -38,7 +47,6 @@ describe("skill boundaries", () => {
   test("research plans in chat with read-only tools and separate storage", () => {
     const research = read("skills/research/SKILL.md");
     expect(research).toContain("allowed-tools: Bash, Read, Glob, Grep");
-    expect(research).not.toContain("disable-model-invocation: true");
     expect(research).toContain("A planning-only request ends with the plan");
     expect(research).toContain("without adding an approval gate");
     expect(research).toContain("`$artifact` separately");

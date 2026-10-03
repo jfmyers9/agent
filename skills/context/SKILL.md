@@ -5,6 +5,9 @@ description: >
   with an evidence-backed map of entrypoints, responsibilities, interfaces,
   data flow, and tests. Use for understanding existing code; use research for
   planning changes and artifact separately when saving is requested.
+  Invoke only as /skill:context or $context.
+disable-model-invocation: true
+user-invocable: true
 allowed-tools: Bash, Read, Glob, Grep
 argument-hint: "<scope-or-question> [input-document]"
 ---

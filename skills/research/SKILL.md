@@ -5,6 +5,9 @@ description: >
   behavior change, or architectural decision. Use when the user wants code
   pointers, interface design, layering, tradeoffs, and implementation steps
   before editing code. Use artifact separately when saving is requested.
+  Invoke only as /skill:research or $research.
+disable-model-invocation: true
+user-invocable: true
 allowed-tools: Bash, Read, Glob, Grep
 argument-hint: "<change-or-design-question> [input-document]"
 ---
