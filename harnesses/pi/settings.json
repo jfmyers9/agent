@@ -56,7 +56,6 @@
     "extensions/fireworks-gateway.ts",
     "extensions/agents-local/index.ts",
     "extensions/auto-compact-resume/index.ts",
-    "extensions/codex-native/compaction/index.ts",
     "extensions/fileops/index.ts",
     "extensions/apply-patch/index.ts",
     "extensions/vcc/index.ts",

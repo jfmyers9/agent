@@ -6,8 +6,6 @@
     "harnesses/pi/extensions/ask/**/*.ts",
     "harnesses/pi/extensions/async-questions/**/*.ts",
     "harnesses/pi/extensions/context-guard/**/*.ts",
-    "harnesses/pi/extensions/codex-native/compaction/**/*.ts",
-    "harnesses/pi/extensions/codex-native/openai-responses-shared.ts",
     "harnesses/pi/extensions/exec-command/**/*.ts",
     "harnesses/pi/extensions/fileops/**/*.ts",
     "harnesses/pi/extensions/apply-patch/**/*.ts",

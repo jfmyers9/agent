@@ -56,11 +56,12 @@ Adopted Pi settings from Luan's config:
 Feature decisions from the Luan config review are tracked in
 [`../../docs/luan-feature-decisions.md`](../../docs/luan-feature-decisions.md).
 
+Compaction uses Pi's built-in implementation.
+
 Installed extensions:
 
 - `agents-local/` — injects untracked `AGENTS.local.md` / `CLAUDE.local.md` context from cwd ancestors; `/agents-local` lists loaded files.
 - `fireworks-gateway.ts` — registers Fireworks models when an anonymous gateway endpoint is configured.
-- `codex-native/compaction/` — uses OpenAI Responses native compaction for compatible OpenAI and Codex sessions, persists the opaque compacted window for replay, and falls back to Pi compaction on failure.
 - `clear.ts` — `/clear` starts a fresh session after the current turn; `ctrl+shift+l` queues it.
 - `async-questions/` — `request_user_input_async` presents inline questions without blocking independent work. Answers arrive through steering; `/questions` focuses pending questions and `/questions dismiss` dismisses the oldest group without granting approval. Pending questions and submitted answers are session-local and survive resume. The existing `ask_user` remains available for multi-select and preview dialogs.
 - `effort.ts` — `/effort [level]` stores per-model thinking effort in the current Pi session; `effort.json` supplies defaults only.
