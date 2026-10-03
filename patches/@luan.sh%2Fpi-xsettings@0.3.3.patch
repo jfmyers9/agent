@@ -15,3 +15,46 @@ diff --git a/src/config/pi-settings.ts b/src/config/pi-settings.ts
  	for (const [key, value] of Object.entries(values)) {
  		const segments = key.split(".");
  		if (JSON.stringify(getJsonPath(parsed, segments)) === JSON.stringify(value)) continue;
+diff --git a/src/extension.ts b/src/extension.ts
+--- a/src/extension.ts
++++ b/src/extension.ts
+@@ -1,4 +1,4 @@
+-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
++import { type ExtensionAPI, type ExtensionContext, SettingsManager } from "@earendil-works/pi-coding-agent";
+ import { loadActionKeybindings, registerAction } from "@luan.sh/pi-libactions/sdk";
+ import {
+ 	configureTuiAppearance,
+@@ -24,6 +24,15 @@
+ import type { XSettingsScreen } from "./ui/xsettings-screen.ts";
+ 
+ const SETTINGS_TAB_ID = "pi-xsettings.settings";
++
++/** Configuration owns the session's baseline; transcript navigation cannot remove it. */
++function applyConfiguredTools(pi: ExtensionAPI): void {
++	const configured = SettingsManager.inMemory(pi.getSettings()).getDefaultTools() ?? [];
++	const available = new Set(pi.getAllTools().map((tool) => tool.name));
++	const active = new Set(pi.getActiveTools());
++	const missing = configured.filter((name) => available.has(name) && !active.has(name));
++	if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
++}
+ 
+ export default function xsettingsExtension(pi: ExtensionAPI): void {
+ 	const store = new XSettingsStore();
+@@ -167,6 +176,9 @@
+ 		handler: async (_args, ctx) => open(ctx),
+ 	});
+ 	pi.on("session_start", async (_event, ctx) => {
++		await initialization;
++		await settleRegistrations();
++		applyConfiguredTools(pi);
+ 		if (ctx.mode !== "tui" || !ctx.hasUI) return;
+ 		panelContext = ctx;
+ 		activeSession = ctx.sessionManager;
+@@ -217,6 +229,7 @@
+ 			);
+ 		}
+ 	});
++	pi.on("session_tree", () => applyConfiguredTools(pi));
+ 	pi.on("session_shutdown", (event, context) => {
+ 		if (context.mode !== "tui" || !context.hasUI || activeSession !== context.sessionManager) return;
+ 		if (event.reason !== "reload" && event.reason !== "quit") return;

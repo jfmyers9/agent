@@ -4,6 +4,7 @@
     "harnesses/pi/extensions/*.ts",
     "harnesses/pi/extensions/agents-local/**/*.ts",
     "harnesses/pi/extensions/ask/**/*.ts",
+    "harnesses/pi/extensions/async-questions/**/*.ts",
     "harnesses/pi/extensions/context-guard/**/*.ts",
     "harnesses/pi/extensions/codex-native/compaction/**/*.ts",
     "harnesses/pi/extensions/codex-native/openai-responses-shared.ts",
@@ -21,6 +22,7 @@
     "harnesses/pi/extensions/vcc/**/*.ts",
     "harnesses/pi/extensions/vim/**/*.ts",
     "harnesses/pi/extensions/runtime-support/**/*.ts",
+    "harnesses/pi/extensions/collapse-transcript/**/*.ts",
     "harnesses/pi/extensions/code-mode/**/*.ts",
     "harnesses/pi/extensions/subagents/**/*.ts"
   ],

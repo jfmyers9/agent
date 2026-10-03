@@ -138,6 +138,8 @@ describe("installer safety", () => {
 		const dryRun = install("dry-run", "pi", paths);
 		expect(dryRun.status).toBe(0);
 		expect(dryRun.stdout).toContain(`Would remove stale: ${stale}`);
+		expect(dryRun.stdout).toContain(join(extensions, "async-questions"));
+		expect(dryRun.stdout).toContain(join(extensions, "collapse-transcript"));
 		expect(lstatSync(stale).isSymbolicLink()).toBe(true);
 
 		const unlink = install("unlink", "pi", paths);

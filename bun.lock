@@ -44,6 +44,7 @@
   },
   "patchedDependencies": {
     "@luan.sh/pi-subagents@0.3.9": "patches/@luan.sh%2Fpi-subagents@0.3.9.patch",
+    "@luan.sh/pi-libtui@0.3.9": "patches/@luan.sh%2Fpi-libtui@0.3.9.patch",
     "@luan.sh/pi-xsettings@0.3.3": "patches/@luan.sh%2Fpi-xsettings@0.3.3.patch",
   },
   "packages": {

@@ -1,0 +1,158 @@
+diff --git a/src/motion.ts b/src/motion.ts
+index 204059e..dde6434 100644
+--- a/src/motion.ts
++++ b/src/motion.ts
+@@ -186,7 +186,15 @@ export class MotionScheduler {
+ 	private tick(cadenceMs: number, targets: Map<MotionRenderTarget, TargetRegistration>): void {
+ 		if (this.paused) return;
+ 		const nowMs = this.clock.now();
+-		for (const [target, registration] of targets) {
++		// Rendering may dispose and remount targets. New mounts belong to the next
++		// tick; iterating the live Map can revisit a remounted target forever.
++		const frame = [...targets].map(([target, registration]) => ({
++			target,
++			registration,
++			callbacks: [...registration.registrations.values()],
++		}));
++		for (const { target, registration, callbacks } of frame) {
++			if (targets.get(target) !== registration) continue;
+ 			for (const current of registration.registrations.values()) {
+ 				if (current.expiresAtMs === undefined || nowMs < current.expiresAtMs) continue;
+ 				registration.registrations.delete(current.id);
+@@ -196,14 +204,15 @@ export class MotionScheduler {
+ 				targets.delete(target);
+ 				continue;
+ 			}
+-			for (const current of registration.registrations.values()) {
++			for (const current of callbacks) {
++				if (!registration.registrations.has(current.id)) continue;
+ 				try {
+ 					current.onFrame?.(nowMs);
+ 				} catch {
+-					registration.registrations.delete(current.id);
+-					this.mountCount--;
++					if (registration.registrations.delete(current.id)) this.mountCount--;
+ 				}
+ 			}
++			if (targets.get(target) !== registration) continue;
+ 			if (registration.registrations.size === 0) {
+ 				targets.delete(target);
+ 				continue;
+@@ -212,9 +221,11 @@ export class MotionScheduler {
+ 				try {
+ 					target.requestRender();
+ 				} catch {
+-					this.mountCount -= registration.registrations.size;
+-					registration.registrations.clear();
+-					targets.delete(target);
++					if (targets.get(target) === registration) {
++						this.mountCount -= registration.registrations.size;
++						registration.registrations.clear();
++						targets.delete(target);
++					}
+ 				}
+ 			}
+ 		}
+diff --git a/src/host/transcript-bridge.ts b/src/host/transcript-bridge.ts
+--- a/src/host/transcript-bridge.ts
++++ b/src/host/transcript-bridge.ts
+@@ -4,8 +4,24 @@
+ 
+ export type TranscriptEntry =
+ 	| { kind: "content"; key: object; component: Component }
+-	| { kind: "thinking"; key: object; component: Component; summary: string; running: boolean; failed: boolean }
+-	| { kind: "tool"; key: object; component: Component; summary: string; running: boolean; failed: boolean };
++	| {
++			kind: "thinking";
++			key: object;
++			component: Component;
++			summary: string;
++			running: boolean;
++			failed: boolean;
++			timestamp?: number;
++	  }
++	| {
++			kind: "tool";
++			key: object;
++			component: Component;
++			summary: string;
++			running: boolean;
++			failed: boolean;
++			toolCallId?: string;
++	  };
+ 
+ export interface TranscriptProjection extends Component {
+ 	dispose(): void;
+@@ -137,19 +153,23 @@
+ 	read(node: Component): readonly TranscriptEntry[] {
+ 		if (assistant(node)) return this.readAssistant(node);
+ 		if (!tool(node)) return [{ kind: "content", key: node, component: node }];
++		const summary = toolLabel(node);
+ 		const previous = this.tools.get(node);
+ 		if (
+ 			previous &&
+ 			previous.result === node.result &&
+ 			previous.args === node.args &&
+-			previous.partial === node.isPartial
++			previous.partial === node.isPartial &&
++			previous.entry.kind === "tool" &&
++			previous.entry.summary === summary
+ 		)
+ 			return [previous.entry];
+ 		const entry: TranscriptEntry = {
+ 			kind: "tool",
++			toolCallId: node.toolCallId,
+ 			key: node,
+ 			component: node,
+-			summary: toolLabel(node),
++			summary,
+ 			running: !node.result || node.isPartial,
+ 			failed: node.result?.isError ?? false,
+ 		};
+@@ -187,6 +207,7 @@
+ 				part.type === "thinking"
+ 					? {
+ 							kind: "thinking",
++							timestamp: Number.isFinite(message.timestamp) ? message.timestamp : undefined,
+ 							key: view,
+ 							component: view,
+ 							summary: text,
+diff --git a/src/tool/activity.ts b/src/tool/activity.ts
+--- a/src/tool/activity.ts
++++ b/src/tool/activity.ts
+@@ -99,7 +99,9 @@
+ 		this.replaceOutput();
+ 		this.region = this.createRegion();
+ 		this.setOutputRows(this.region.getMode());
+-		this.disclosureAction = new ToolDisclosureAction(options.theme, this.action, this.region, this.requestRender);
++		this.disclosureAction = new ToolDisclosureAction(options.theme, this.action, this.region, this.requestRender, () =>
++			[this.view.action.verb, this.view.action.detail, ...(this.view.action.meta ?? [])].filter(Boolean).join(" · "),
++		);
+ 		this.transcript = this.createTranscript();
+ 		this.surfacedTranscript = new BackgroundSurface({
+ 			theme: options.theme,
+diff --git a/src/tool/disclosure-action.ts b/src/tool/disclosure-action.ts
+--- a/src/tool/disclosure-action.ts
++++ b/src/tool/disclosure-action.ts
+@@ -16,6 +16,7 @@
+ 		private action: Component,
+ 		private region: ToolViewRegion,
+ 		private readonly requestRender: () => void,
++		private readonly activityLabel?: () => string,
+ 	) {}
+ 
+ 	setAction(action: Component): void {
+@@ -26,11 +27,8 @@
+ 	}
+ 
+ 	/** Semantic header only, for enclosing activity sections; never renders the payload. */
+-	getActivityLabel(): string {
+-		return this.action
+-			.render(100)
+-			.map((line) => stripTerminalSequences(line).trim())
+-			.join(" ");
++	getActivityLabel(): string | undefined {
++		return this.activityLabel?.();
+ 	}
+ 
+ 	setRegion(region: ToolViewRegion): void {

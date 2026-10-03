@@ -62,6 +62,7 @@ Installed extensions:
 - `fireworks-gateway.ts` — registers Fireworks models when an anonymous gateway endpoint is configured.
 - `codex-native/compaction/` — uses OpenAI Responses native compaction for compatible OpenAI and Codex sessions, persists the opaque compacted window for replay, and falls back to Pi compaction on failure.
 - `clear.ts` — `/clear` starts a fresh session after the current turn; `ctrl+shift+l` queues it.
+- `async-questions/` — `request_user_input_async` presents inline questions without blocking independent work. Answers arrive through steering; `/questions` focuses pending questions and `/questions dismiss` dismisses the oldest group without granting approval. Pending questions and submitted answers are session-local and survive resume. The existing `ask_user` remains available for multi-select and preview dialogs.
 - `effort.ts` — `/effort [level]` stores per-model thinking effort in the current Pi session; `effort.json` supplies defaults only.
 - `fileops/` — replaces the built-in local file workflow with `read`, `search`, `find`, `write`, and a configurable `edit` tool. Default edit mode is hashline.
 - `apply-patch/` — registers Codex's `apply_patch` format for GPT models and switches GPT sessions away from `edit`/`write`.
@@ -74,7 +75,8 @@ Installed extensions:
 - `spawn/` — provides `/spawn`, `spawn_lane`, `spawn_list`, and `spawn_map` for bounded Pi/shell/command lanes.
 - `fork-split.ts` — keeps the current session in place when `/fork` is used and opens the selected fork in a new tmux split.
 - `subagents/` — concurrent nested Pi sessions with messaging, follow-up tasks, interrupts, and `/subagents` for inspection.
-- `runtime-support/` — loads shared package UI support and `/xsettings` once.
+- `runtime-support/` — loads shared package UI support and `/xsettings` once, and gives native Code Mode/tool-search rows compact framing while preserving their renderers and expansion controls. Errors and image results retain native framing.
+- `collapse-transcript/` — keeps the current run's tools and thinking visible, then folds settled activity into timed, expandable rows in fullscreen mode. Assistant prose and standalone notices remain visible; failed tools retain failure counts and their original expanded output. Regular scrollback is unchanged.
 
 Pi 1.0.0 supplies Code Mode and tool search. `settings.json` activates
 `codemode` and `tool_search`; `codemode.mode: "only"` routes callable tools
@@ -86,7 +88,27 @@ The tracked Subagents patch loads Pi's built-in tools in child sessions and
 preserves the parent's active-tool selection. The upstream Subagents tarball
 still bundles unused legacy Code Mode sources; the adapter no longer imports
 or builds them. The XSettings patch preserves Pi settings that are not overridden
-in TOML. Composition tests exercise native tool calls and session isolation.
+in TOML and restores missing configured tools on startup, reload, and tree
+navigation. Configured defaults are a baseline, not a record of temporary tool
+toggles; CLI restrictions and persisted token-burden disables still apply.
+The LibTUI patch bounds animation ticks when rendering remounts targets.
+It also supplies transcript timestamps and semantic activity labels for folding.
+These reliability fixes are backported from `luan/agents` at `ad0bff62` without
+upgrading the UI packages. Composition tests exercise native tool calls and
+session isolation.
+
+The presentation adapters use guarded Pi UI internals and restore native behavior
+on unload. They do not rewrite session history or model-visible output. Remove
+`extensions/collapse-transcript/index.ts` from the extension list to disable transcript
+folding independently of compact Code Mode framing.
+
+Async questions are a question-only adaptation of the same upstream revision,
+using the existing UI dependencies. They do not add clock tools, persistent
+reasoning, or a new provider. Required answers must arrive before dependent
+work proceeds. The tool is model-only (not callable inside Code Mode); ordinary
+independent work can continue while a question is pending. RPC clients use
+standard select/input dialogs; headless sessions retain pending questions until
+a user-capable client resumes them.
 
 Our `fileops/` continues to own read, search, find, write, and hashline editing.
 Our `apply-patch/` owns structured patches, validates them before writing, shares

@@ -52,6 +52,7 @@
   ],
   "extensions": [
     "extensions/runtime-support/index.ts",
+    "extensions/collapse-transcript/index.ts",
     "extensions/fireworks-gateway.ts",
     "extensions/agents-local/index.ts",
     "extensions/auto-compact-resume/index.ts",
@@ -63,6 +64,7 @@
     "extensions/context-guard/index.ts",
     "extensions/exec-command/index.ts",
     "extensions/ask/index.ts",
+    "extensions/async-questions/index.ts",
     "extensions/clear.ts",
     "extensions/effort.ts",
     "extensions/prompt-storage/index.ts",
@@ -78,7 +80,8 @@
   ],
   "defaultTools": [
     "+codemode",
-    "+tool_search"
+    "+tool_search",
+    "+request_user_input_async"
   ],
   "codemode": {
     "mode": "only"

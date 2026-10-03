@@ -41,9 +41,16 @@ test("installed extensions compose local tools and activate deferred tools", asy
 		await writeFile(
 			join(agentDir, "settings.json"),
 			JSON.stringify({
-				defaultTools: ["+codemode", "+tool_search"],
+				defaultTools: ["+codemode", "+tool_search", "+request_user_input_async"],
 				codemode: { mode: "only" },
-				extensions: ["runtime-support", "fileops", "apply-patch", "exec-command"]
+				extensions: [
+					"runtime-support",
+					"collapse-transcript",
+					"fileops",
+					"apply-patch",
+					"exec-command",
+					"async-questions",
+				]
 					.map((name) => join(extensionDir, name, "index.ts"))
 					.concat(fixture),
 			}),
@@ -64,6 +71,7 @@ test("installed extensions compose local tools and activate deferred tools", asy
 		expect(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8")).defaultTools).toEqual([
 			"+codemode",
 			"+tool_search",
+			"+request_user_input_async",
 		]);
 		const modelRuntime = await ModelRuntime.create({
 			authPath: join(agentDir, "auth.json"),
@@ -91,6 +99,8 @@ test("installed extensions compose local tools and activate deferred tools", asy
 		for (const name of ["read", "search", "apply_patch", "exec_command", "write_stdin"]) expect(active).toContain(name);
 		expect(active).not.toContain("cg_status");
 		expect(active).not.toContain("bash");
+		expect(active).toContain("request_user_input_async");
+		expect(session.getCallableToolNames()).not.toContain("request_user_input_async");
 		expect(new Set(active).size).toBe(active.length);
 		await session.extensionRunner.emitBeforeAgentStart("fixture prompt", undefined, "Fixture system prompt", { cwd });
 		for (const name of ["exec_command", "write_stdin", "apply_patch", "read"])
@@ -217,6 +227,26 @@ test("installed extensions compose local tools and activate deferred tools", asy
 		expect(JSON.stringify(found)).toContain("cg_status");
 		expect(session.getActiveToolNames()).toContain("cg_status");
 		expect(JSON.stringify(await invoke("cg_status", {}))).toContain("fixture ready");
+		const beforeQuestion = session.sessionManager.appendCustomEntry("async-test/branch", {});
+		const question = await invoke("request_user_input_async", {
+			questions: [{ title: "Which output format?", options: ["JSON", "Text"] }],
+		});
+		expect(JSON.stringify(question)).toContain('"accepted":true');
+		expect(
+			session.sessionManager
+				.getBranch()
+				.some((entry) => entry.type === "custom" && entry.customType === "pi-conversation/question"),
+		).toBe(true);
+		await session.navigateTree(beforeQuestion, { summarize: false });
+		expect(session.getActiveToolNames()).toContain("request_user_input_async");
+		expect(session.getCallableToolNames()).not.toContain("request_user_input_async");
+		expect(session.getActiveToolNames()).not.toContain("bash");
+		expect(session.getActiveToolNames()).not.toContain("edit");
+		expect(
+			session.sessionManager
+				.getBranch()
+				.some((entry) => entry.type === "custom" && entry.customType === "pi-conversation/question"),
+		).toBe(false);
 		expect(errors).toEqual([]);
 	} finally {
 		await Promise.all(childRuntimes.map((runtime) => runtime.dispose()));
