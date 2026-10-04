@@ -66,6 +66,7 @@
     "extensions/async-questions/index.ts",
     "extensions/clear.ts",
     "extensions/diff-prod/index.ts",
+    "extensions/tuicr.ts",
     "extensions/effort.ts",
     "extensions/prompt-storage/index.ts",
     "extensions/vim/index.ts",

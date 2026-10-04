@@ -12,6 +12,7 @@
         "@luan.sh/pi-libactions": "0.3.3",
         "@luan.sh/pi-libtui": "0.3.9",
         "@luan.sh/pi-subagents": "0.3.9",
+        "@luan.sh/pi-tuicr": "0.3.3",
         "@luan.sh/pi-xsettings": "0.3.3",
         "@mozilla/readability": "^0.5.0",
         "@shikijs/cli": "^4.0.2",
@@ -185,6 +186,8 @@
     "@luan.sh/pi-libtui": ["@luan.sh/pi-libtui@0.3.9", "", { "dependencies": { "@pierre/diffs": "1.3.5", "@xterm/headless": "6.0.0" }, "peerDependencies": { "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-tui": "*" } }, "sha512-CgSIeV0r2UQBkkIXplIVwferHmckFTbcxJ3Uw3H+KEe+odSYgB0z7abjh/2mxr3hYygEZKYDubIHkzTlRA4zmg=="],
 
     "@luan.sh/pi-subagents": ["@luan.sh/pi-subagents@0.3.9", "", { "dependencies": { "@luan.sh/pi-code-mode": "file:../pi-code-mode", "@luan.sh/pi-libactions": "file:../pi-libactions", "@luan.sh/pi-libtui": "file:../pi-libtui", "@luan.sh/pi-xsettings": "file:../pi-xsettings", "typebox": "1.3.15" }, "peerDependencies": { "@earendil-works/pi-agent-core": "*", "@earendil-works/pi-ai": "*", "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-tui": "*" } }, "sha512-hOB5XGOhmorAQppbWnG/SVuqRSH/rGYmlCEldFuTARbTuwc1g6VE4AibzAbpLNHQL2tj/wi+ln0rkTbzYQFVUA=="],
+
+    "@luan.sh/pi-tuicr": ["@luan.sh/pi-tuicr@0.3.3", "", { "dependencies": { "@luan.sh/pi-libactions": "file:../pi-libactions", "@luan.sh/pi-libtui": "file:../pi-libtui" }, "peerDependencies": { "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-tui": "*" } }, "sha512-s+cOYbA8dZa8Tqej+MsiWaq5f8uGSpftR6RpGrZoRu8Ft4MorJanlQ1xdRetaNwznoZC+a8Nux9avybAYG2iYQ=="],
 
     "@luan.sh/pi-xsettings": ["@luan.sh/pi-xsettings@0.3.3", "", { "dependencies": { "@luan.sh/pi-libactions": "file:../pi-libactions", "@luan.sh/pi-libtui": "file:../pi-libtui", "smol-toml": "1.8.0", "typebox": "1.3.15" }, "peerDependencies": { "@earendil-works/pi-ai": "*", "@earendil-works/pi-coding-agent": "*", "@earendil-works/pi-tui": "*" } }, "sha512-5pagUs5lOtb1tewhP7gIO37cKcRZwrlV3vaSeSdFvFjPXxY3vFSPBSFNy2MkLByQQmh3kXsZYNg9bl59saBIrA=="],
 
@@ -679,6 +682,10 @@
     "@luan.sh/pi-subagents/@luan.sh/pi-xsettings": ["@luan.sh/pi-xsettings@file:../pi-xsettings", {}],
 
     "@luan.sh/pi-subagents/typebox": ["typebox@1.3.15", "", {}, "sha512-gOKAjLqUr+bFGbO5vxCEO5+nHh2wO+swzSIkiJJC0kJ4oLN6f65SrZn6tJYhsYO+qdnpf2NmlQwgsayYoi1NkQ=="],
+
+    "@luan.sh/pi-tuicr/@luan.sh/pi-libactions": ["@luan.sh/pi-libactions@file:../pi-libactions", {}],
+
+    "@luan.sh/pi-tuicr/@luan.sh/pi-libtui": ["@luan.sh/pi-libtui@file:../pi-libtui", {}],
 
     "@luan.sh/pi-xsettings/@luan.sh/pi-libactions": ["@luan.sh/pi-libactions@file:../pi-libactions", {}],
 

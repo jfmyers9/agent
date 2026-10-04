@@ -35,6 +35,7 @@
   "app.exit": ["ctrl+d"],
   "app.suspend": ["ctrl+z"],
   "app.editor.external": ["ctrl+g"],
+  "panels.tuicr.open": ["ctrl+shift+g"],
   "app.clipboard.pasteImage": ["ctrl+v"],
   "app.session.togglePath": ["alt+p"],
   "app.session.toggleSort": ["ctrl+s"],

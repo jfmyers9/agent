@@ -36,6 +36,7 @@
     "@luan.sh/pi-libactions": "0.3.3",
     "@luan.sh/pi-libtui": "0.3.9",
     "@luan.sh/pi-subagents": "0.3.9",
+    "@luan.sh/pi-tuicr": "0.3.3",
     "@luan.sh/pi-xsettings": "0.3.3",
     "@mozilla/readability": "^0.5.0",
     "@shikijs/cli": "^4.0.2",
