@@ -63,6 +63,7 @@ Installed extensions:
 - `agents-local/` — injects untracked `AGENTS.local.md` / `CLAUDE.local.md` context from cwd ancestors; `/agents-local` lists loaded files.
 - `fireworks-gateway.ts` — registers Fireworks models when an anonymous gateway endpoint is configured.
 - `clear.ts` — `/clear` starts a fresh session after the current turn; `ctrl+shift+l` queues it.
+- `diff-prod/` — automatically shows a production diff beside the fullscreen transcript/editor; `/diff-prod` opens the standalone overlay. See [Production diff pane](#production-diff-pane).
 - `async-questions/` — `request_user_input_async` presents inline questions without blocking independent work. Answers arrive through steering; `/questions` focuses pending questions and `/questions dismiss` dismisses the oldest group without granting approval. Pending questions and submitted answers are session-local and survive resume. The existing `ask_user` remains available for multi-select and preview dialogs.
 - `effort.ts` — `/effort [level]` stores per-model thinking effort in the current Pi session; `effort.json` supplies defaults only.
 - `fileops/` — replaces the built-in local file workflow with `read`, `search`, `find`, `write`, and a configurable `edit` tool. Default edit mode is hashline.
@@ -90,6 +91,43 @@ launched `/spawn` sessions are not descendants and are not included.
 - `subagents/` — concurrent nested Pi sessions with messaging, follow-up tasks, interrupts, and `/subagents` for inspection.
 - `runtime-support/` — loads shared package UI support and `/xsettings` once, and gives native Code Mode/tool-search rows compact framing while preserving their renderers and expansion controls. Errors and image results retain native framing.
 - `collapse-transcript/` — keeps the current run's tools and thinking visible, then folds settled activity into timed, expandable rows in fullscreen mode. Assistant prose and standalone notices remain visible; failed tools retain failure counts and their original expanded output. Regular scrollback is unchanged.
+
+### Production diff pane
+
+The right-hand pane defaults on for each session. It appears when tracked
+production files have changes and the fullscreen terminal is at least 120 columns
+wide and 8 rows high. It reserves space rather than covering the transcript,
+keeps at least 72 columns for the main area, and leaves keyboard focus in the
+editor. Other, higher-priority split panes take precedence.
+
+- `/diff-prod on|off|toggle`: control the automatic pane until session restart/reload.
+- `Ctrl+Alt+D` or `/diff-prod focus`: focus the pane or return to the editor.
+- Arrows/`hjkl`: scroll/pan; Page Up/Down: page; `g`/`G`: top/bottom.
+- `q` or Escape: return focus to the editor without hiding the pane.
+- `/diff-prod`: standalone overlay, also available in narrow/regular-mode terminals.
+
+Refresh runs after tools and turns and every three seconds (including changes
+from `!`/`!!` or external editors). Turning the pane off stops its polling.
+Empty diffs and automatic Git/config failures hide the pane; the explicit
+overlay command reports errors. The view stays out of model context.
+
+Both views show repository-wide staged and unstaged **tracked** changes against
+HEAD, excluding common test/spec/fixture paths. Untracked files are not included.
+Before the first commit, comparison uses the empty tree. Renames display as
+deletion/addition so production-to-test moves still show the production deletion;
+binary changes show Git's summary.
+
+Optional `<repo>/.pi/diff-prod.json` replaces the defaults with repository-relative
+Git glob exclusions:
+
+```json
+{"exclude":["**/tests/**","**/*.test.*"]}
+```
+
+`{"exclude":[]}` includes all tracked files. Defaults are in
+`extensions/diff-prod/git.ts`; filtering is path-based, not language-aware.
+
+### Native tools
 
 Pi 1.0.0 supplies Code Mode and tool search. `settings.json` activates
 `codemode` and `tool_search`; `codemode.mode: "only"` routes callable tools
