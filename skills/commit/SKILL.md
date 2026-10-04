@@ -14,7 +14,8 @@ argument-hint: >
 
 Create one accurate Conventional Commit from the intended changes.
 
-@rules/pr-workflow.md and @rules/harness-compat.md apply.
+Read and follow [PR workflow](../../rules/pr-workflow.md) and
+[harness compatibility](../../rules/harness-compat.md).
 
 ## Arguments
 

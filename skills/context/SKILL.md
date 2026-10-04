@@ -18,7 +18,8 @@ Build a useful mental map of existing code and explain it in chat. Scale depth
 to the question: start with orientation, then follow the paths needed to answer
 it rather than inventorying every file.
 
-@rules/context-budget.md and @rules/harness-compat.md apply.
+Read and follow [context budget](../../rules/context-budget.md) and
+[harness compatibility](../../rules/harness-compat.md).
 
 1. Identify the requested scope: repository, subsystem, feature, path, symbol,
    or behavior. Read explicitly supplied input documents as leads to recheck,

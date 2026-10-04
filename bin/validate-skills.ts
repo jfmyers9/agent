@@ -115,8 +115,11 @@ export function validateSkillFile(file: string, root: string, skillNames = disco
 	}
 
 	for (const match of content.matchAll(/@rules\/([A-Za-z0-9_.-]+\.md)/g)) {
-		const target = resolve(root, "rules", match[1]);
-		if (!existsSync(target)) issues.push({ file, message: `missing rule reference: @rules/${match[1]}` });
+		issues.push({ file, message: `use a relative Markdown link instead of @rules/${match[1]}` });
+	}
+	for (const match of content.matchAll(/\[[^\]\n]*\]\((\.[^\s)]+\.md)(?:#[^\s)]*)?\)/g)) {
+		const target = resolve(dirname(file), match[1]);
+		if (!existsSync(target)) issues.push({ file, message: `missing relative reference: ${match[1]}` });
 	}
 	for (const match of content.matchAll(/skills\/([a-z0-9-]+)\/SKILL\.md/g)) {
 		const target = resolve(root, "skills", match[1], "SKILL.md");

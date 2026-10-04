@@ -6,10 +6,10 @@
 
 ## Conciseness
 
-- Make plans extremely concise. Sacrifice grammar for concision.
+- Keep plans concise without sacrificing clarity.
 - Prefer bullet points over prose. Omit filler words.
-- In conversation, be direct. Skip preamble and summaries unless
-  asked.
+- Avoid redundant preambles and summaries; keep progress and completion
+  reports brief.
 
 ## Efficiency
 

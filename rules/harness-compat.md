@@ -14,4 +14,4 @@ Shared instructions and skills must be portable across harnesses.
   `disable-model-invocation`, which the installed adapters understand.
 
 Use `bun run check:skills` as this repository's authoritative schema check.
-For durable storage commands, see `@rules/blueprints.md`.
+For durable storage commands, read [storage rules](./blueprints.md).

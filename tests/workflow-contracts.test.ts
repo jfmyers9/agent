@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
 const read = (path: string) => readFileSync(resolve(root, path), "utf8");
@@ -26,11 +26,15 @@ describe("skill boundaries", () => {
     expect(commit).toContain("when the user explicitly asks to commit changes");
   });
 
-  test("debug investigates failures without applying fixes or coupling storage", () => {
+  test("debug keeps diagnosis read-only but preserves same-request fix authorization", () => {
     const debug = read("skills/debug/SKILL.md");
     expect(debug).toContain("allowed-tools: Bash, Read, Glob, Grep");
     expect(debug).toContain("bug report in chat");
     expect(debug).toContain("Do not apply the fix or add tests");
+    expect(debug).toContain("during diagnosis");
+    expect(debug).toContain("A diagnosis-only request ends with the report");
+    expect(debug).toContain("user also authorizes a fix, including in the same request");
+    expect(debug).toContain("without adding an approval gate");
     expect(debug).toContain("use `$artifact` separately");
     expect(debug).not.toMatch(/blueprint\s+(?:create|status|commit|link)\b/);
   });
@@ -57,7 +61,7 @@ describe("skill boundaries", () => {
     const artifact = read("skills/artifact/SKILL.md");
     expect(artifact).toContain("disable-model-invocation: true");
     expect(artifact).toContain("user-invocable: true");
-    expect(artifact).toContain("@rules/blueprints.md");
+    expect(artifact).toContain("[storage rules](../../rules/blueprints.md)");
     for (const name of skillNames.filter((name) => name !== "artifact")) {
       expect(read(`skills/${name}/SKILL.md`)).not.toMatch(/blueprint (?:create|status|commit|link)\b/);
     }
@@ -70,6 +74,11 @@ describe("skill boundaries", () => {
       const body = read(file);
       for (const match of body.matchAll(/@rules\/([A-Za-z0-9_.-]+\.md)/g)) {
         expect(existsSync(resolve(root, "rules", match[1]))).toBe(true);
+      }
+      if (file.startsWith("skills/") || file.startsWith("rules/")) {
+        for (const match of body.matchAll(/\[[^\]\n]*\]\((\.[^\s)]+\.md)(?:#[^\s)]*)?\)/g)) {
+          expect(existsSync(resolve(root, dirname(file), match[1]))).toBe(true);
+        }
       }
       for (const match of body.matchAll(/\/skill:([a-z][a-z0-9-]*)/g)) {
         expect(skillNames).toContain(match[1]);

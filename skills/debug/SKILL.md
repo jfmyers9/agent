@@ -3,7 +3,7 @@ name: debug
 description: >
   Reproduce and investigate bugs, test failures, and CI failures, then produce
   an evidence-backed bug report with code pointers and recommended next steps.
-  Use for diagnosis before changing code; this skill does not apply fixes.
+  Use for diagnosis before changing code; diagnosis alone does not authorize fixes.
   Use artifact separately when saving the report is requested.
   Invoke only as /skill:debug or $debug.
 disable-model-invocation: true
@@ -17,7 +17,8 @@ argument-hint: "<failure-description> [input-document]"
 Investigate a failure and return a concise bug report in chat. Establish the
 cause from evidence before recommending a fix; keep uncertainty explicit.
 
-@rules/context-budget.md and @rules/harness-compat.md apply.
+Read and follow [context budget](../../rules/context-budget.md) and
+[harness compatibility](../../rules/harness-compat.md).
 
 1. Establish expected behavior, actual behavior, affected scope, and the known
    trigger from the conversation. Read an explicitly supplied input document
@@ -40,7 +41,8 @@ cause from evidence before recommending a fix; keep uncertainty explicit.
    is unavailable, explain what can still be established from source or logs.
 5. Recommend the smallest complete correction only as far as the evidence
    supports it. Identify affected code and a regression scenario that would
-   fail before the fix and pass afterward. Do not apply the fix or add tests.
+   fail before the fix and pass afterward. Do not apply the fix or add tests
+   during diagnosis; follow the handoff below for authorized implementation.
    If the cause remains unproven, report the leading hypotheses and the next
    discriminating check instead of presenting a speculative fix as settled.
 6. Return the report below, scaling detail to the failure. Separate observed
@@ -59,10 +61,12 @@ cause from evidence before recommending a fix; keep uncertainty explicit.
 
 ## Handoff
 
-Debug stops with the report without editing source, updating input documents,
-staging, committing, or assigning workflow status. A later request to fix the
-issue can use the report as context through ordinary implementation prompts;
-recheck its assumptions against current code before applying changes.
+A diagnosis-only request ends with the report without editing source, updating
+input documents, staging, committing, or assigning workflow status. When the
+user also authorizes a fix, including in the same request, continue with ordinary
+implementation and regression verification without adding an approval gate.
+Recheck the diagnosis against current code before editing; the diagnostic
+phase's read-only constraints do not restrict that authorized implementation.
 
 If saving is explicitly requested, use `$artifact` separately with the report
 and requested destination without an additional confirmation. Otherwise keep

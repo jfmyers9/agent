@@ -17,7 +17,8 @@ argument-hint: "<change-or-design-question> [input-document]"
 Produce a code-grounded design and implementation plan in chat. Scale depth to
 the change; a small task needs a short plan, not a full design document.
 
-@rules/context-budget.md and @rules/harness-compat.md apply.
+Read and follow [context budget](../../rules/context-budget.md) and
+[harness compatibility](../../rules/harness-compat.md).
 
 1. Establish the requested behavior, constraints, non-goals, and observable
    acceptance criteria from the conversation. Read an explicitly supplied

@@ -1,3 +1,16 @@
+diff --git a/src/core/instructions.ts b/src/core/instructions.ts
+index 14bbc5987461fae2ed661b389e165e87c88bc113..3233e7edd26c67a4a22d512316164dfd03659887 100644
+--- a/src/core/instructions.ts
++++ b/src/core/instructions.ts
+@@ -45,7 +45,7 @@ export const DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT =
+ export const DEFAULT_MULTI_AGENT_V2_WAIT_AGENT_USAGE_HINT_TEXT =
+ 	"When calling `wait_agent`, prefer longer waits (minutes) to avoid busy polling.";
+ 
+-export const DEFAULT_MULTI_AGENT_V2_SHARED_USAGE_HINT_TEXT = `Note that collaboration tools cannot be called from inside \`functions.exec\`. Call \`spawn_agent\`, \`send_message\`, \`followup_task\`, \`wait_agent\`, \`interrupt_agent\`, and \`list_agents\` only as direct tool calls using the recipient shown in their tool definitions, such as \`to=functions.collaboration.spawn_agent\`, since they are intentionally absent from the \`functions.exec\` \`tools.*\` namespace. Available tools in \`functions.exec\` are explicitly described with a \`tools\` namespace in the developer message.
++export const DEFAULT_MULTI_AGENT_V2_SHARED_USAGE_HINT_TEXT = `Use collaboration tools through the interface declared by the active harness. When listed as composed tools, call them as \`tools.<name>(...)\` inside \`codemode\`; otherwise use their declared direct tool interface. Do not assume an undeclared namespace or that an unavailable tool can be called.
+ 
+ All agents share the same directory. In detail:
+ - All agents have access to the same container and filesystem as you.
 diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
 --- a/src/runtime/agent-runner.ts
 +++ b/src/runtime/agent-runner.ts

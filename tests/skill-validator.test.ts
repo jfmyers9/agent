@@ -49,6 +49,7 @@ describe("skill schema failures", () => {
         "---",
         "",
         "@rules/missing.md applies.",
+        "Read [missing rule](../../rules/missing.md).",
         "Use $missing-skill or /skill:also-missing.",
       ].join("\n"),
     );
@@ -58,9 +59,36 @@ describe("skill schema failures", () => {
     expect(issues).toContain("non-portable allowed tool: NativeTask");
     expect(issues).toContain("argument-hint must be a string");
     expect(issues).toContain("metadata must be a mapping");
-    expect(issues).toContain("missing rule reference: @rules/missing.md");
+    expect(issues).toContain("use a relative Markdown link instead of @rules/missing.md");
+    expect(issues).toContain("missing relative reference: ../../rules/missing.md");
     expect(issues).toContain("missing skill invocation: $missing-skill");
     expect(issues).toContain("missing skill invocation: /skill:also-missing");
     rmSync(fixture, { recursive: true, force: true });
   });
+});
+
+test("relative rule links resolve from the skill, not the repository root", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "skill-validator-"));
+  const directory = join(fixture, "skills", "example");
+  mkdirSync(directory, { recursive: true });
+  mkdirSync(join(fixture, "rules"));
+  const file = join(directory, "SKILL.md");
+  const body = `---
+name: example
+description: A sufficiently specific fixture skill description.
+allowed-tools: Read
+---
+Read [shared rules](../../rules/example.md#guidance).
+`;
+  try {
+    writeFileSync(join(fixture, "rules", "example.md"), "# Guidance\n");
+    writeFileSync(file, body);
+    expect(validateSkillFile(file, fixture)).toEqual([]);
+    writeFileSync(file, body.replace("../../rules/", "./rules/"));
+    expect(validateSkillFile(file, fixture).map((issue) => issue.message)).toEqual([
+      "missing relative reference: ./rules/example.md",
+    ]);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });

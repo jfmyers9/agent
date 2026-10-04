@@ -14,8 +14,9 @@ argument-hint: "<what to save or investigate> [destination]"
 
 Write a concise document that another prompt can use without this conversation.
 
-@rules/blueprints.md, @rules/artifact-readability.md, and
-@rules/harness-compat.md apply.
+Read and follow [storage rules](../../rules/blueprints.md),
+[artifact readability](../../rules/artifact-readability.md), and
+[harness compatibility](../../rules/harness-compat.md).
 
 1. Determine the requested subject, purpose, and destination from the prompt.
    Reuse relevant conversation evidence. Investigate missing details only as

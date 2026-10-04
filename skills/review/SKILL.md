@@ -14,7 +14,7 @@ argument-hint: "[--local|<branch>|<PR>] [--path <glob>]"
 
 Assess the approach and report actionable defects with concrete evidence.
 
-@rules/harness-compat.md applies.
+Read and follow [harness compatibility](../../rules/harness-compat.md).
 
 ## Scope
 

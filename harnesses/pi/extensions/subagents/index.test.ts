@@ -5,6 +5,19 @@ import { hasActiveSubagents, installCoordinatorLookup } from "./runtime.ts";
 
 afterEach(() => installCoordinatorLookup(() => undefined));
 
+test("root and child guidance defer to the active tool interface", async () => {
+	const instructions = await import(new URL("./core/instructions.ts", import.meta.resolve("@luan.sh/pi-subagents")).href);
+	for (const path of ["/root", "/root/worker"]) {
+		const prompt = instructions.multiAgentRoleInstructions(path, 4);
+		expect(prompt).toContain("interface declared by the active harness");
+		expect(prompt).toContain("`tools.<name>(...)` inside `codemode`");
+		expect(prompt).toContain("otherwise use their declared direct tool interface");
+		expect(prompt).toContain("Do not assume an undeclared namespace");
+		expect(prompt).not.toContain("functions.exec");
+		expect(prompt).not.toContain("functions.collaboration");
+	}
+});
+
 test("loads the installed subagent extension and exposes all collaboration tools", async () => {
 	const tools: string[] = [];
 	const commands: string[] = [];
