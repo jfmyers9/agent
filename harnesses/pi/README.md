@@ -239,3 +239,48 @@ bun run test:pi-token
 bun run test:pi-spawn
 PI_CONFIG_DIR=$(mktemp -d) ./install.sh pi
 ```
+
+## Behavioral prompt evaluations
+
+These opt-in model runs exercise the current base prompt, global instructions,
+and skill bodies against a small in-memory workspace. They complement, rather
+than replace, the prompt-rendering and schema tests.
+
+```sh
+bun run eval:prompts --list
+bun run eval:prompts --model <provider>/<model>
+bun run eval:prompts --model <provider>/<model> --case diagnose-and-fix
+```
+
+An explicit model is required. The runner uses pi's configured credentials and
+model catalog; live calls incur provider usage. It does not load extensions or
+extension-provided models. Ordinary `bun test` runs only offline runner/grader
+tests and makes no model requests.
+
+Cases check observable tool calls and state:
+
+- Diagnosis alone reproduces the failure without editing.
+- Diagnosis plus an authorized fix changes the source and verifies afterward,
+  without asking for redundant approval.
+- A context skill loads its referenced rules through resolvable paths.
+- An ambiguous commit asks how to split unrelated changes and preserves the index.
+- An unavailable search tool is not invented; available reads suffice.
+
+Model-controlled tools operate only on allowlisted instruction copies and virtual
+workspace files. No command or generated code executes on the host, and there is
+no real Git index or filesystem mutation. The simulated shell supports only the
+commands named in its tool description. The synthetic test recognizes the fixture's
+simple addition correction; it is not a general TypeScript test runner.
+
+Runs are sequential and bounded to eight turns, twenty tool calls per turn,
+2048 output tokens per turn, and ninety seconds per case. Output goes to stdout:
+a prompt/fixture fingerprint, pass/fail/error status, failed checks, bounded tool
+results, final response, and provider-reported token/cost estimates. An incomplete
+or provider-failed run is an error, not a behavioral failure or passing result.
+Any non-passing case produces a nonzero exit status. Nothing is saved by default.
+
+These are controlled direct-tool contract probes, not end-to-end tests of Code
+Mode, real shell/Git behavior, full extension composition, or prose accuracy.
+A single passing run does not establish reliability; repeat relevant cases on
+the same model when comparing instruction changes and inspect failed traces
+before attributing a failure to the prompt rather than the simulator.

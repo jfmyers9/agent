@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "include": [
+    "bin/eval-prompts.ts",
     "harnesses/pi/extensions/*.ts",
     "harnesses/pi/extensions/agents-local/**/*.ts",
     "harnesses/pi/extensions/ask/**/*.ts",

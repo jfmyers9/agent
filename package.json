@@ -7,6 +7,7 @@
     "check:biome": "biome lint --error-on-warnings .",
     "check:blueprint-shell": "sh -n bin/blueprint && bash -n install.sh",
     "check:skills": "bun bin/validate-skills.ts",
+    "eval:prompts": "bun bin/eval-prompts.ts",
     "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings",
     "typecheck": "tsc --noEmit --pretty false --project tsconfig.typecheck.json",
     "test": "bun run test:rust && bun run test:blueprint && bun run test:pi-low-risk && bun run test:pi-context && bun run test:pi-exec && bun run test:pi-fileops && bun run test:pi-apply-patch && bun run test:pi-skillful && bun run test:pi-system && bun run test:pi-tui && bun run test:pi-token && bun run test:pi-spawn && bun run test:pi-vim && bun run test:pi-composition && bun run test:pi-async && bun run test:pi-presentation",
