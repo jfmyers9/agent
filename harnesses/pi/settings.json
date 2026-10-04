@@ -46,7 +46,7 @@
     "clearOnShrink": false,
     "showTerminalProgress": true
   },
-  "lastChangelogVersion": "1.0.1",
+  "lastChangelogVersion": "1.0.2",
   "packages": [
     "npm:@dreki-gg/pi-context7@0.2.0"
   ],
