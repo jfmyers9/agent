@@ -2,8 +2,8 @@
   "defaultProvider": "openai",
   "theme": "dark",
   "tuiMode": "regular",
-  "defaultThinkingLevel": "medium",
-  "defaultModel": "gpt-6-astra",
+  "defaultThinkingLevel": "high",
+  "defaultModel": "gpt-6.1-sol",
   "enabledModels": [
     "openai/gpt-6-astra",
     "openai/gpt-6-luna",
