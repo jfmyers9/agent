@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
+import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { ensureActionsRegistry } from "@luan.sh/pi-libactions/sdk";
 import { dispatchEditorRender, ensureEditorRegistry } from "@luan.sh/pi-libtui/editor";
 import { ensureMouseRegistry } from "@luan.sh/pi-libtui/mouse";
@@ -10,7 +11,11 @@ import { attachActionShortcuts } from "../node_modules/@luan.sh/pi-xsettings/src
 test("configured review action binds through the existing shortcut host and cleans up on reload", async () => {
 	const bindings = JSON.parse(await readFile(new URL("../harnesses/pi/keybindings.json", import.meta.url), "utf8"));
 	const settings = JSON.parse(await readFile(new URL("../harnesses/pi/settings.json", import.meta.url), "utf8"));
-	expect(bindings["panels.tuicr.open"]).toEqual(["ctrl+shift+g"]);
+	expect(bindings["panels.tuicr.open"]).toEqual(["ctrl+alt+g"]);
+	const builtinBindings = new KeybindingsManager(TUI_KEYBINDINGS, bindings).getResolvedBindings();
+	for (const keys of Object.values(builtinBindings)) {
+		expect(Array.isArray(keys) ? keys : [keys]).not.toContain(bindings["panels.tuicr.open"][0]);
+	}
 	expect(bindings["app.editor.external"]).toEqual(["ctrl+g"]);
 	expect(settings.extensions).toContain("extensions/tuicr.ts");
 	expect(settings.extensions.indexOf("extensions/runtime-support/index.ts")).toBeLessThan(
@@ -44,7 +49,7 @@ test("configured review action binds through the existing shortcut host and clea
 		expect(ensureActionsRegistry().find("panels.tuicr.open")).toBeUndefined();
 		start({}, ctx);
 		expect(ensureActionsRegistry().find("panels.tuicr.open")?.description).toBe("Review changes with tuicr");
-		expect(shortcuts.get("ctrl+shift+g")?.description).toBe("Review changes with tuicr");
+		expect(shortcuts.get("ctrl+alt+g")?.description).toBe("Review changes with tuicr");
 		expect(handlers.get("input")!({ source: "interactive", text: "normal prompt" })).toEqual({ action: "continue" });
 		handlers.get("session_shutdown")!({ reason: "reload" }, ctx);
 		expect(ensureActionsRegistry().find("panels.tuicr.open")).toBeUndefined();
