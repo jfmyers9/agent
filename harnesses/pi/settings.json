@@ -68,6 +68,7 @@
     "extensions/diff-prod/index.ts",
     "extensions/tuicr.ts",
     "extensions/effort.ts",
+    "extensions/fast-mode.ts",
     "extensions/prompt-storage/index.ts",
     "extensions/vim/index.ts",
     "extensions/skillful/index.ts",

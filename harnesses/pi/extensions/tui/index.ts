@@ -236,7 +236,9 @@ export default function (pi: ExtensionAPI) {
 			usageLine = "";
 			statusWidth = safeWidth;
 		}
-		const topStatus = renderEditorTopStatus(state, currentConfig, cwd, theme, statusWidth);
+		const fast = getFastStatus?.();
+		const topState = fast ? { ...state, modelLabel: `${state.modelLabel} · ${fast}` } : state;
+		const topStatus = renderEditorTopStatus(topState, currentConfig, cwd, theme, statusWidth);
 		return [usageLine, topStatus].filter(Boolean).join("  ");
 	};
 
@@ -414,11 +416,13 @@ export default function (pi: ExtensionAPI) {
 		}, USAGE_REFRESH_INTERVAL);
 	};
 
+	let getFastStatus: (() => string | undefined) | undefined;
 	const installFooter = (ctx: ExtensionContext) => {
 		const generation = uiGeneration;
 		syncStateIfCurrent(ctx);
 
 		ctx.ui.setFooter((tui, _theme, footerData) => {
+			getFastStatus = () => footerData.getExtensionStatuses().get("openai-fast-mode");
 			requestFooterRender = () => tui.requestRender();
 			const disposeFocusCursor = installFocusCursor(pi, ctx, tui);
 			const unsubscribeBranch = footerData.onBranchChange(() => {
@@ -433,6 +437,7 @@ export default function (pi: ExtensionAPI) {
 
 			return {
 				dispose: () => {
+					getFastStatus = undefined;
 					disposeFocusCursor();
 					unsubscribeBranch();
 					requestFooterRender = undefined;

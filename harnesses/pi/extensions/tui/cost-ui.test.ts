@@ -27,10 +27,12 @@ describe("TUI cost integration", () => {
 	let ctx: any;
 
 	function context(id: string, cost = 1) {
+		const statuses = new Map<string, string>();
 		const entries = [
 			{ type: "usage", id: "usage", parentId: null, usage: { input: 10, output: 2, cost: { total: cost } } },
 		];
 		return {
+			statuses,
 			cwd: "/test-project",
 			model: { name: "test-model", contextWindow: 100000 },
 			modelRegistry: { find: () => undefined },
@@ -46,7 +48,11 @@ describe("TUI cost integration", () => {
 				theme,
 				notify: notices,
 				setWorkingVisible: () => {},
-				setFooter: (factory: Handler) => factory({ requestRender: renders }, theme, { onBranchChange: () => () => {} }),
+				setFooter: (factory: Handler) =>
+					factory({ requestRender: renders }, theme, {
+						onBranchChange: () => () => {},
+						getExtensionStatuses: () => statuses,
+					}),
 			},
 		};
 	}
@@ -94,6 +100,15 @@ describe("TUI cost integration", () => {
 		await handlers.get("session_shutdown")?.({}, ctx);
 		installCoordinatorLookup(() => undefined);
 		mock.restore();
+	});
+
+	test("fast mode status appears beside the model and disappears without rebuilding context", async () => {
+		await handlers.get("session_start")!({}, ctx);
+		expect(chrome?.(240, theme, { modeReserve: 0 }).topRight).not.toContain("· fast");
+		ctx.statuses.set("openai-fast-mode", "fast");
+		expect(chrome?.(240, theme, { modeReserve: 0 }).topRight).toContain("test-model · fast");
+		ctx.statuses.delete("openai-fast-mode");
+		expect(chrome?.(240, theme, { modeReserve: 0 }).topRight).not.toContain("· fast");
 	});
 
 	test("child-only cost updates refresh the idle parent's editor without rebuilding context", async () => {
@@ -166,10 +181,7 @@ describe("TUI cost integration", () => {
 		expect(() => [...timers][0].callback()).not.toThrow();
 		expect(timers.size).toBe(0);
 		expect(status()).toContain("$1.25 ?");
-		expect(notices.mock.calls.at(-1)).toEqual([
-			"Cost updates paused: unavailable ledger. Reload to retry.",
-			"warning",
-		]);
+		expect(notices.mock.calls.at(-1)).toEqual(["Cost updates paused: unavailable ledger. Reload to retry.", "warning"]);
 	});
 });
 
