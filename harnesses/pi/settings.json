@@ -1,7 +1,6 @@
 {
   "defaultProvider": "openai",
   "theme": "dark",
-  "tuiMode": "regular",
   "defaultThinkingLevel": "high",
   "defaultModel": "gpt-6.1-sol",
   "enabledModels": [
