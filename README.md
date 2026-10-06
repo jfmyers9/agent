@@ -86,7 +86,6 @@ harnesses/
     settings.json          # Pi settings
     keybindings.json       # Pi TUI keybindings
     tui.json               # Pi TUI footer/icon colors
-    effort.json            # Pi per-model thinking defaults
     xsettings.toml         # Pi tool composition, discovery, and subagents
     extensions/            # Pi extensions
   codex/
@@ -142,7 +141,7 @@ Installed by `./install.sh pi` into `~/.pi/agent`:
 
 - links `global/AGENTS.md`, `rules/`, `skills/`
 - links `harnesses/pi/settings.json` as `settings.json`
-- links Pi `keybindings.json`, `tui.json`, and `effort.json` when present
+- links Pi `keybindings.json` and `tui.json` when present
 - links Pi extensions named in `settings.json`, plus shared extension support, and prunes stale owned extension links
 - installs `blueprint` and `git-surgeon` to `~/.local/bin`
 - builds `crates/context-guard` and links `context-guard` to `~/.local/bin`

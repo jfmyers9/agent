@@ -119,7 +119,7 @@ plan_pi() {
 	add_link "$SCRIPT_DIR/skills" "$dir/skills"
 	add_link "$SCRIPT_DIR/harnesses/pi/settings.json" "$dir/settings.json"
 	local config
-	for config in keybindings.json tui.json effort.json models.json xsettings.toml; do
+	for config in keybindings.json tui.json models.json xsettings.toml; do
 		[ -f "$SCRIPT_DIR/harnesses/pi/$config" ] || continue
 		add_link "$SCRIPT_DIR/harnesses/pi/$config" "$dir/$config"
 	done
@@ -461,7 +461,6 @@ validate_json_sources() {
 		"$SCRIPT_DIR/harnesses/pi/settings.json"
 		"$SCRIPT_DIR/harnesses/pi/keybindings.json"
 		"$SCRIPT_DIR/harnesses/pi/tui.json"
-		"$SCRIPT_DIR/harnesses/pi/effort.json"
 		"$SCRIPT_DIR/harnesses/codex/hooks.json"
 		"$SCRIPT_DIR/harnesses/codex/packages.json"
 	)

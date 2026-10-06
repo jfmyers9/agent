@@ -16,7 +16,6 @@ Pi loads:
 - `harnesses/pi/settings.json` for model, package, and extension defaults
 - `harnesses/pi/keybindings.json` for Emacs-style editor/session shortcuts
 - `harnesses/pi/tui.json` for status/footer icon, color, compact-mode, and usage-bar preferences
-- `harnesses/pi/effort.json` for read-only per-model thinking defaults used by `/effort`
 - `harnesses/pi/xsettings.toml` for subagent settings
 - `harnesses/pi/extensions/` as global Pi extension sources
 - `npm:pi-lens` for AST/LSP/code-intelligence checks
@@ -58,6 +57,10 @@ Feature decisions from the Luan config review are tracked in
 
 Compaction uses Pi's built-in implementation.
 
+Thinking levels use Pi's native `/thinking` command and `defaultThinkingLevel`
+setting (currently `high`). Use `modelThinkingLevels` in `settings.json` only
+when a per-model startup default is needed.
+
 Installed extensions:
 
 - `agents-local/` — injects untracked `AGENTS.local.md` / `CLAUDE.local.md` context from cwd ancestors; `/agents-local` lists loaded files.
@@ -66,7 +69,6 @@ Installed extensions:
 - `diff-prod/` — automatically shows a production diff beside the fullscreen transcript/editor; `/diff-prod` opens the standalone overlay. See [Production diff pane](#production-diff-pane).
 - `tuicr.ts` — `Ctrl+Alt+G` opens the pinned `@luan.sh/pi-tuicr` review integration. Choose uncommitted changes, a branch, commits, or a PR, then review in a fullscreen overlay. New review comments become an editor attachment and expand into your next submitted prompt; nothing is submitted automatically. This is separate from the production-only diff pane: review targets include test files. Requires the `tuicr` executable (`brew install tuicr` on macOS) and Rust for the embedded terminal bridge's first-use build. The existing runtime-support extension supplies the UI and shortcut hosts; the optional `pi-panels` package is not installed.
 - `async-questions/` — `request_user_input_async` presents inline questions without blocking independent work. Answers arrive through steering; `/questions` focuses pending questions and `/questions dismiss` dismisses the oldest group without granting approval. Pending questions and submitted answers are session-local and survive resume. The existing `ask_user` remains available for multi-select and preview dialogs.
-- `effort.ts` — `/effort [level]` stores per-model thinking effort in the current Pi session; `effort.json` supplies defaults only.
 - `fast-mode.ts` — requests OpenAI priority processing by default for first-party GPT Responses routes (`openai`, including ChatGPT sign-in, and legacy `openai-codex`). `Alt+G` toggles; `/fast` shows status; `/fast on|off|toggle` changes it. The `fast` label beside the model means **priority requested**, not confirmed. Overrides persist on the current session branch across reloads; fresh sessions default on. Unsupported providers/endpoints remain unchanged, and reasoning effort is unaffected. OpenAI controls eligibility and higher cost/quota consumption. Pi's displayed cost can undercount if the provider omits its actual service tier; this extension does not modify usage accounting. Uses native request hooks, not a replacement provider; custom cross-provider routing is not supported.
 - `fileops/` — replaces the built-in local file workflow with `read`, `search`, `find`, `write`, and a configurable `edit` tool. Default edit mode is hashline.
 - `apply-patch/` — registers Codex's `apply_patch` format for GPT models and switches GPT sessions away from `edit`/`write`.
