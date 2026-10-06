@@ -32,6 +32,7 @@ describe("TUI cost integration", () => {
 			{ type: "usage", id: "usage", parentId: null, usage: { input: 10, output: 2, cost: { total: cost } } },
 		];
 		return {
+			hasUI: true,
 			statuses,
 			cwd: "/test-project",
 			model: { name: "test-model", contextWindow: 100000 },
@@ -80,6 +81,7 @@ describe("TUI cost integration", () => {
 		spyOn(terminal, "terminalRows").mockReturnValue(40);
 		spyOn(cursor, "installFocusCursor").mockReturnValue(() => {});
 		spyOn(editor, "installEditorComposition").mockImplementation(() => {});
+		spyOn(editor, "setWorkingAnimationState").mockImplementation(() => {});
 		spyOn(editor, "setEditorChromeProvider").mockImplementation((provider) => {
 			chrome = provider;
 		});
@@ -146,6 +148,34 @@ describe("TUI cost integration", () => {
 		secondTimer.callback(); // Already queued callbacks must also be inert.
 		expect(second.sessionManager.getEntries.mock.calls.length).toBe(readsAfterShutdown);
 		expect(chrome).toBeUndefined();
+	});
+
+	test("headless subagents cannot replace or clear the parent's cost display", async () => {
+		await handlers.get("session_start")!({}, ctx);
+		const childHandlers = new Map<string, Handler>();
+		extension({
+			on: (event: string, handler: Handler) => childHandlers.set(event, handler),
+			registerCommand: () => {},
+			registerMessageRenderer: () => {},
+			registerEntryRenderer: () => {},
+		} as any);
+		const child = context("child", 0);
+		child.hasUI = false;
+		await childHandlers.get("session_start")!({}, child);
+		expect(status()).toContain("$1.25");
+		expect(editor.installEditorComposition).toHaveBeenCalledTimes(1);
+		expect(timers.size).toBe(1);
+
+		child.sessionManager.getEntries.mockReturnValue([
+			{ type: "usage", id: "child-usage", parentId: null, usage: { input: 10, output: 2, cost: { total: 9 } } },
+		]);
+		await childHandlers.get("agent_start")!({}, child);
+		await childHandlers.get("message_update")!({ message: {} }, child);
+		await childHandlers.get("agent_end")!({}, child);
+		await childHandlers.get("session_shutdown")!({}, child);
+		expect(status()).toContain("$1.25");
+		expect(editor.setWorkingAnimationState).not.toHaveBeenCalled();
+		expect(timers.size).toBe(1);
 	});
 
 	test("a stale session context stops polling instead of repeatedly throwing", async () => {

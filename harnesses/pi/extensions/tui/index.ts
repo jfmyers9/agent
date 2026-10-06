@@ -304,7 +304,7 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const syncStateIfCurrent = (ctx: ExtensionContext, activeMessage?: unknown) => {
-		if (disposed) return false;
+		if (disposed || !ctx.hasUI) return false;
 		try {
 			syncState(ctx, activeMessage);
 			return true;
@@ -530,6 +530,8 @@ export default function (pi: ExtensionAPI) {
 	);
 
 	pi.on("session_start", async (_event, ctx) => {
+		// Headless children share the editor prototype with the interactive parent.
+		if (!ctx.hasUI) return;
 		disposed = false;
 		uiGeneration++;
 		installUi(ctx);
@@ -561,7 +563,8 @@ export default function (pi: ExtensionAPI) {
 		if (syncStateIfCurrent(ctx)) refresh();
 	});
 
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", async (_event, ctx) => {
+		if (!ctx.hasUI) return;
 		disposed = true;
 		if (costTimer) clearInterval(costTimer);
 		costTimer = undefined;
@@ -578,8 +581,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_start", async (_event, ctx) => {
-		turnDurationTimer.start();
 		if (!syncStateIfCurrent(ctx)) return;
+		turnDurationTimer.start();
 		startWorkingAnimation();
 	});
 
