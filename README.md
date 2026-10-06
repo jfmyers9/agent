@@ -38,7 +38,6 @@ Environment overrides:
 ## Prerequisites
 
 - `git`
-- Graphite CLI (`gt`) for explicit stacked branch / PR skills
 - GitHub CLI (`gh`) for PR and issue metadata
 - Node.js for config validation and Pi extensions
 - Python 3 for Claude statusline only

@@ -19,9 +19,9 @@ Read and follow [harness compatibility](../../rules/harness-compat.md).
 ## Scope
 
 - `--local`: staged, unstaged, and relevant untracked changes against `HEAD`.
-- `<branch>`: merge-base diff against its PR base or Graphite parent, falling
-  back to trunk. Resolve the actual parent rather than reviewing an entire
-  stack against trunk.
+- `<branch>`: merge-base diff against its PR base or parent branch in its
+  native GitHub stack, falling back to trunk. Resolve the actual parent rather
+  than reviewing an entire stack against trunk.
 - `<PR>`: resolve the pull request's base and head without checking it out.
 - No target: current branch; use local changes when on trunk. Identify dirty
   worktree changes separately from a committed branch or PR review.
