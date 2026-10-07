@@ -1,13 +1,14 @@
 ---
 name: review
 description: >
-  Review code changes for material introduced defects and whether the approach
-  achieves the intended outcome. Return evidence-backed findings in chat.
+  Perform a formal, multi-perspective code review of introduced defects and
+  whether the approach achieves the intended outcome. Return a decision and
+  evidence-backed findings in chat.
   Invoke only as /skill:review or $review.
 disable-model-invocation: true
 user-invocable: true
 allowed-tools: Bash, Read, Glob, Grep
-argument-hint: "[--local|<branch>|<PR>] [--path <glob>]"
+argument-hint: "[--local|<branch>|<PR>] [--path <glob>] [--team]"
 ---
 
 # Review
@@ -27,6 +28,8 @@ Read and follow [harness compatibility](../../rules/harness-compat.md).
   worktree changes separately from a committed branch or PR review.
 - `--path <glob>`: restrict the resolved change set to matching changed files.
   Label the review partial; do not claim the whole changeset is ready to merge.
+- `--team`: explicitly request independent persona subagents; this is also the
+  default when delegation is available.
 
 Record the target, base and head SHAs, and meaningful scope exclusions. For a
 local review, record `HEAD` and describe the working-tree scope. If the code
@@ -44,6 +47,8 @@ additional actions. Do not discover unrelated artifacts automatically.
 Read repository instructions, the diff, and the stated objective before
 line-level analysis. Mark inferred intent explicitly. Ask only when ambiguity
 prevents a meaningful conclusion; continue reviewing independent behavior.
+Use relevant PR descriptions and commits as claims to verify, not proof that
+the implementation achieves its goal.
 
 Check that the problem exists, the mechanism achieves the objective, and the
 change preserves relevant acceptance criteria, contracts, and non-goals.
@@ -52,36 +57,61 @@ affect the result. Evaluate new public options, defaults, and authorization
 boundaries against the requested experience; do not invent product controls as
 fixes without a demonstrated need.
 
-Recommend replacing the central approach only when local corrections cannot
+Require replacing the central approach only when local corrections cannot
 make it acceptable. Explain the decisive evidence and a feasible alternative.
 In that case, prioritize the structural problem and independent critical risks
 instead of cataloguing repairs to code that should be replaced.
 
+## Review Personas
+
+Use the personas below for their distinct questions. Read each
+applicable perspective before reviewing; do not invent findings to fill a role.
+Design Coherence and Taste inform the approach assessment. The other personas
+investigate the implementation after that assessment.
+
+| Persona / perspective | Apply when these change |
+| --- | --- |
+| [Architect](perspectives/architect.md) | Ownership, interfaces, dependencies |
+| [Taste](perspectives/taste.md) | Concepts, state, lifecycle, persistence, abstractions |
+| [Code Quality](perspectives/code-quality.md) | Behavior, nontrivial control flow |
+| [Devil's Advocate](perspectives/devils-advocate.md) | Trust, failures, concurrency, input |
+| [Operations](perspectives/operations.md) | Persistence, deployment, services, resources |
+| [Test Quality](perspectives/test-quality.md) | Tests, or a candidate's regression coverage |
+| [Design Coherence](perspectives/coherence.md) | Explicit requirements are supplied |
+
+Use independent subagents for applicable personas whenever delegation is
+available, including a separate Taste reviewer for design changes. Run
+independent passes in parallel within available concurrency. If delegation is
+unavailable, apply the same perspectives sequentially and report the limitation.
+
+Give every reviewer the same objective, scope, base/head, changed-file list,
+relevant intent sources and access to the actual diff and source. Assign a
+persona rather than an arbitrary file slice; cross-file defects require tracing
+the whole affected flow. Reviewers return a brief assessment, checked paths,
+candidate findings with evidence, and unresolved questions. They do not modify
+files or remote state. The primary reviewer owns the final decision.
+
 ## Investigate Candidates
 
-Trace changed behavior through callers, consumers, state transitions, error
-paths, and asynchronous boundaries. Apply checks where the change creates a
-relevant risk:
-
-- Correctness: observable behavior, defaults, contracts, ownership, and lifetime.
-- Design: changed responsibilities, dependencies, abstractions, or public
-  surface with a concrete failure or maintenance cost.
-- Security: changed trust boundaries, authorization, validation, disclosure,
-  injection, or secret handling with a reachable exploit path.
-- Operations: affected persistence, races, atomicity, retries, partial failure,
-  resource bounds, or rollout compatibility.
-- Tests: a named regression that coverage misses, false confidence from an
-  assertion or mock, or realistic flakiness. Check existing coverage before
-  claiming a gap; suggest a concrete setup, action, and assertion.
+Trace changed behavior through callers, consumers, state transitions and error
+paths. For asynchronous or concurrent flows, follow the complete runtime path:
+what happens before the first yield, state visible between yields, guards,
+early returns, callbacks, cancellation and cleanup. Verify comments and claimed
+ordering against that trace. When interface semantics change, find existing
+callers, including previously ignored inputs that now take effect.
 
 Keep a finding only when the change introduced or newly activated a material
 problem, a reachable trigger has concrete impact, and source or execution
 evidence establishes it. Verify assumptions against relevant code and run
 focused checks when they help distinguish a defect from a plausible concern.
 Do not run destructive tests or modify reviewed source to prove a finding.
+Treat persona output as candidates, not established findings. Recheck material
+claims against source and existing guards. Reviewer agreement does not establish
+correctness; resolve disagreements with a concrete trace or check, and disclose
+any uncertainty that prevents a decision.
 
 Deduplicate by root cause. Fold missing regression coverage into the underlying
-functional finding. Omit style preferences, optional cleanup, generic hardening,
+functional finding. Omit cosmetic preferences, routine cleanup, generic hardening,
 and speculative future work. Do not search unchanged code for latent defects;
 mention an encountered pre-existing issue separately only when useful, without
 attributing it to this change.
@@ -92,19 +122,47 @@ problems. No persisted finding IDs or closure ledger are required.
 
 ## Report
 
-Lead with the assessment: whether the change is ready within the reviewed
-scope, needs corrections, or requires a different approach. For each finding,
-ordered by impact, provide:
+Lead with an explicit decision for the reviewed scope:
+
+- `GO / proceed`: the approach achieves the objective and no material blockers
+  remain within that scope.
+- `NO-GO / fix`: the approach is viable, but bounded corrections are required.
+- `NO-GO / replace`: local corrections cannot make the central approach viable;
+  identify the decisive evidence and a feasible replacement.
+- `INCONCLUSIVE`: missing intent, evidence or access prevents a supported
+  decision; state exactly what remains unverified.
+
+Rate the approach separately as `sound`, `salvageable` or `misguided`; omit the
+rating when evidence is insufficient. A partial-scope decision never establishes
+that the whole changeset is ready to merge.
+
+State the review basis: objective and intent source, target, base/head (or local
+`HEAD`), exclusions and applied personas. Include short reviewer assessments
+when they explain the decision, and material disagreements with their resolution.
+Include Taste's strongest one or two concrete alternatives in the approach
+assessment when they materially simplify the design. Label them as proposals,
+separate from defect findings; they receive no severity or finding ID. A Taste
+preference alone does not justify `NO-GO`; a verified material failure can.
+For each finding, ordered by impact and labeled `F001`, `F002`, etc., provide:
 
 - A short title and severity: critical, high, or medium.
 - A precise file and line reference, or the relevant cross-file locations.
 - The trigger, resulting impact, and evidence establishing the defect.
 - The required observable correction; prescribe an implementation only when
   the evidence requires it.
+- The contributing personas and checks supporting the claim. A testing gap
+  needs a concrete setup → action → assertion and the regression it catches.
+
+Severity measures impact: `critical` means catastrophic security, data or
+availability failure; `high` means broken core behavior or a likely severe
+failure; `medium` means a bounded material defect. Do not inflate severity
+because several reviewers agree.
 
 Explain any approach concern, then summarize checks actually performed and
-material limitations. If no actionable findings remain, say so directly;
-passing review does not establish correctness outside the inspected scope.
+material limitations. Distinguish inspected source and executed checks from
+supplied descriptions or reported results. If no actionable findings remain,
+say so directly. Passing review does not establish correctness outside the
+inspected scope.
 
 Return the review in chat. Do not edit source, change branches, post comments,
 commit, or write artifacts as part of review. If the user explicitly requests
