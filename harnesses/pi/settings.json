@@ -25,6 +25,7 @@
     "openai-codex/gpt-5.4",
     "openai-codex/gpt-5.4-mini",
     "deepseek/*",
+    "anthropic/claude-opus-5-5",
     "anthropic/claude-opus-5",
     "anthropic/claude-opus-4-8",
     "anthropic/claude-sonnet-4-6",
