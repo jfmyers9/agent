@@ -25,6 +25,7 @@
     "openai-codex/gpt-5.4",
     "openai-codex/gpt-5.4-mini",
     "deepseek/*",
+    "fireworks-gateway/**",
     "anthropic/claude-opus-5-5",
     "anthropic/claude-opus-5",
     "anthropic/claude-opus-4-8",
@@ -47,7 +48,7 @@
     "clearOnShrink": false,
     "showTerminalProgress": true
   },
-  "lastChangelogVersion": "1.0.4",
+  "lastChangelogVersion": "1.1.0",
   "packages": [
     "npm:@dreki-gg/pi-context7@0.2.0"
   ],
