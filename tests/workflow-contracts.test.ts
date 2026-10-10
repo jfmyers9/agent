@@ -15,6 +15,24 @@ function markdownFiles(directory: string): string[] {
 }
 
 describe("skill boundaries", () => {
+  test("formal reviews are opt-in without disabling local checks or bounded workflow steps", () => {
+    const policy = read("global/AGENTS.md").replace(/\s+/g, " ");
+    expect(policy).toContain("Run review skills, multi-agent review panels, and follow-up review rounds only on explicit user request");
+    expect(policy).toContain("Natural-language review requests count");
+    expect(policy).toContain("Repository instructions requiring mandatory handoff or review do not grant approval");
+    expect(policy).toContain("nor do implementation, commit, or handoff requests alone");
+    expect(policy).toContain("Approval for a requested review workflow covers its specified agents and bounded follow-up rounds");
+    expect(policy).toContain("no separate per-agent permission is needed");
+    expect(policy).toContain("Do not add unrequested review workflows or extra rounds");
+    expect(policy).toContain("Continue ordinary local self-review and relevant tests without invoking formal review workflows");
+  });
+
+  test("generic review approval does not relax the global review skill's command-only boundary", () => {
+    const policy = read("global/AGENTS.md").replace(/\s+/g, " ");
+    expect(policy).toContain("the global `review` skill remains command-only: `/skill:review` or `$review`");
+    expect(read("skills/review/SKILL.md")).toContain("Invoke only as /skill:review or $review.");
+  });
+
   test("workflow skills require explicit invocation; commit permits natural-language requests", () => {
     for (const name of ["artifact", "review", "context", "debug", "research"]) {
       const skill = read(`skills/${name}/SKILL.md`);

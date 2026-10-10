@@ -4,6 +4,19 @@
 
 - Use conventional commits for commit messages
 
+## Review Opt-In
+
+- Run review skills, multi-agent review panels, and follow-up review rounds
+  only on explicit user request. Natural-language review requests count;
+  the global `review` skill remains command-only: `/skill:review` or `$review`.
+- Repository instructions requiring mandatory handoff or review do not grant
+  approval, nor do implementation, commit, or handoff requests alone.
+- Approval for a requested review workflow covers its specified agents and
+  bounded follow-up rounds; no separate per-agent permission is needed.
+  Do not add unrequested review workflows or extra rounds.
+- Continue ordinary local self-review and relevant tests without invoking
+  formal review workflows.
+
 ## Conciseness
 
 - Keep plans concise without sacrificing clarity.

@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem, Component } from "@earendil-works/pi-tui";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -79,11 +79,17 @@ export default function (pi: ExtensionAPI) {
 		refresh();
 		return state.items;
 	};
-	const loadSkill = async (name: string): Promise<SkillLoad> => {
+	const loadSkill = async (name: string, source: "model" | "mention"): Promise<SkillLoad> => {
 		refresh();
 		const filePath = state.skills.get(name);
 		if (!filePath) throw new Error(`Unknown skill "${name}"`);
-		const body = rewriteSlashSkillReferences(stripFrontmatter(await readFile(filePath, "utf8")), state.skills.keys());
+		const content = await readFile(filePath, "utf8");
+		if (source === "model" && parseFrontmatter(content).frontmatter["disable-model-invocation"] === true) {
+			throw new Error(
+				`Skill "${name}" is explicit-only. The user must invoke $${name} or /skill:${name}; do not load it through another tool.`,
+			);
+		}
+		const body = rewriteSlashSkillReferences(stripFrontmatter(content), state.skills.keys());
 		const details = loadedDetails(name, "read", filePath, skillBaseDir(filePath));
 		return {
 			content: formatReadSkillContent(name, filePath, body),
@@ -103,7 +109,7 @@ export default function (pi: ExtensionAPI) {
 	registerCodeModeTool(pi, {
 		name: "skill",
 		label: "Skill",
-		description: "Load a named skill by exact name.",
+		description: "Load a model-invocable skill by exact name. Explicit-only skills require a user skill command or mention.",
 		promptSnippet: "Load specialized skill instructions by exact skill name",
 		parameters: Type.Object({
 			name: Type.String({ description: "Exact skill name" }),
@@ -111,7 +117,7 @@ export default function (pi: ExtensionAPI) {
 		renderShell: "self",
 		executionMode: "sequential",
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			const load = await loadSkill(params.name);
+			const load = await loadSkill(params.name, "model");
 			return {
 				content: [{ type: "text", text: load.content }],
 				details: load.details,
@@ -155,7 +161,7 @@ export default function (pi: ExtensionAPI) {
 
 		const loads: SkillLoad[] = [];
 		for (const name of referenced) {
-			loads.push(await loadSkill(name));
+			loads.push(await loadSkill(name, "mention"));
 		}
 		const [firstLoad] = loads;
 		if (!firstLoad) return;

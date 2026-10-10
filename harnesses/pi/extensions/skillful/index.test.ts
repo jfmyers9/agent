@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AutocompleteProvider, EditorComponent } from "@earendil-works/pi-tui";
@@ -387,6 +387,48 @@ describe("skillful extension", () => {
 				?.trim(),
 		).toBe("Skill - tdd read");
 		expect(tool?.renderCall?.({ name: "tdd" }, theme, { isPartial: false })?.render(80)).toEqual([]);
+	});
+
+	test("rejects explicit-only model loads while preserving user mentions and autocomplete", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "skillful-"));
+		const skillPath = join(dir, "SKILL.md");
+		const handlers = new Map<string, (event: { prompt: string }) => Promise<unknown>>();
+		const tools: Array<{ name: string; execute: (id: string, params: { name: string }) => Promise<unknown> }> = [];
+		const pi = {
+			getCommands: () => [{ source: "skill", name: "skill:review", sourceInfo: { path: skillPath } }],
+			on: (event: string, handler: (event: { prompt: string }) => Promise<unknown>) => handlers.set(event, handler),
+			registerTool: (tool: never) => tools.push(tool),
+			registerMessageRenderer() {},
+			events: { emit() {} },
+		};
+		try {
+			extension(pi as never);
+			const tool = tools.find((candidate) => candidate.name === "skill");
+			if (!tool) throw new Error("skill tool missing");
+			const load = () => tool.execute("call", { name: "review" });
+			for (const frontmatter of [
+				"---\nname: review\ndisable-model-invocation: true\n---\n",
+				'\uFEFF---\r\nname: review\n"disable-model-invocation": true # explicit only\r\n---\r\n',
+			]) {
+				writeFileSync(skillPath, `${frontmatter}# Review instructions\n`);
+				await expect(load()).rejects.toThrow('Skill "review" is explicit-only');
+				const result = await handlers.get("before_agent_start")?.({ prompt: "$review this change" });
+				expect(result).toMatchObject({ message: { content: expect.stringContaining("# Review instructions") } });
+				// Explicit injection must not leave the model tool unlocked for later invocations.
+				await expect(load()).rejects.toThrow("The user must invoke $review or /skill:review");
+			}
+			expect(buildItems(new Map([["review", skillPath]]))).toContainEqual({
+				value: "$review", label: "$review", description: "skill",
+			});
+			writeFileSync(skillPath, "---\nname: review\ndisable-model-invocation: false\n---\n# Available\n");
+			expect(await load()).toMatchObject({ content: [{ type: "text", text: expect.stringContaining("# Available") }] });
+			writeFileSync(skillPath, "---\nname: review\ndisable-model-invocation: true\n---\n# Restricted again\n");
+			await expect(load()).rejects.toThrow("explicit-only");
+			writeFileSync(skillPath, "---\nname: review\ndisable-model-invocation: [\n---\n# Invalid YAML\n");
+			await expect(load()).rejects.toThrow();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	test("reinstalls autocomplete provider after reload", async () => {

@@ -197,6 +197,11 @@ Prompt storage is local-only and stores stashes/history in `${XDG_STATE_HOME:-~/
 Context7 is installed as a pinned reviewed Pi package. It registers `context7_resolve_library_id`, `context7_get_library_docs`, and `context7_get_cached_doc_raw`. API key is optional; set `CONTEXT7_API_KEY` for higher limits. Its cache lives under `~/.pi/agent/extensions/context7/cache/`. Pi packages execute extension code with full local privileges, so bump package versions only after review.
 
 Skills are available as `/skill:<name>` and `$skill-name` references by default.
+The `skill` tool rejects skills with `disable-model-invocation: true`; explicit
+user commands and mentions still work. Shared instructions require an explicit
+user request for formal review skills and delegated review workflows, even when
+repository guidance calls them mandatory. Routine self-review and relevant
+checks remain automatic. This is not a filesystem access restriction.
 
 ## Context Guard core
 
