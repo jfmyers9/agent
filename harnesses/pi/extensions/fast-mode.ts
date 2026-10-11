@@ -1,6 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-export const FAST_MODE_ENTRY = "openai-fast-mode";
 export const FAST_MODE_STATUS = "openai-fast-mode";
 type Route = "openai" | "codex";
 type ModelRoute = { provider: string; api: string; id: string; baseUrl: string };
@@ -37,28 +36,20 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 export default function fastMode(pi: ExtensionAPI): void {
-	let enabled = true;
+	let enabled = false;
 	const updateStatus = (ctx: ExtensionContext) => {
 		if (ctx.hasUI) ctx.ui.setStatus(FAST_MODE_STATUS, enabled && fastRoute(ctx.model) ? "fast" : undefined);
 	};
-	const restore = (ctx: ExtensionContext) => {
-		enabled = true;
-		for (const entry of ctx.sessionManager.getBranch()) {
-			if (
-				entry.type === "custom" &&
-				entry.customType === FAST_MODE_ENTRY &&
-				record(entry.data) &&
-				typeof entry.data.enabled === "boolean"
-			)
-				enabled = entry.data.enabled;
-		}
+	const reset = (ctx: ExtensionContext) => {
+		// Priority must be explicitly opted into again, never restored from history.
+		enabled = false;
 		updateStatus(ctx);
 	};
-	pi.on("session_start", (_event, ctx) => restore(ctx));
-	pi.on("session_tree", (_event, ctx) => restore(ctx));
+	pi.on("session_start", (_event, ctx) => reset(ctx));
+	pi.on("session_tree", (_event, ctx) => reset(ctx));
 	pi.on("model_select", (_event, ctx) => updateStatus(ctx));
 	pi.on("session_shutdown", (_event, ctx) => {
-		if (ctx.hasUI) ctx.ui.setStatus(FAST_MODE_STATUS, undefined);
+		reset(ctx);
 	});
 	pi.on("before_provider_request", (event, ctx) => {
 		updateStatus(ctx);
@@ -78,7 +69,6 @@ export default function fastMode(pi: ExtensionAPI): void {
 			return;
 		}
 		enabled = value;
-		pi.appendEntry(FAST_MODE_ENTRY, { enabled });
 		updateStatus(ctx);
 		ctx.ui.notify(
 			enabled
@@ -87,24 +77,22 @@ export default function fastMode(pi: ExtensionAPI): void {
 			"info",
 		);
 	}
-	pi.registerShortcut("alt+g", {
-		description: "Toggle OpenAI/Codex fast mode (priority tier)",
-		handler: async (ctx) => setEnabled(!enabled, ctx),
-	});
 	pi.registerCommand("fast", {
-		description: "Show or set OpenAI/Codex priority routing: /fast [on|off|toggle]",
+		description: "Toggle session-only OpenAI/Codex priority routing: /fast [on|off|toggle|status]",
 		getArgumentCompletions: (prefix) =>
-			["on", "off", "toggle"].filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
+			["on", "off", "toggle", "status"]
+				.filter((value) => value.startsWith(prefix))
+				.map((value) => ({ value, label: value })),
 		handler: async (args, ctx) => {
 			const action = args.trim().toLowerCase();
-			if (!action) {
+			if (action === "status") {
 				ctx.ui.notify(
-					`Fast mode ${enabled ? "on" : "off"}${!fastRoute(ctx.model) ? " (inactive on this model/endpoint)" : enabled ? " — priority requested, not guaranteed" : ""}. Alt+G toggles.`,
+					`Fast mode ${enabled ? "on" : "off"}${!fastRoute(ctx.model) ? " (inactive on this model/endpoint)" : enabled ? " — priority requested, not guaranteed" : ""}. /fast toggles for this session.`,
 					"info",
 				);
-			} else if (["on", "off", "toggle"].includes(action))
-				setEnabled(action === "toggle" ? !enabled : action === "on", ctx);
-			else ctx.ui.notify("Usage: /fast [on|off|toggle]", "warning");
+			} else if (!action || ["on", "off", "toggle"].includes(action))
+				setEnabled(!action || action === "toggle" ? !enabled : action === "on", ctx);
+			else ctx.ui.notify("Usage: /fast [on|off|toggle|status]", "warning");
 		},
 	});
 }

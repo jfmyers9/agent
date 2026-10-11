@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { zstdDecompressSync } from "node:zlib";
-import fastMode, { FAST_MODE_ENTRY, FAST_MODE_STATUS, fastRoute } from "./fast-mode";
+import fastMode, { FAST_MODE_STATUS, fastRoute } from "./fast-mode";
 
 const openai = { provider: "openai", api: "openai-responses", id: "gpt-5.4", baseUrl: "https://api.openai.com/v1" };
 const codex = {
@@ -61,9 +61,27 @@ test("only first-party GPT Responses routes are eligible", () => {
 		expect(fastRoute(model)).toBeUndefined();
 });
 
-test("defaults on and preserves payload fields without mutating caller input", () => {
+test("defaults off before and after session start, with no shortcut or saved state", async () => {
+	for (const model of [openai, codex]) {
+		const f = harness(model);
+		const payload = { model: model.id, service_tier: "auto" };
+		expect(f.handlers.before_provider_request({ payload }, f.ctx)).toBeUndefined();
+		f.handlers.session_start({ reason: "startup" }, f.ctx);
+		expect(f.statuses.has(FAST_MODE_STATUS)).toBe(false);
+		expect(f.handlers.before_provider_request({ payload }, f.ctx)).toBeUndefined();
+		expect(payload.service_tier).toBe("auto");
+		expect(f.shortcut).toBeUndefined();
+		await f.command.handler("status", f.ctx);
+		expect(f.notices.at(-1)).toContain("Fast mode off");
+		expect(f.handlers.before_provider_request({ payload }, f.ctx)).toBeUndefined();
+		expect(f.entries).toHaveLength(0);
+	}
+});
+
+test("explicit opt-in preserves payload fields without mutating caller input", async () => {
 	const f = harness();
 	f.handlers.session_start({}, f.ctx);
+	await f.command.handler("", f.ctx);
 	expect(f.statuses.get(FAST_MODE_STATUS)).toBe("fast");
 	const payload = { model: openai.id, input: [], reasoning: { effort: "high" }, service_tier: "auto" };
 	expect(f.handlers.before_provider_request({ payload }, f.ctx)).toEqual({ ...payload, service_tier: "priority" });
@@ -77,6 +95,7 @@ test("defaults on and preserves payload fields without mutating caller input", (
 
 test("Codex uses body priority without overriding authentication or originator headers", async () => {
 	const f = harness(codex);
+	await f.command.handler("on", f.ctx);
 	expect(f.handlers.before_provider_request({ payload: { model: codex.id } }, f.ctx)).toEqual({
 		model: codex.id,
 		service_tier: "priority",
@@ -85,31 +104,61 @@ test("Codex uses body priority without overriding authentication or originator h
 	await f.command.handler("off", f.ctx);
 	expect(f.handlers.before_provider_request({ payload: { model: codex.id } }, f.ctx)).toBeUndefined();
 });
-test("toggle persists on the session branch, reload restores it, new sessions default on", async () => {
+test("commands toggle only in memory and status and invalid commands do not change it", async () => {
 	const f = harness();
-	await f.shortcut.handler(f.ctx);
-	expect(f.entries).toEqual([{ type: "custom", customType: FAST_MODE_ENTRY, data: { enabled: false } }]);
-	f.handlers.session_start({}, f.ctx);
+	const steps: [string, boolean][] = [
+		["", true],
+		["status", true],
+		["invalid", true],
+		["off", false],
+		["toggle", true],
+		["", false],
+		[" ON ", true],
+		["on", true],
+		["toggle", false],
+	];
+	for (const [action, expected] of steps) {
+		await f.command.handler(action, f.ctx);
+		expect(f.statuses.has(FAST_MODE_STATUS)).toBe(expected);
+		expect(f.handlers.before_provider_request({ payload: { model: openai.id } }, f.ctx)?.service_tier).toBe(
+			expected ? "priority" : undefined,
+		);
+	}
+	expect(f.entries).toHaveLength(0);
+	expect(f.command.getArgumentCompletions("st")).toEqual([{ value: "status", label: "status" }]);
+});
+
+test("session starts and tree navigation reset opt-in and ignore legacy saved overrides", async () => {
+	const f = harness();
+	f.entries.push({ type: "custom", customType: "openai-fast-mode", data: { enabled: true } });
+	for (const reason of ["startup", "reload", "new", "resume", "fork"]) {
+		await f.command.handler("on", f.ctx);
+		expect(f.statuses.get(FAST_MODE_STATUS)).toBe("fast");
+		f.handlers.session_start({ reason }, f.ctx);
+		expect(f.statuses.has(FAST_MODE_STATUS)).toBe(false);
+		expect(f.handlers.before_provider_request({ payload: { model: openai.id } }, f.ctx)).toBeUndefined();
+	}
+	await f.command.handler("on", f.ctx);
+	f.handlers.session_tree({}, f.ctx);
 	expect(f.statuses.has(FAST_MODE_STATUS)).toBe(false);
 	expect(f.handlers.before_provider_request({ payload: { model: openai.id } }, f.ctx)).toBeUndefined();
-	f.entries.length = 0;
-	f.handlers.session_tree({}, f.ctx);
-	expect(f.statuses.get(FAST_MODE_STATUS)).toBe("fast");
+	await f.command.handler("on", f.ctx);
 	f.handlers.session_shutdown({}, f.ctx);
 	expect(f.statuses.has(FAST_MODE_STATUS)).toBe(false);
-	f.handlers.session_start({}, f.ctx);
-	expect(f.statuses.get(FAST_MODE_STATUS)).toBe("fast");
+	expect(f.handlers.before_provider_request({ payload: { model: openai.id } }, f.ctx)).toBeUndefined();
+	expect(f.entries).toHaveLength(1);
 });
 
 test("model changes suspend priority, status and invalid commands are non-mutating", async () => {
 	const f = harness();
+	await f.command.handler("on", f.ctx);
 	f.ctx.model = { ...openai, provider: "other" };
 	f.handlers.model_select({}, f.ctx);
 	expect(f.statuses.has(FAST_MODE_STATUS)).toBe(false);
 	expect(f.handlers.before_provider_request({ payload: { model: openai.id } }, f.ctx)).toBeUndefined();
 	await f.command.handler("on", f.ctx);
 	expect(f.entries).toHaveLength(0);
-	await f.command.handler("", f.ctx);
+	await f.command.handler("status", f.ctx);
 	expect(f.notices.at(-1)).toContain("inactive");
 	await f.command.handler("invalid", f.ctx);
 	expect(f.notices.at(-1)).toContain("Usage");
@@ -120,8 +169,25 @@ test("model changes suspend priority, status and invalid commands are non-mutati
 	expect(f.handlers.before_provider_request({ payload: { model: openai.id } }, f.ctx)?.service_tier).toBe("priority");
 });
 
-test("native OpenAI and Codex adapters transmit priority with mocked HTTP, without changing reasoning", async () => {
-	for (const provider of ["openai", "openai-codex"] as const) {
+test("unsupported routes cannot opt into priority, even after selecting a supported model", async () => {
+	for (const action of ["", "on", "toggle"]) {
+		const f = harness({ ...openai, provider: "other" });
+		await f.command.handler(action, f.ctx);
+		expect(f.notices.at(-1)).toContain("not this model or endpoint");
+		f.ctx.model = openai;
+		f.handlers.model_select({}, f.ctx);
+		expect(f.statuses.has(FAST_MODE_STATUS)).toBe(false);
+		expect(f.handlers.before_provider_request({ payload: { model: openai.id } }, f.ctx)).toBeUndefined();
+	}
+});
+
+test("native OpenAI and Codex HTTP requests use priority only after opt-in, without changing reasoning", async () => {
+	for (const [provider, enabled] of [
+		["openai", false],
+		["openai", true],
+		["openai-codex", false],
+		["openai-codex", true],
+	] as const) {
 		const model = {
 			...(provider === "openai" ? openai : codex),
 			name: "GPT fixture",
@@ -132,6 +198,7 @@ test("native OpenAI and Codex adapters transmit priority with mocked HTTP, witho
 			maxTokens: 8192,
 		};
 		const f = harness(model);
+		if (enabled) await f.command.handler("on", f.ctx);
 		const modulePath = new URL(`./api/${model.api}.js`, import.meta.resolve("@earendil-works/pi-ai")).href;
 		const { stream } = await import(modulePath);
 		let body: any;
@@ -141,7 +208,7 @@ test("native OpenAI and Codex adapters transmit priority with mocked HTTP, witho
 			response: {
 				id: "fixture",
 				status: "completed",
-				service_tier: "priority",
+				service_tier: enabled ? "priority" : "default",
 				output: [],
 				usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2, input_tokens_details: { cached_tokens: 0 } },
 			},
@@ -170,7 +237,7 @@ test("native OpenAI and Codex adapters transmit priority with mocked HTTP, witho
 		const result = await output.result();
 		expect(result.errorMessage).toBeUndefined();
 		expect(result.stopReason).not.toBe("error");
-		expect(body.service_tier).toBe("priority");
+		expect(body.service_tier).toBe(enabled ? "priority" : undefined);
 		expect(body.reasoning.effort).toBe("high");
 		expect(body.model).toBe(model.id);
 	}
