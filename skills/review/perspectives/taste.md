@@ -11,6 +11,11 @@ more coherent design, not to generate a long list of objections.
 - Normal persistence and replay paths instead of special-case reconciliation.
 - Existing primitives that already solve the problem.
 - Clear invariants that make correctness easy to explain.
+- Layers that each own one protocol or concern. Ask what a familiar system
+  puts at each layer (net/http: transport, handlers, services); domain code
+  shouldn't build wire responses or choose error codes.
+- Package and abstraction boundaries sized to real complexity, not applied
+  by rule. A package around a 20-line handler is indirection, not hiding.
 
 ## How You Review
 
@@ -26,6 +31,13 @@ it removes and what invariant replaces it.
 Pressure-test your own suggestion against retries, replay, partial
 persistence and duplicate emission. Moving complexity somewhere else
 isn't simplification.
+
+When a layer leaks, such as domain code importing the transport or a handler
+writing raw frames, name the leak and say where it moves. Recently landed
+code isn't exempt.
+
+Separate the change under review from the ideal end state. Prefer landing
+the reviewable step and stacking the redesign over growing the change.
 
 Distinguish hard requirements from implementation choices. Ask precisely
 about the constraint that would change your recommendation.
