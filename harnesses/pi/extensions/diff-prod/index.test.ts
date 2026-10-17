@@ -165,6 +165,10 @@ test("command handles missing UI, usage, empty diff, and Git errors", async () =
 	await handler("invalid", ctx);
 	expect(messages.pop()).toContain("Usage");
 	await handler("", ctx);
+	expect(messages.pop()).toContain("No captured changes this turn");
+	await handler("repo", ctx);
+	expect(messages.pop()).toContain("Repository");
+	await handler("", ctx);
 	expect(messages.pop()).toContain("No production changes");
 	ctx.cwd = join(ctx.cwd, "missing");
 	await handler("", ctx);

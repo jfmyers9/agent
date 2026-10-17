@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { DiffPane, type MountPane, type PaneDefinition, type PaneHost } from "./pane";
 
-function fixture(read: () => Promise<string> = async () => "+production\n") {
+function fixture(read: () => Promise<string> = async () => "+production\n", title?: () => string) {
 	const terminal = { columns: 140, rows: 24, fullscreen: true };
 	let definition: PaneDefinition | undefined;
 	let component: ReturnType<PaneDefinition["component"]> | undefined;
@@ -35,7 +35,7 @@ function fixture(read: () => Promise<string> = async () => "+production\n") {
 			focused = false;
 		};
 	};
-	const pane = new DiffPane(read, () => terminal, mount);
+	const pane = new DiffPane(read, () => terminal, mount, title);
 	return {
 		pane,
 		terminal,
@@ -190,5 +190,68 @@ test("disabled panes do not poll Git and re-enable refreshes", async () => {
 	await f.pane.refresh();
 	expect(calls).toBeGreaterThan(0);
 	expect(f.mounts).toBe(1);
+	f.pane.dispose();
+});
+
+test("refresh arriving between drain completion and promise cleanup is not lost", async () => {
+	let diff = "+first";
+	const f = fixture(async () => diff);
+	const pending = f.pane.refresh();
+	await Promise.resolve();
+	diff = "+latest";
+	f.pane.refresh();
+	await pending;
+	expect(f.component?.render(80).join("\n")).toContain("+latest");
+	f.pane.dispose();
+});
+
+test("clearing an interaction hides immediately and discards an in-flight read", async () => {
+	let resolve!: (diff: string) => void;
+	let delayed = false;
+	const f = fixture(() =>
+		delayed
+			? new Promise((r) => {
+					resolve = r;
+				})
+			: Promise.resolve("+completed"),
+	);
+	await f.pane.refresh();
+	expect(f.mounts).toBe(1);
+	delayed = true;
+	const pending = f.pane.refresh();
+	f.pane.clear();
+	expect(f.component).toBeUndefined();
+	resolve("+previous turn");
+	await pending;
+	expect(f.component).toBeUndefined();
+	expect(f.mounts).toBe(1);
+	f.pane.dispose();
+});
+
+test("scope changes relabel identical diffs and cannot show stale repository results", async () => {
+	let title = "Repository";
+	let read: () => Promise<string> = async () => "+same";
+	const f = fixture(
+		() => read(),
+		() => title,
+	);
+	await f.pane.refresh();
+	expect(f.component?.render(80)[0]).toBe("Repository");
+	title = "This turn";
+	await f.pane.refresh();
+	expect(f.component?.render(80)[0]).toBe("This turn");
+	let resolve!: (diff: string) => void;
+	read = () =>
+		new Promise((r) => {
+			resolve = r;
+		});
+	const pending = f.pane.refresh();
+	f.pane.clear();
+	read = async () => "+current turn";
+	f.pane.refresh();
+	resolve("+stale repository");
+	await pending;
+	expect(f.component?.render(80).join("\n")).toContain("+current turn");
+	expect(f.component?.render(80).join("\n")).not.toContain("+stale repository");
 	f.pane.dispose();
 });

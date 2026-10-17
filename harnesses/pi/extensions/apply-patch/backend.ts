@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { createTwoFilesPatch } from "diff";
+import { type MutationReporter, observeFileMutation } from "../shared/file-mutations.js";
 
 export type ApplyPatchChangeType = "add" | "update" | "delete" | "move";
 
@@ -319,7 +320,7 @@ function summary(change: ApplyPatchChange): string {
 export async function runLocalApplyPatch(
 	cwd: string,
 	input: string,
-	options: { dryRun?: boolean; signal?: AbortSignal } = {},
+	options: { dryRun?: boolean; signal?: AbortSignal; onMutation?: MutationReporter } = {},
 ): Promise<ApplyPatchResult> {
 	const operations = parseApplyPatch(input);
 	const paths = [
@@ -342,7 +343,7 @@ export async function runLocalApplyPatch(
 async function applyOperations(
 	cwd: string,
 	operations: Operation[],
-	options: { dryRun?: boolean; signal?: AbortSignal },
+	options: { dryRun?: boolean; signal?: AbortSignal; onMutation?: MutationReporter },
 ): Promise<ApplyPatchResult> {
 	const virtual = new Map<string, VirtualFile | undefined>();
 	const touched = new Set<string>();
@@ -453,9 +454,10 @@ async function applyOperations(
 				const value = virtual.get(absolute);
 				if (value) {
 					await mkdir(dirname(absolute), { recursive: true });
-					await writeFile(absolute, restore(value.snapshot, value.text), "utf8");
+					const text = restore(value.snapshot, value.text);
+					await observeFileMutation(absolute, text, () => writeFile(absolute, text, "utf8"), options.onMutation);
 				} else if (existsSync(absolute)) {
-					await rm(absolute);
+					await observeFileMutation(absolute, null, () => rm(absolute), options.onMutation);
 				}
 				completedPaths.push(absolute);
 			} catch (cause) {

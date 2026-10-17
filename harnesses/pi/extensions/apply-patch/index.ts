@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { buildHighlightedDiffRows, type DiffRenderRow, EditDiffView, type RenderTheme } from "../fileops/diff-render";
 import { registerCodeModeTool } from "../shared/code-mode";
+import { mutationReporter } from "../shared/file-mutations.js";
 import { textComponent } from "../shared/tui";
 import { type ApplyPatchResult, ApplyPatchWriteError, runLocalApplyPatch } from "./backend.ts";
 
@@ -141,9 +142,14 @@ export default function applyPatchExtension(pi: ExtensionAPI) {
 		renderResult(result, options, theme) {
 			return renderApplyPatchResult(result as ApplyPatchToolResult, options, theme as unknown as RenderTheme);
 		},
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		async execute(toolCallId, params, signal, _onUpdate, ctx) {
 			try {
-				return await formatResult(await runLocalApplyPatch(ctx.cwd, params.input, { signal }));
+				return await formatResult(
+					await runLocalApplyPatch(ctx.cwd, params.input, {
+						signal,
+						onMutation: mutationReporter(pi, toolCallId),
+					}),
+				);
 			} catch (error) {
 				return errorResult(error);
 			}

@@ -67,7 +67,7 @@ Installed extensions:
 - `agents-local/` — injects untracked `AGENTS.local.md` / `CLAUDE.local.md` context from cwd ancestors; `/agents-local` lists loaded files.
 - `fireworks-gateway.ts` — registers Fireworks models when an anonymous gateway endpoint is configured.
 - `clear.ts` — `/clear` starts a fresh session after the current turn; `ctrl+shift+l` queues it.
-- `diff-prod/` — automatically shows a production diff beside the fullscreen transcript/editor; `/diff-prod` opens the standalone overlay. See [Production diff pane](#production-diff-pane).
+- `diff-prod/` — automatically shows this interaction's edits beside the fullscreen transcript/editor; `/diff-prod` opens the standalone overlay. See [Production diff pane](#production-diff-pane).
 - `tuicr.ts` — `Ctrl+Alt+G` opens the pinned `@luan.sh/pi-tuicr` review integration. Choose uncommitted changes, a branch, commits, or a PR, then review in a fullscreen overlay. New review comments become an editor attachment and expand into your next submitted prompt; nothing is submitted automatically. This is separate from the production-only diff pane: review targets include test files. Requires the `tuicr` executable (`brew install tuicr` on macOS) and Rust for the embedded terminal bridge's first-use build. The existing runtime-support extension supplies the UI and shortcut hosts; the optional `pi-panels` package is not installed.
 - `async-questions/` — `request_user_input_async` presents inline questions without blocking independent work. Answers arrive through steering; `/questions` focuses pending questions and `/questions dismiss` dismisses the oldest group without granting approval. Pending questions and submitted answers are session-local and survive resume. The existing `ask_user` remains available for multi-select and preview dialogs.
 - `fast-mode.ts` — defaults off; only `/fast` (toggle) or `/fast on|toggle` can enable OpenAI priority processing for first-party GPT Responses routes (`openai`, including ChatGPT sign-in, and legacy `openai-codex`). `/fast off` disables it; `/fast status` reports status without changing it. There is no keyboard shortcut. The `fast` label beside the model means **priority requested**, not confirmed. State is not persisted; startup, new/resumed/forked sessions, reloads, and session-tree navigation reset it to off, ignoring older saved overrides. Unsupported providers/endpoints remain unchanged, and reasoning effort is unaffected. OpenAI controls eligibility and higher cost/quota consumption. Pi's displayed cost can undercount if the provider omits its actual service tier; this extension does not modify usage accounting. Uses native request hooks, not a replacement provider; custom cross-provider routing is not supported.
@@ -99,30 +99,55 @@ launched `/spawn` sessions are not descendants and are not included.
 
 ### Production diff pane
 
-The right-hand pane defaults on for each session. It appears when tracked
-production files have changes and the fullscreen terminal is at least 120 columns
+The right-hand pane defaults on in **This turn** scope for each session. It appears
+when this session has captured edits and the fullscreen terminal is at least 120 columns
 wide and 8 rows high. It reserves space rather than covering the transcript,
 keeps at least 72 columns for the main area, and leaves keyboard focus in the
 editor. Other, higher-priority split panes take precedence.
 
 - `/diff-prod on|off|toggle`: control the automatic pane until session restart/reload.
+- `/diff-prod turn|repo`: select this interaction's edits or the repository-wide production diff.
 - `Ctrl+Alt+D` or `/diff-prod focus`: focus the pane or return to the editor.
 - Arrows/`hjkl`: scroll/pan; Page Up/Down: page; `g`/`G`: top/bottom.
 - `q` or Escape: return focus to the editor without hiding the pane.
-- `/diff-prod`: standalone overlay, also available in narrow/regular-mode terminals.
+- `/diff-prod`: standalone overlay of the selected scope, also available in narrow/regular-mode terminals.
 
-Refresh runs after tools and turns and every three seconds (including changes
-from `!`/`!!` or external editors). Turning the pane off stops its polling.
-Empty diffs and automatic Git/config failures hide the pane; the explicit
-overlay command reports errors. The view stays out of model context.
+**This turn** accumulates before/after text from this session's `edit`, `write`, and
+`apply_patch` operations, including nested Code Mode calls. A turn means a consumed
+user message and all subsequent model/tool iterations, not each model turn. The
+completed diff stays visible until the next user message is consumed; a read-only
+interaction shows no changes. Consecutive edits to a file combine into a net diff,
+so pre-existing changes are not included and reverted edits disappear. New files
+(including untracked files), empty files, tests, and fixtures are included. Moves
+appear as deletion/addition. Repository production exclusions do not apply here.
 
-Both views show repository-wide staged and unstaged **tracked** changes against
+Captures are session-local and in memory only: reload, restart, or tree navigation
+clears them. There is no working-tree polling in this scope. Other sessions and
+external editors cannot update a completed preview. Shell commands (`!`/`!!`,
+`exec_command`, etc.) and uninstrumented tools are **not captured**; use Repository
+to inspect their effects. If a file changes between this session's writes, the
+pane labels the discontinuity and shows separate edit segments instead of
+attributing the intervening change. This is not filesystem isolation: concurrent
+processes writing the same file can still race. Snapshots are taken at the file
+tools' write boundaries, inside Pi's in-process mutation queues.
+
+Snapshots are limited to 1 MB per side and 8 MB per interaction. The preview is
+limited to 2,000 lines / 200,000 characters, with bounded diff computation; omissions are
+explicitly labeled. Binary files show a summary. Captures never add tool-result
+fields, session entries, or model context.
+
+**Repository** refreshes after tools and turns and every three seconds (including
+changes from `!`/`!!` or external editors). Turning the pane off stops Git reads.
+Empty diffs and automatic Git/config failures hide the pane; the explicit overlay
+command reports errors. Both views stay out of model context.
+
+Repository scope shows repository-wide staged and unstaged **tracked** changes against
 HEAD, excluding common test/spec/fixture paths. Untracked files are not included.
 Before the first commit, comparison uses the empty tree. Renames display as
 deletion/addition so production-to-test moves still show the production deletion;
 binary changes show Git's summary.
 
-Optional `<repo>/.pi/diff-prod.json` replaces the defaults with repository-relative
+For Repository scope, optional `<repo>/.pi/diff-prod.json` replaces the defaults with repository-relative
 Git glob exclusions:
 
 ```json

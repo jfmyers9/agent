@@ -33,12 +33,15 @@ export class DiffPane {
 	private unmount?: () => void;
 	private pending?: Promise<void>;
 	private dirty = false;
+	private revision = 0;
+	private title = "";
 	private readonly views = new Map<PaneHost, DiffView>();
 
 	constructor(
 		private readonly read: () => Promise<string>,
 		private readonly terminal: () => { columns: number; rows: number; fullscreen: boolean },
 		private readonly mount: MountPane = mountSplitPane,
+		private readonly getTitle: () => string = () => "Production diff · Repository · tracked",
 	) {}
 
 	setEnabled(enabled: boolean): void {
@@ -94,6 +97,7 @@ export class DiffPane {
 							host.requestRender();
 						},
 						() => host.isFocused(),
+						this.title,
 					);
 					this.views.set(host, view);
 					return {
@@ -112,10 +116,14 @@ export class DiffPane {
 
 	refresh(): Promise<void> {
 		if (this.disposed || !this.enabled) return Promise.resolve();
+		this.revision++;
 		this.dirty = true;
 		if (this.pending) return this.pending;
 		this.pending = this.drain().finally(() => {
 			this.pending = undefined;
+			// A refresh can arrive after drain's last iteration but before this
+			// microtask. Do not leave that interaction's newest edit undisplayed.
+			if (this.dirty && !this.disposed && this.enabled) return this.refresh();
 		});
 		return this.pending;
 	}
@@ -123,6 +131,8 @@ export class DiffPane {
 	private async drain(): Promise<void> {
 		while (this.dirty && !this.disposed && this.enabled) {
 			this.dirty = false;
+			const revision = this.revision;
+			const title = this.getTitle();
 			let diff: string;
 			try {
 				diff = await this.read();
@@ -132,15 +142,25 @@ export class DiffPane {
 				diff = "";
 			}
 			if (this.disposed) return;
-			if (diff !== this.diff) {
+			if (revision !== this.revision) continue;
+			if (diff !== this.diff || title !== this.title) {
 				this.diff = diff;
+				this.title = title;
 				for (const [host, view] of this.views) {
-					view.update(diff);
+					view.update(diff, title);
 					host.requestRender();
 				}
 			}
 			this.syncLayout();
 		}
+	}
+
+	/** Drop the previous interaction immediately, including any in-flight read. */
+	clear(): void {
+		this.revision++;
+		this.dirty = false;
+		this.diff = "";
+		this.syncLayout();
 	}
 
 	dispose(): void {

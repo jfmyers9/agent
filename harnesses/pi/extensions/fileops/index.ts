@@ -1,7 +1,7 @@
 // @ts-nocheck
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { constants, readFileSync, writeFileSync } from "node:fs";
+import { access, chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -18,6 +18,7 @@ import { Box, type Text } from "@earendil-works/pi-tui";
 import { createTwoFilesPatch } from "diff";
 import { Type } from "typebox";
 import { registerCodeModeTool } from "../shared/code-mode.ts";
+import { type MutationReporter, mutationReporter, observeFileMutation } from "../shared/file-mutations.js";
 import { runCommand as runExternalCommand } from "../shared/command-runner.ts";
 import { EmptyComponent, runningFrame, shineText, textComponent } from "../shared/tui";
 import { columnCountForWidth, renderColumns } from "./columns.ts";
@@ -958,15 +959,22 @@ function replaceAllLiteral(text: string, oldText: string, newText: string): { te
 	return { text: parts.join(newText), count: parts.length - 1 };
 }
 
-async function executeReplace(
+export async function executeReplace(
 	cwd: string,
 	input: EditInput,
 	config: EditConfig,
 	signal?: AbortSignal,
+	report?: MutationReporter,
 ): Promise<{ content: Array<{ type: "text"; text: string }>; details: EditToolDetails }> {
 	const normalized = normalizeReplaceInput(input);
 	if (!normalized.edits.some((edit) => edit.all)) {
-		return createEditToolDefinition(cwd).execute("edit", toBuiltInInput(normalized), signal);
+		return createEditToolDefinition(cwd, {
+			operations: {
+				readFile: (path) => readFile(path),
+				access: (path) => access(path, constants.R_OK | constants.W_OK),
+				writeFile: (path, text) => observeFileMutation(path, text, () => writeFile(path, text, "utf8"), report),
+			},
+		}).execute("edit", toBuiltInInput(normalized), signal);
 	}
 	if (!config.allowReplaceAll) throw new Error("edit replace mode has all: true disabled by /edit-config.");
 
@@ -1001,7 +1009,8 @@ async function executeReplace(
 		}
 
 		if (current === before) throw new Error(`Edits to ${normalized.path} resulted in no changes being made.`);
-		await writeFile(target, bom + restoreLineEndings(current, lineEnding), "utf-8");
+		const persisted = bom + restoreLineEndings(current, lineEnding);
+		await observeFileMutation(target, persisted, () => writeFile(target, persisted, "utf8"), report);
 
 		const patch = createTwoFilesPatch(normalized.path, normalized.path, before, current, "", "", { context: 3 });
 		const highlightedDiffRows = await buildHighlightedDiffRows(patch);
@@ -1067,7 +1076,10 @@ function parseReplaceInput(input: string): EditInput {
 }
 
 class CwdHashlineFilesystem extends Filesystem {
-	constructor(private readonly cwd: string) {
+	constructor(
+		private readonly cwd: string,
+		private readonly report?: MutationReporter,
+	) {
 		super();
 	}
 
@@ -1093,7 +1105,7 @@ class CwdHashlineFilesystem extends Filesystem {
 	async writeText(path: string, content: string): Promise<WriteResult> {
 		const absolute = this.#absolute(path);
 		await mkdir(dirname(absolute), { recursive: true });
-		await writeFile(absolute, content, "utf-8");
+		await observeFileMutation(absolute, content, () => writeFile(absolute, content, "utf8"), this.report);
 		return { text: content };
 	}
 
@@ -1121,10 +1133,10 @@ function noChangeDiagnostic(path: string): string {
 	);
 }
 
-async function executeHashline(cwd: string, input: string) {
+async function executeHashline(cwd: string, input: string, report?: MutationReporter) {
 	const patch = Patch.parse(input, { cwd });
 	if (patch.sections.length === 0) throw new Error("hashline mode requires at least one ¶PATH section.");
-	const fs = new CwdHashlineFilesystem(cwd);
+	const fs = new CwdHashlineFilesystem(cwd, report);
 	const patcher = new Patcher({ fs, snapshots: HASHLINE_SNAPSHOTS });
 	const targets = patch.sections.map((section) => fs.canonicalPath(section.path));
 	const applied = await withHashlineMutationQueues(targets, () => patcher.apply(patch));
@@ -1164,17 +1176,24 @@ async function executeHashline(cwd: string, input: string) {
 	};
 }
 
-async function executeByMode(cwd: string, params: EditInput, config: EditConfig, signal?: AbortSignal) {
+async function executeByMode(
+	cwd: string,
+	params: EditInput,
+	config: EditConfig,
+	signal?: AbortSignal,
+	report?: MutationReporter,
+) {
 	switch (config.mode) {
 		case "hashline":
 			if (typeof params.input !== "string") throw new Error("edit hashline mode requires input.");
-			return executeHashline(cwd, params.input);
+			return executeHashline(cwd, params.input, report);
 		case "replace":
 			return executeReplace(
 				cwd,
 				typeof params.input === "string" ? parseReplaceInput(params.input) : params,
 				config,
 				signal,
+				report,
 			);
 	}
 }
@@ -1457,14 +1476,27 @@ function registerHashlineWorkflowTools(pi: ExtensionAPI, getConfig: () => EditCo
 			onUpdate,
 			ctx,
 		) {
-			if (getConfig().mode !== "hashline") return baseWrite.execute(toolCallId, params, signal, onUpdate, ctx);
 			const callCwd = ctx?.cwd ?? cwd;
+			const report = mutationReporter(pi, toolCallId);
+			if (getConfig().mode !== "hashline") {
+				return createWriteToolDefinition(callCwd, {
+					operations: {
+						mkdir: async (path) => {
+							await mkdir(path, { recursive: true });
+						},
+						writeFile: (path, text) => observeFileMutation(path, text, () => writeFile(path, text, "utf8"), report),
+					},
+				}).execute(toolCallId, params, signal, onUpdate, ctx);
+			}
 			const stripped = stripHashlineDisplayPrefixes(params.content);
 			const absolute = absolutePath(callCwd, params.path);
-			await mkdir(dirname(absolute), { recursive: true });
-			await writeFile(absolute, stripped.text, "utf-8");
-			if (params.makeExecutable || stripped.text.startsWith("#!")) await chmod(absolute, 0o755);
-			HASHLINE_SNAPSHOTS.invalidate(absolute);
+			await withFileMutationQueue(absolute, async () => {
+				if (signal?.aborted) throw new Error("Operation aborted");
+				await mkdir(dirname(absolute), { recursive: true });
+				await observeFileMutation(absolute, stripped.text, () => writeFile(absolute, stripped.text, "utf8"), report);
+				if (params.makeExecutable || stripped.text.startsWith("#!")) await chmod(absolute, 0o755);
+				HASHLINE_SNAPSHOTS.invalidate(absolute);
+			});
 			const result: ToolTextResult = {
 				content: [{ type: "text", text: `Wrote ${params.path}` }],
 				details: {},
@@ -1512,8 +1544,8 @@ export default function fileopsExtension(pi: ExtensionAPI) {
 			renderResult(result, options, theme) {
 				return renderEditResult(result as ToolTextResult, options, theme);
 			},
-			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-				return executeByMode(ctx.cwd, params as EditInput, current, signal);
+			async execute(toolCallId, params, signal, _onUpdate, ctx) {
+				return executeByMode(ctx.cwd, params as EditInput, current, signal, mutationReporter(pi, toolCallId));
 			},
 		});
 	};

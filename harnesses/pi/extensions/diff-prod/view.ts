@@ -16,11 +16,13 @@ export class DiffView {
 		private readonly requestRender: () => void,
 		private readonly done: () => void,
 		private readonly paneFocused?: () => boolean,
+		private title = "Production diff · Repository · tracked",
 	) {
 		this.update(diff);
 	}
 
-	update(diff: string): void {
+	update(diff: string, title = this.title): void {
+		this.title = title;
 		// Git content is untrusted terminal text: never allow source-file escape sequences.
 		this.lines = diff
 			.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "�")
@@ -69,12 +71,7 @@ export class DiffView {
 			return this.theme.fg(color, sliceByColumn(line, this.left, width));
 		});
 		return [
-			fit(
-				this.theme.fg(
-					"accent",
-					this.paneFocused ? "Production diff · tracked" : "Production diff · staged + unstaged · tracked files only",
-				),
-			),
+			fit(this.theme.fg("accent", this.title)),
 			...body,
 			fit(
 				this.theme.fg(
