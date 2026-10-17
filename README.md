@@ -24,8 +24,8 @@ Installer lifecycle commands:
 
 Installation preflights every destination before writing. Existing files and
 foreign symlinks are rejected and left untouched. Pi installs prune stale
-extension links owned by this checkout. Codex's mutable `config.toml` is copied
-only when absent and preserved thereafter.
+extension links owned by this checkout. Codex's mutable `config.toml` and Pi's
+mutable `mcp.json` are copied only when absent and preserved thereafter.
 
 Environment overrides:
 
@@ -83,6 +83,7 @@ harnesses/
     hooks/                 # Claude Code hooks
   pi/
     settings.json          # Pi settings
+    mcp.json               # Pi MCP baseline (Linear; credentials stay local)
     keybindings.json       # Pi TUI keybindings
     tui.json               # Pi TUI footer/icon colors
     xsettings.toml         # Pi tool composition, discovery, and subagents
@@ -140,6 +141,7 @@ Installed by `./install.sh pi` into `~/.pi/agent`:
 
 - links `global/AGENTS.md`, `rules/`, `skills/`
 - links `harnesses/pi/settings.json` as `settings.json`
+- seeds `harnesses/pi/mcp.json` as a mutable `mcp.json` when absent
 - links Pi `keybindings.json` and `tui.json` when present
 - links Pi extensions named in `settings.json`, plus shared extension support, and prunes stale owned extension links
 - installs `blueprint` and `git-surgeon` to `~/.local/bin`
@@ -183,6 +185,23 @@ not checked into this repo.
 Codex reads repository `AGENTS.md` files automatically. Shared skills are
 installed through Codex's user skill path and can be invoked with
 `$commit`, `$artifact`, `$review`, and other skill names.
+
+## Linear
+
+Fresh Codex and Pi installs include Linear's official MCP endpoint. Each client
+needs its own OAuth sign-in; the installer does not open a browser or store
+credentials in this repository.
+
+Follow the [Codex setup](harnesses/codex/README.md#linear) and
+[Pi setup](harnesses/pi/README.md#linear) to sign in or add Linear to an existing
+config. Both adapters preserve existing mutable configs rather than merging or
+overwriting them. For Firefox Containers, copy the printed authorization URL
+directly into your Linear container instead of using the automatically opened
+tab. Complete one client's sign-in before starting the other, and allow the
+localhost callback without switching containers. Retry the login command for a
+fresh URL if the attempt expires.
+
+After signing in, try: "List my assigned Linear issues."
 
 ## Skills
 

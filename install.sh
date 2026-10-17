@@ -118,6 +118,7 @@ plan_pi() {
 	add_link "$SCRIPT_DIR/rules" "$dir/rules"
 	add_link "$SCRIPT_DIR/skills" "$dir/skills"
 	add_link "$SCRIPT_DIR/harnesses/pi/settings.json" "$dir/settings.json"
+	add_seed "$SCRIPT_DIR/harnesses/pi/mcp.json" "$dir/mcp.json"
 	local config
 	for config in keybindings.json tui.json models.json xsettings.toml; do
 		[ -f "$SCRIPT_DIR/harnesses/pi/$config" ] || continue
@@ -459,6 +460,7 @@ validate_json_sources() {
 	local files=(
 		"$SCRIPT_DIR/harnesses/claude/settings.json"
 		"$SCRIPT_DIR/harnesses/pi/settings.json"
+		"$SCRIPT_DIR/harnesses/pi/mcp.json"
 		"$SCRIPT_DIR/harnesses/pi/keybindings.json"
 		"$SCRIPT_DIR/harnesses/pi/tui.json"
 		"$SCRIPT_DIR/harnesses/codex/hooks.json"

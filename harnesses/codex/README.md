@@ -32,6 +32,30 @@ it. Codex may append local runtime state such as project trust, hook trust
 hashes, and UI notices to the installed copy; those tables are intentionally
 not checked into this repo.
 
+## Linear
+
+The baseline config includes `https://mcp.linear.app/mcp`. On a new machine,
+install this adapter, then authorize Linear and inspect the registration:
+
+```sh
+codex mcp login linear
+codex mcp list
+```
+
+If an existing config does not have Linear, add it first:
+
+```sh
+codex mcp add linear --url https://mcp.linear.app/mcp
+```
+
+Do not re-add an existing customized entry. The installer preserves local
+`config.toml` files; it does not merge new baseline entries. OAuth credentials
+are managed locally by Codex, never committed. Start a new Codex session after
+setup and ask it to list your assigned Linear issues to check tool access.
+For Firefox Containers, see the [shared sign-in guidance](../../README.md#linear).
+
+## Ergonomics
+
 Adopted Luan-inspired Codex ergonomics:
 
 - high plan-mode reasoning

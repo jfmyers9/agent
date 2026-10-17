@@ -31,9 +31,10 @@ function install(
 	harness: "claude" | "pi" | "codex",
 	paths: ReturnType<typeof workspace>,
 	environment: NodeJS.ProcessEnv = {},
+	checkout = root,
 ) {
-	return spawnSync("bash", [join(root, "install.sh"), action, harness], {
-		cwd: root,
+	return spawnSync("bash", [join(checkout, "install.sh"), action, harness], {
+		cwd: checkout,
 		encoding: "utf8",
 		env: {
 			...process.env,
@@ -46,6 +47,24 @@ function install(
 			...environment,
 		},
 	});
+}
+
+function piCheckout(home: string) {
+	const checkout = join(home, "checkout");
+	mkdirSync(checkout);
+	for (const source of ["install.sh", "global", "rules", "skills", "bin", "harnesses"]) {
+		symlinkSync(join(root, source), join(checkout, source));
+	}
+	// Exercise installation without downloading packages or rebuilding Rust.
+	mkdirSync(join(checkout, "node_modules"));
+	mkdirSync(join(checkout, "target/release"), { recursive: true });
+	writeFileSync(join(checkout, "target/release/context-guard"), "fixture\n");
+	const buildBin = join(home, "build-bin");
+	mkdirSync(buildBin);
+	for (const command of ["mise", "bun", "cargo"]) {
+		writeFileSync(join(buildBin, command), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+	}
+	return { checkout, environment: { PATH: `${buildBin}:${process.env.PATH}` } };
 }
 
 describe("installer safety", () => {
@@ -153,12 +172,70 @@ describe("installer safety", () => {
 		const paths = workspace();
 		expect(install("install", "codex", paths).status).toBe(0);
 		const config = join(paths.codex, "config.toml");
+		const baseline = Bun.TOML.parse(readFileSync(config, "utf8"));
+		expect(baseline.mcp_servers).toEqual({
+			linear: { url: "https://mcp.linear.app/mcp" },
+		});
 		writeFileSync(config, "runtime = true\n");
 
 		expect(install("install", "codex", paths).status).toBe(0);
 		expect(readFileSync(config, "utf8")).toBe("runtime = true\n");
 		expect(install("unlink", "codex", paths).status).toBe(0);
 		expect(readFileSync(config, "utf8")).toBe("runtime = true\n");
+	});
+
+	test("Pi MCP config is seeded once and preserves local config and auth", () => {
+		const paths = workspace();
+		const { checkout, environment } = piCheckout(paths.home);
+		const run = (action: Parameters<typeof install>[0]) =>
+			install(action, "pi", paths, environment, checkout);
+		const config = join(paths.pi, "mcp.json");
+		const dryRun = run("dry-run");
+		expect(dryRun.status).toBe(0);
+		expect(dryRun.stdout).toContain(`Would seed: ${config}`);
+		expect(existsSync(config)).toBe(false);
+
+		const first = run("install");
+		expect(first.stderr).toBe("");
+		expect(first.status).toBe(0);
+		expect(lstatSync(config).isSymbolicLink()).toBe(false);
+		expect(JSON.parse(readFileSync(config, "utf8"))).toEqual({
+			mcpServers: {
+				linear: {
+					url: "https://mcp.linear.app/mcp",
+					description: "Search and manage Linear issues, projects, and documents",
+					exposure: "codemode",
+				},
+			},
+		});
+		expect(existsSync(join(paths.pi, "mcp-auth.json"))).toBe(false);
+
+		const local = '{"mcpServers":{"custom":{"url":"https://example.com/mcp"}}}\n';
+		const auth = join(paths.pi, "mcp-auth.json");
+		writeFileSync(config, local);
+		writeFileSync(auth, "local-auth-fixture\n");
+		expect(run("dry-run").stdout).toContain(`Would preserve: ${config}`);
+		expect(run("install").status).toBe(0);
+		expect(readFileSync(config, "utf8")).toBe(local);
+		expect(readFileSync(auth, "utf8")).toBe("local-auth-fixture\n");
+		expect(run("validate").status).toBe(0);
+		expect(run("unlink").status).toBe(0);
+		expect(readFileSync(config, "utf8")).toBe(local);
+		expect(readFileSync(auth, "utf8")).toBe("local-auth-fixture\n");
+	});
+
+	test("Pi MCP symlink conflict prevents writes", () => {
+		const paths = workspace();
+		mkdirSync(paths.pi, { recursive: true });
+		const foreign = join(paths.home, "foreign-mcp.json");
+		writeFileSync(foreign, "{}\n");
+		symlinkSync(foreign, join(paths.pi, "mcp.json"));
+
+		const result = install("install", "pi", paths);
+		expect(result.status).not.toBe(0);
+		expect(result.stderr).toContain("must be absent or a regular file");
+		expect(readFileSync(foreign, "utf8")).toBe("{}\n");
+		expect(existsSync(join(paths.pi, "settings.json"))).toBe(false);
 	});
 
 	test("doctor requires Bun for the installed CLI", () => {

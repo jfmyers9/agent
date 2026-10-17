@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "linear": {
+      "url": "https://mcp.linear.app/mcp",
+      "description": "Search and manage Linear issues, projects, and documents",
+      "exposure": "codemode"
+    }
+  }
+}

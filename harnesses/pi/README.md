@@ -14,6 +14,7 @@ Pi loads:
 - `skills/` via Agent Skills discovery
 - `rules/` as referenced Markdown
 - `harnesses/pi/settings.json` for model, package, and extension defaults
+- `harnesses/pi/mcp.json` as a mutable baseline for MCP servers, including Linear
 - `harnesses/pi/keybindings.json` for Emacs-style editor/session shortcuts
 - `harnesses/pi/tui.json` for status/footer icon, color, compact-mode, and usage-bar preferences
 - `harnesses/pi/xsettings.toml` for subagent settings
@@ -202,6 +203,33 @@ user commands and mentions still work. Shared instructions require an explicit
 user request for formal review skills and delegated review workflows, even when
 repository guidance calls them mandatory. Routine self-review and relevant
 checks remain automatic. This is not a filesystem access restriction.
+
+## Linear
+
+Pi 1.1.0 or newer provides built-in MCP support; no MCP extension is needed.
+The installer copies `mcp.json` to `~/.pi/agent/mcp.json` only when absent.
+Existing files and local changes are preserved, including on unlink. The
+baseline exposes Linear tools through Code Mode and tool search.
+
+After installing, authorize Linear and verify a live connection:
+
+```sh
+pi mcp login linear
+pi mcp list
+```
+
+If an existing MCP config does not have Linear, add it first:
+
+```sh
+pi mcp add linear --url https://mcp.linear.app/mcp --exposure codemode --description "Search and manage Linear issues, projects, and documents"
+```
+
+Do not re-add an existing customized entry. OAuth credentials are stored locally
+in `~/.pi/agent/mcp-auth.json`, not in the tracked baseline. Never commit that
+file or copy credentials into this repository. Restart Pi or run `/reload`
+after changing the server config; `/mcp` shows connection status, and
+`/mcp reconnect linear` reconnects an existing server after sign-in.
+For Firefox Containers, see the [shared sign-in guidance](../../README.md#linear).
 
 ## Context Guard core
 

@@ -12,6 +12,9 @@ plan_mode_reasoning_effort = "high"
 hooks = true
 prevent_idle_sleep = true
 
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+
 [tui]
 whimsy = false
 notification_condition = "unfocused"
