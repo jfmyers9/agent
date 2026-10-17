@@ -3,6 +3,7 @@ import type { Api, Message, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, ModelRoute, ModelRouteRequest } from "@earendil-works/pi-coding-agent";
 import { pendingAssessment } from "./affinity.js";
 import { classifyTask } from "./classifier.js";
+import { manualPin } from "./pin.js";
 import { isModelRef, modelName, ROUTING_MODEL, ROUTING_PROVIDER, type RoutingSettings } from "./settings.js";
 import type { ClassifierResult, ClassifierUsage, ModelRef, TaskEnvelope, Tier } from "./types.js";
 
@@ -163,6 +164,10 @@ export class TaskRouter {
 	async route(request: ModelRouteRequest<RoutingState>, ctx: ExtensionContext): Promise<ModelRoute<RoutingState>> {
 		request.signal?.throwIfAborted();
 		const state = isRoutingState(request.state) ? request.state : undefined;
+		const pin = manualPin(ctx);
+		if (pin) {
+			return { model: physicalModel(pin, ctx), thinkingLevel: request.thinkingLevel, state };
+		}
 		if (request.reason !== "user") {
 			const sticky = request.failed ?? request.previous;
 			if (sticky && sticky.model.api !== ("pi-virtual" as string))
@@ -178,13 +183,13 @@ export class TaskRouter {
 			return { model: physicalModel(settings.tiers.sol, ctx), thinkingLevel: request.thinkingLevel };
 		}
 		const assessment = pendingAssessment(ctx, state);
-		// Session affinity is local, not another paid classification. Reusing the
-		// state object also avoids writing a routing record for every user turn.
-		if (state && !assessment) {
+		const { envelope, key } = taskEnvelope(request.messages, state);
+		// Native model-route preflight can repeat for the same user message. Share
+		// its saved decision, but reassess every distinct user turn while on Auto.
+		if (state && !assessment && state.taskKey === key) {
 			return { model: physicalModel(state.model, ctx), thinkingLevel: request.thinkingLevel, state };
 		}
 		if (state) physicalModel(state.model, ctx);
-		const { envelope, key } = taskEnvelope(request.messages, state);
 		const settings = await this.settings();
 		// Resolve the fallback up front. Never substitute another provider or
 		// silently route to a weaker target when a configured model is unavailable.
@@ -202,14 +207,15 @@ export class TaskRouter {
 		const reason = keepPrevious
 			? `${unreliable ? "Unreliable assessment" : "No tier upgrade"}; retaining session model. ${classification.reason}`
 			: classification.reason;
+		const activeTask = state ? `${state.task}\nFollow-up: ${envelope.task}`.slice(-2000) : envelope.task.slice(0, 2000);
 		const next: RoutingState = {
 			version: 1,
 			taskKey: key,
-			task: keepPrevious ? state.task : envelope.task.slice(0, 2000),
+			task: activeTask,
 			tier,
 			model: { provider: model.provider, id: model.id },
 			reason,
-			...(assessment ? { assessmentId: assessment.id } : {}),
+			...((assessment?.id ?? state?.assessmentId) ? { assessmentId: assessment?.id ?? state?.assessmentId } : {}),
 		};
 		this.options.onDecision?.(ctx, {
 			kind: "main",

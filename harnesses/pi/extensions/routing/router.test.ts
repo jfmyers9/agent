@@ -223,29 +223,82 @@ test("non-user requests use persisted state or Sol when there is no physical his
 	expect(h.dispatches).toHaveLength(1);
 });
 
-test("all user follow-ups retain affinity until explicit reassessment", async () => {
+test("each distinct user turn is reassessed, but same-tier/lower results retain the held model", async () => {
 	const h = harness();
 	const ctx = h.context();
 	const first = await h.router.route(request(), ctx);
-	for (const content of ["yes", "OK!", "go ahead", "continue", "Keep going."]) {
+	let latest = first;
+	for (const [index, content] of ["yes", "OK!", "go ahead", "continue", "Keep going."].entries()) {
 		const next = await h.router.route(
-			request({ state: first.state, messages: [user(), assistant(), user(content, 3)] }),
+			request({ state: latest.state, messages: [user(), assistant(), user(content, index + 3)] }),
 			ctx,
 		);
+		latest = next;
 		expect(next.model).toBe(first.model);
-		expect(next.state).toBe(first.state);
+		expect(next.state?.tier).toBe(first.state?.tier);
+		expect(next.state?.model).toEqual(first.state?.model);
 		expect(next.thinkingLevel).toBe("high");
 	}
-	expect(h.dispatches).toHaveLength(1);
-	await h.router.route(
-		request({ state: first.state, messages: [user("Continue by redesigning the recovery protocol", 4)] }),
+	expect(h.dispatches).toHaveLength(6);
+	const repeated = request({
+		state: latest.state,
+		messages: [user("Continue by redesigning the recovery protocol", 4)],
+	});
+	const newTurn = await h.router.route(repeated, ctx);
+	expect(h.dispatches).toHaveLength(7);
+	const duplicate = await h.router.route({ ...repeated, state: newTurn.state }, ctx);
+	expect(duplicate.state).toBe(newTurn.state);
+	expect(h.dispatches).toHaveLength(7);
+	h.queue();
+	await h.router.route(request({ state: duplicate.state, messages: [user("Assess the recovery redesign", 5)] }), ctx);
+	expect(h.dispatches).toHaveLength(8);
+	expect(h.dispatches[1].envelope.context).toContain("Previous task:");
+});
+
+test("automatic reassessment upgrades cumulative active work but never downgrades", async () => {
+	const tiers = ["luna", "sol", "luna", "astra"] as const;
+	const tasks: string[] = [];
+	const h = harness({
+		classify: async (_registry, _selected, envelope, config = {}) => {
+			const tier = tiers[tasks.length] ?? "astra";
+			tasks.push(envelope.task);
+			config.onStarted?.();
+			config.onUsage?.(sample);
+			config.onSettled?.();
+			return { ...classified, tier, reason: `Turn ${tasks.length} requires ${tier}.` };
+		},
+	});
+	const ctx = h.context();
+	const first = await h.router.route(request({ messages: [user("Fix a local typo", 1)] }), ctx);
+	expect(first.state?.tier).toBe("luna");
+	const second = await h.router.route(
+		request({
+			state: first.state,
+			messages: [user("Now integrate authentication with retries across the service", 2)],
+		}),
 		ctx,
 	);
-	expect(h.dispatches).toHaveLength(1);
-	h.queue();
-	await h.router.route(request({ state: first.state, messages: [user("Assess the recovery redesign", 5)] }), ctx);
-	expect(h.dispatches).toHaveLength(2);
-	expect(h.dispatches[1].envelope.context).toContain("Previous task:");
+	expect(second.state?.tier).toBe("sol");
+	expect(second.model).toBe(models.sol);
+	const simpler = await h.router.route(
+		request({ state: second.state, messages: [user("Add a focused test for the new flow", 3)] }),
+		ctx,
+	);
+	expect(simpler.state?.tier).toBe("sol");
+	expect(simpler.model).toBe(models.sol);
+	const complex = await h.router.route(
+		request({
+			state: simpler.state,
+			messages: [user("Now resolve the cross-service partial-failure and ordering behavior", 4)],
+		}),
+		ctx,
+	);
+	expect(complex.state?.tier).toBe("astra");
+	expect(complex.model).toBe(models.astra);
+	expect(complex.state?.task).toContain("integrate authentication");
+	expect(complex.state?.task).toContain("partial-failure");
+	expect(tasks).toHaveLength(4);
+	expect(h.samples).toHaveLength(4);
 });
 
 test("ambiguity retains an existing strong physical model and original task, but fresh ambiguity uses Sol", async () => {
@@ -262,7 +315,8 @@ test("ambiguity retains an existing strong physical model and original task, but
 	h.queue();
 	const retained = await h.router.route(request({ state: old, messages: [user("Fix it", 3)] }), ctx);
 	expect(retained.model).toBe(models.astra);
-	expect(retained.state).toMatchObject({ tier: "astra", task: old.task, model: old.model });
+	expect(retained.state).toMatchObject({ tier: "astra", model: old.model });
+	expect(retained.state?.task).toContain(old.task);
 	expect(retained.state?.reason).toContain("retaining session model");
 	expect(retained.state?.taskKey).not.toBe(old.taskKey);
 	const fresh = await h.router.route(request({ messages: [user("Fix it")] }), h.context("new"));
@@ -470,7 +524,7 @@ test("explicit hard-scope evidence keeps Astra despite missing details for main 
 	expect((await h.router.subtask({ task }, ctx)).model).toEqual({ provider: "fixture", id: "astra" });
 });
 
-test("ambiguous followups retain Luna without spending classifier tokens", async () => {
+test("ambiguous followups retain Luna while still classifying each new turn", async () => {
 	const h = harness({ result: { ...classified, tier: "luna", insufficient_context: true } });
 	const old: RoutingState = {
 		version: 1,
@@ -483,14 +537,15 @@ test("ambiguous followups retain Luna without spending classifier tokens", async
 	const ctx = h.context();
 	const routed = await h.router.route(request({ state: old, messages: [user("Fix the other issue")] }), ctx);
 	expect(routed.model).toBe(models.luna);
-	expect(routed.state).toBe(old);
+	expect(routed.state?.tier).toBe("luna");
 	const acknowledgement = await h.router.route(
-		request({ state: old, messages: [user("yes")], thinkingLevel: "low" }),
+		request({ state: routed.state, messages: [user("yes")], thinkingLevel: "low" }),
 		ctx,
 	);
 	expect(acknowledgement.model).toBe(models.luna);
 	expect(acknowledgement.thinkingLevel).toBe("low");
-	expect(h.dispatches).toHaveLength(0);
+	expect(h.dispatches).toHaveLength(2);
+	expect(h.samples).toHaveLength(2);
 });
 
 test("task envelopes include bounded conversational context, ignore tool results, and expose image uncertainty", () => {
@@ -553,28 +608,28 @@ test("route/state guards reject malformed persisted state and recognise only the
 	expect(physicalModel({ provider: "fixture", id: "sol" }, h.context())).toBe(models.sol);
 });
 
-test("twenty substantive follow-ups reuse one classification and create no extra usage or decision entries", async () => {
+test("twenty substantive follow-ups are classified once each without tool-continuation calls", async () => {
 	const h = harness();
 	const ctx = h.context();
 	const first = await h.router.route(request(), ctx);
-	h.catalog.delete("classifier");
-	h.catalog.delete("sol");
+	let latest = first;
 	for (let i = 0; i < 20; i++) {
 		const next = await h.router.route(
 			request({
-				state: first.state,
+				state: latest.state,
 				messages: [user(`Add tests, investigate failure paths, and finish implementation ${i}`, i + 10)],
 				thinkingLevel: "low",
 			}),
 			ctx,
 		);
 		expect(next.model).toBe(first.model);
-		expect(next.state).toBe(first.state);
+		expect(next.state?.model).toEqual(first.state?.model);
 		expect(next.thinkingLevel).toBe("low");
+		latest = next;
 	}
-	expect(h.dispatches).toHaveLength(1);
-	expect(h.samples).toHaveLength(1);
-	expect(h.decisions).toHaveLength(1);
+	expect(h.dispatches).toHaveLength(21);
+	expect(h.samples).toHaveLength(21);
+	expect(h.decisions).toHaveLength(21);
 });
 
 test("reassessment is upgrade-only; reset explicitly permits downgrades, once per request", async () => {
@@ -721,20 +776,15 @@ test("cancellation after dispatch records spend but does not consume reassessmen
 
 test("one session's pending reassessment does not classify another session's held route", async () => {
 	const h = harness({ result: { ...classified, tier: "astra" } });
-	const state: RoutingState = {
-		version: 1,
-		taskKey: "old",
-		task: "Existing work",
-		tier: "sol",
-		model: { provider: "fixture", id: "sol" },
-		reason: "Initial route",
-	};
+	const ctx = h.context("two");
+	const state = (await h.router.route(request(), ctx)).state!;
 	h.queue("reset", "one");
-	const other = await h.router.route(request({ state }), h.context("two"));
+	const repeatedRequest = request({ state });
+	const other = await h.router.route(repeatedRequest, ctx);
 	expect(other.state).toBe(state);
-	expect(other.model).toBe(models.sol);
-	expect(h.dispatches).toHaveLength(0);
-	const changed = await h.router.route(request({ state }), h.context("one"));
-	expect(changed.model).toBe(models.astra);
+	expect(other.model).toBe(models.astra);
 	expect(h.dispatches).toHaveLength(1);
+	const changed = await h.router.route(repeatedRequest, h.context("one"));
+	expect(changed.model).toBe(models.astra);
+	expect(h.dispatches).toHaveLength(2);
 });

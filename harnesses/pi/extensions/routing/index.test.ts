@@ -114,8 +114,10 @@ function harness(initial?: RoutingSettings) {
 		appendEntry: (customType: string, data: unknown) =>
 			entries.push({ type: "custom", customType, data } as SessionEntry),
 		setModel: async (model: Model<Api>) => {
+			const previousModel = selection;
 			selected.push(model);
 			selection = model;
+			await emit("model_select", { model, previousModel, source: "set" });
 			return true;
 		},
 	};
@@ -467,4 +469,29 @@ test("assessment commands reject physical selections, active turns, and unsettle
 	resolve(reply());
 	await Promise.resolve();
 	await Promise.resolve();
+});
+test("physical /model choices pin an execution model while keeping Auto selected", async () => {
+	const h = harness(settings());
+	h.model = auto;
+	await h.emit("session_start");
+	await h.emit("model_select", { model: models[2], previousModel: auto, source: "set" });
+	expect(h.context.model).toBe(auto);
+	expect(h.selected).toEqual([auto]);
+	expect(h.statuses.get("routing")).toBe("Auto → astra · fixture (manual pin)");
+	expect(h.notices.at(-1)?.text).toContain("Auto routing remains selected");
+	const request = {
+		model: auto,
+		reason: "user",
+		thinkingLevel: "low",
+		messages: [{ role: "user", content: "A small follow-up", timestamp: 1 }],
+	};
+	const pinned = await h.virtual[0].route(request, h.context);
+	expect(pinned.model).toBe(models[2]);
+	expect(h.calls).toEqual([]);
+	await h.command("reset");
+	expect(h.statuses.get("routing")).toContain("reset queued");
+	const reassessed = await h.virtual[0].route(request, h.context);
+	expect(reassessed.model).toBe(models[0]);
+	expect(h.calls).toHaveLength(1);
+	expect(h.statuses.get("routing")).toBe("Auto → luna · fixture (luna held)");
 });

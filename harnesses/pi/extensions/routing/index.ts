@@ -8,6 +8,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { recordClassifierUsage, recordClassifierUsageMissing } from "./accounting.js";
 import { ASSESSMENT_ENTRY, type AssessmentRequest, pendingAssessment } from "./affinity.js";
+import { manualPin, recordPin } from "./pin.js";
 import {
 	isAuto,
 	isRoutingState,
@@ -32,6 +33,10 @@ const clean = (value: string) => value.replace(/\p{Cc}/gu, " ").slice(0, 600);
 
 function heldModelStatus(state: Pick<RoutingState, "model" | "tier">): string {
 	return `Auto → ${clean(state.model.id)} · ${clean(state.model.provider)} (${state.tier} held)`;
+}
+
+function pinnedModelStatus(model: ModelRef): string {
+	return `Auto → ${clean(model.id)} · ${clean(model.provider)} (manual pin)`;
 }
 
 export function branchRoutingState(ctx: ExtensionContext): RoutingState | undefined {
@@ -76,11 +81,12 @@ export function registerRouting(
 	}
 	function updateStatus(ctx: ExtensionContext, model = ctx.model): void {
 		const state = branchRoutingState(ctx);
+		const pin = manualPin(ctx);
 		const pending = pendingAssessment(ctx, state);
 		ctx.ui.setStatus(
 			"routing",
 			isAuto(model)
-				? `${state ? heldModelStatus(state) : preferences ? "Auto: ready" : "Auto: setup required"}${pending ? ` (${pending.mode} queued)` : ""}`
+				? `${pin ? pinnedModelStatus(pin) : state ? heldModelStatus(state) : preferences ? "Auto: ready" : "Auto: setup required"}${pending ? ` (${pending.mode} queued)` : ""}`
 				: preferences?.subagents
 					? "Child Auto"
 					: undefined,
@@ -143,7 +149,34 @@ export function registerRouting(
 		}
 		updateStatus(ctx);
 	});
-	pi.on("model_select", (event, ctx) => updateStatus(ctx, event.model));
+	let internalModelSelection = false;
+	async function setRoutingModel(model: Model<Api>): Promise<boolean> {
+		internalModelSelection = true;
+		try {
+			return await pi.setModel(model);
+		} finally {
+			internalModelSelection = false;
+		}
+	}
+	pi.on("model_select", async (event, ctx) => {
+		if (!internalModelSelection && isAuto(event.previousModel) && !isAuto(event.model) && event.source !== "restore") {
+			const model = physicalModel({ provider: event.model.provider, id: event.model.id }, ctx);
+			recordPin(pi, { provider: model.provider, id: model.id });
+			const auto = ctx.modelRegistry.find(ROUTING_PROVIDER, ROUTING_MODEL);
+			if (!auto) throw new Error("Auto model is unavailable; reload Pi and retry the model selection.");
+			if (!(await setRoutingModel(auto)))
+				throw new Error("Could not keep Auto selected after pinning the physical model.");
+			ctx.ui.notify(`Pinned ${modelName(model)} for this session; Auto routing remains selected.`, "info");
+		} else if (
+			!internalModelSelection &&
+			isAuto(event.model) &&
+			!isAuto(event.previousModel) &&
+			event.source !== "restore"
+		) {
+			recordPin(pi);
+		}
+		updateStatus(ctx);
+	});
 	pi.on("session_tree", (_event, ctx) => updateStatus(ctx));
 	const guard = (_event: unknown, ctx: ExtensionContext) => {
 		if (!router.hasPending(ctx)) return;
@@ -239,6 +272,7 @@ export function registerRouting(
 							"Wait for the current turn and classifier transport to settle before requesting reassessment.",
 						);
 					const assessment: AssessmentRequest = { version: 1, id: randomUUID(), mode: action };
+					recordPin(pi);
 					pi.appendEntry(ASSESSMENT_ENTRY, assessment);
 					updateStatus(ctx);
 					ctx.ui.notify(
@@ -257,11 +291,12 @@ export function registerRouting(
 					if (!ctx.isIdle()) throw new Error("Wait for or abort the current turn before enabling routing.");
 					if (!preferences && !(await setup(ctx))) return;
 					for (const ref of [preferences!.classifier, ...Object.values(preferences!.tiers)]) physicalModel(ref, ctx);
+					recordPin(pi);
 					const model = ctx.modelRegistry.find(ROUTING_PROVIDER, ROUTING_MODEL);
-					if (!model || !(await pi.setModel(model)))
+					if (!model || !(await setRoutingModel(model)))
 						throw new Error("Auto model could not be selected. Reload Pi and try again.");
 					ctx.ui.notify(
-						"Auto routing enabled: the initial model stays held across follow-ups. Use /routing reassess for an upgrade or /routing reset for new work. Delegation permissions are unchanged.",
+						"Auto routing enabled: Luna reassesses each new user turn and only upgrades automatically. Use /routing reset to permit downgrades. Delegation permissions are unchanged.",
 						"info",
 					);
 					return;
@@ -278,9 +313,10 @@ export function registerRouting(
 						return;
 					}
 					if (!ctx.isIdle()) throw new Error("Wait for or abort the current turn before disabling routing.");
-					const ref = branchRoutingState(ctx)?.model ?? preferences?.tiers.sol;
+					const ref = manualPin(ctx) ?? branchRoutingState(ctx)?.model ?? preferences?.tiers.sol;
 					if (!ref) throw new Error("Select a physical model with /model to disable unconfigured Auto routing.");
-					if (!(await pi.setModel(physicalModel(ref, ctx))))
+					recordPin(pi);
+					if (!(await setRoutingModel(physicalModel(ref, ctx))))
 						throw new Error("Could not select the physical model. Use /model.");
 					ctx.ui.notify(`Main Auto routing off; pinned ${modelName(ref)} for this session.${childNotice}`, "info");
 					return;
@@ -308,9 +344,10 @@ export function registerRouting(
 				const pending = pendingAssessment(ctx, state);
 				ctx.ui.notify(
 					[
+						"Auto reassesses every distinct user turn and only upgrades automatically. A /model physical choice pins it while Auto stays selected; /routing reassess/reset releases the pin.",
 						`Auto: ${isAuto(ctx.model) ? "on" : "off"}. Delegation permissions are unchanged.`,
-						"Session affinity: follow-ups reuse the current model without classification. /routing reassess allows upgrades; /routing reset allows a new work-unit model.",
-						`Next assessment: ${pending ? `${pending.mode} queued for next Auto user message` : state ? "none (model held)" : "initial task"}.`,
+						...(manualPin(ctx) ? [`Manual pin: ${modelName(manualPin(ctx)!)}; reassess/reset releases it.`] : []),
+						`Next assessment: ${manualPin(ctx) ? "bypassed (manual pin active)" : pending ? `${pending.mode} queued for next Auto user message` : state ? "every distinct Auto user turn (upgrade-only)" : "initial task"}.`,
 						...(preferences
 							? [
 									`Classifier: ${modelName(preferences.classifier)} (${preferences.timeoutMs}ms; ${preferences.maxTokens} output-token budget where supported).`,

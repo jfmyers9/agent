@@ -13,6 +13,7 @@ import {
 import { CLASSIFIER_USAGE_ENTRY_TYPE } from "./accounting";
 import { pendingAssessment } from "./affinity";
 import { branchRoutingState, registerRouting } from "./index";
+import { manualPin } from "./pin";
 import { ROUTING_MODEL, ROUTING_PROVIDER, type RoutingSettings } from "./settings";
 
 type Session = Awaited<ReturnType<typeof createAgentSession>>["session"];
@@ -209,21 +210,28 @@ test("native persisted branch state survives compaction, resume, tree navigation
 		const navigation = await session.navigateTree(originalLeaf, { summarize: false });
 		expect(navigation.cancelled).toBe(false);
 		expect(branchRoutingState(session.extensionRunner.createContext())).toEqual(state);
-		// Acknowledgement follows the restored task model without paying for another classification.
-		h.faux.setResponses([h.step("Continuing the original task.")]);
+		// Acknowledgement is reassessed, but cannot downgrade the held model.
+		h.faux.setResponses([h.classifier("luna"), h.step("Continuing the original task.")]);
 		await session.prompt("continue");
-		expect(h.faux.state.callCount).toBe(3);
-		expect(branchRoutingState(session.extensionRunner.createContext())).toEqual(state);
+		expect(h.faux.state.callCount).toBe(4);
+		expect(branchRoutingState(session.extensionRunner.createContext())).toMatchObject({
+			tier: state?.tier,
+			model: state?.model,
+		});
 		const fork = SessionManager.forkFrom(file, h.cwd, join(h.root, "forks"));
 		session.dispose();
 		const child = await h.open(fork, false);
 		expect(child.model?.id).toBe(ROUTING_MODEL);
-		expect(branchRoutingState(child.extensionRunner.createContext())).toEqual(state);
+		expect(branchRoutingState(child.extensionRunner.createContext())).toMatchObject({
+			tier: state?.tier,
+			model: state?.model,
+		});
+		expect(branchRoutingState(child.extensionRunner.createContext())?.task).toContain("continue");
 		expect(
 			child.sessionManager
 				.getEntries()
 				.filter((entry) => entry.type === "custom" && entry.customType === CLASSIFIER_USAGE_ENTRY_TYPE),
-		).toHaveLength(1);
+		).toHaveLength(2);
 		expect(h.errors).toEqual([]);
 	} finally {
 		await h.close();
@@ -257,7 +265,7 @@ test("native route context reports unconfigured routing and unavailable authenti
 	}
 }, 15_000);
 
-test("native session makes one classifier call across twenty substantive user follow-ups", async () => {
+test("native session reassesses every distinct user follow-up and upgrades only when complexity rises", async () => {
 	const h = await fixture();
 	try {
 		const session = await h.open();
@@ -271,13 +279,16 @@ test("native session makes one classifier call across twenty substantive user fo
 		const routeCount = (entries: typeof initialEntries) =>
 			entries.filter((entry) => entry.type === "custom" && entry.customType === "pi.virtual-model-state").length;
 		for (let i = 0; i < 20; i++) {
-			h.faux.setResponses([h.step("Follow-up complete.")]);
+			h.faux.setResponses([h.classifier("luna"), h.step("Follow-up complete.")]);
 			await session.prompt(`Also add regression coverage for scenario ${i}`);
-			expect(branchRoutingState(session.extensionRunner.createContext())).toEqual(state);
+			expect(branchRoutingState(session.extensionRunner.createContext())).toMatchObject({
+				tier: state?.tier,
+				model: state?.model,
+			});
 		}
-		expect(h.faux.state.callCount).toBe(22);
-		expect(receiptCount(session.sessionManager.getEntries())).toBe(1);
-		expect(routeCount(session.sessionManager.getEntries())).toBe(routeCount(initialEntries));
+		expect(h.faux.state.callCount).toBe(42);
+		expect(receiptCount(session.sessionManager.getEntries())).toBe(21);
+		expect(routeCount(session.sessionManager.getEntries()) - routeCount(initialEntries)).toBe(20);
 		expect(h.dispatches.every((model) => model === "luna")).toBe(true);
 		expect(h.errors).toEqual([]);
 	} finally {
@@ -315,32 +326,61 @@ test("native queued reassessment survives compaction/resume and consumption foll
 		const fork = SessionManager.forkFrom(file, h.cwd, join(h.root, "affinity-forks"));
 		session.dispose();
 		session = await h.open(fork, false);
-		h.faux.setResponses([h.step("Additional test done.")]);
+		h.faux.setResponses([h.classifier("sol"), h.step("Additional test done.")]);
 		await session.prompt("Also add a test for cancellation.");
 		expect(h.dispatches.at(-1)).toBe("astra");
-		expect(h.faux.state.callCount).toBe(5);
+		expect(h.faux.state.callCount).toBe(6);
 		expect(pendingAssessment(ctx(), branchRoutingState(ctx()))).toBeUndefined();
 
 		// Explicit reset allows a cheaper model; ordinary follow-ups do not.
 		await session.prompt("/routing reset");
-		expect(h.faux.state.callCount).toBe(5);
+		expect(h.faux.state.callCount).toBe(6);
 		h.faux.setResponses([h.classifier(), h.step("Mechanical work done.")]);
 		await session.prompt("New work: apply the supplied mechanical replacement.");
 		expect(branchRoutingState(ctx())?.tier).toBe("luna");
-		expect(h.faux.state.callCount).toBe(7);
+		expect(h.faux.state.callCount).toBe(8);
 
 		// Requests on another branch do not leak backwards through navigation.
 		await session.navigateTree(originalLeaf, { summarize: false });
 		expect(pendingAssessment(ctx(), branchRoutingState(ctx()))).toBeUndefined();
-		h.faux.setResponses([h.step("Original branch work done.")]);
+		h.faux.setResponses([h.classifier("sol"), h.step("Original branch work done.")]);
 		await session.prompt("Add documentation for the original change.");
-		expect(h.faux.state.callCount).toBe(8);
+		expect(h.faux.state.callCount).toBe(10);
 		await session.navigateTree(requestedLeaf, { summarize: false });
 		expect(pendingAssessment(ctx(), branchRoutingState(ctx()))).toEqual(queued);
 		h.faux.setResponses([h.classifier("sol"), h.step("Branch assessment complete.")]);
 		await session.prompt("Investigate the revised implementation.");
 		expect(branchRoutingState(ctx())).toMatchObject({ tier: "sol", assessmentId: queued.id });
-		expect(h.faux.state.callCount).toBe(10);
+		expect(h.faux.state.callCount).toBe(12);
+		expect(h.errors).toEqual([]);
+	} finally {
+		await h.close();
+	}
+}, 15_000);
+test("native physical model selection pins it for the session while Auto stays selected across resume", async () => {
+	const h = await fixture();
+	try {
+		let session = await h.open();
+		await session.setModel(h.auto());
+		const astra = h.runtime.getModel("routing-fixture", "astra")!;
+		await session.setModel(astra);
+		expect(session.model?.provider).toBe(ROUTING_PROVIDER);
+		expect(session.model?.id).toBe(ROUTING_MODEL);
+		expect(manualPin(session.extensionRunner.createContext())).toEqual({ provider: "routing-fixture", id: "astra" });
+		h.faux.setResponses([h.step("Pinned model response.")]);
+		await session.prompt("Continue under my selected physical model.");
+		expect(h.dispatches).toEqual(["astra"]);
+		expect(h.faux.state.callCount).toBe(1);
+		expect(session.getLastAssistantText()).toBe("Pinned model response.");
+		const file = session.sessionManager.getSessionFile()!;
+		session.dispose();
+		session = await h.open(SessionManager.open(file), false);
+		expect(session.model?.id).toBe(ROUTING_MODEL);
+		expect(manualPin(session.extensionRunner.createContext())).toEqual({ provider: "routing-fixture", id: "astra" });
+		h.faux.setResponses([h.step("Still pinned after resume.")]);
+		await session.prompt("Another follow-up.");
+		expect(h.dispatches).toEqual(["astra", "astra"]);
+		expect(h.faux.state.callCount).toBe(2);
 		expect(h.errors).toEqual([]);
 	} finally {
 		await h.close();
