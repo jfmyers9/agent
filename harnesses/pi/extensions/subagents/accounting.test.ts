@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { type ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
+import { recordClassifierUsage, recordClassifierUsageMissing } from "../routing/accounting";
 
 const base = import.meta.resolve("@luan.sh/pi-subagents");
 const {
@@ -198,7 +199,7 @@ test("restoration reconciles crash-gap transcript costs before follow-up and che
 		const checkpoint = h.coordinator.checkpoint();
 		expect(checkpoint.agents[0].cost).toBe(2);
 		expect(checkpoint.agents[0].costLastEntryId).toBe(manager.getEntries().at(-1)?.id);
-		// All four writes reach the child transcript, but the parent never checkpoints them.
+		// These writes reach the child transcript, but the parent never checkpoints them.
 		manager.appendUsage("cache_warm", "example", "cheap", usage(3));
 		manager.appendMessage({
 			role: "toolResult",
@@ -211,19 +212,32 @@ test("restoration reconciles crash-gap transcript costs before follow-up and che
 		});
 		manager.appendCompaction("summary", inherited, 10, undefined, false, usage(5));
 		manager.branchWithSummary(inherited, "branch", undefined, false, usage(6));
+		manager.appendCustomEntry("routing:usage-v1", {
+			version: 1,
+			id: "gap-priced",
+			provider: "example",
+			model: "cheap",
+			usage: usage(7),
+		});
+		manager.appendCustomEntry("routing:usage-v1", {
+			version: 1,
+			id: "gap-unknown",
+			provider: "example",
+			model: "cheap",
+		});
 		restored.coordinator.restore(checkpoint, { ctx: restored.ctx, pi: {} });
-		expect(restored.coordinator.snapshot()[0].cost).toBe(20);
-		expect(restored.coordinator.snapshot()[0].cost).toBe(20);
+		expect(restored.coordinator.snapshot()[0]).toMatchObject({ cost: 27, costMissing: 1 });
+		expect(restored.coordinator.snapshot()[0]).toMatchObject({ cost: 27, costMissing: 1 });
 		const recovered = restored.coordinator.checkpoint();
 		expect(recovered.agents[0].costLastEntryId).toBe(manager.getEntries().at(-1)?.id);
 		repeat.restore(recovered);
-		expect(repeat.snapshot()[0].cost).toBe(20);
+		expect(repeat.snapshot()[0]).toMatchObject({ cost: 27, costMissing: 1 });
 		await restored.coordinator.followUp(undefined, "/root/worker", "continue");
-		expect(restored.coordinator.snapshot()[0].cost).toBe(20);
+		expect(restored.coordinator.snapshot()[0]).toMatchObject({ cost: 27, costMissing: 1 });
 		const next = assistant();
 		next.usage = usage(2);
 		manager.appendMessage(next);
-		expect(restored.coordinator.checkpoint().agents[0].cost).toBe(22);
+		expect(restored.coordinator.checkpoint().agents[0]).toMatchObject({ cost: 29, costMissing: 1 });
 		restored.finish();
 		h.finish();
 		await Promise.resolve();
@@ -271,5 +285,105 @@ test("legacy or unresolvable watermarks exclude existing transcript history; nul
 	} finally {
 		removeRootCoordinator(h.coordinator.rootSessionId);
 		rmSync(rootSessionDir, { recursive: true, force: true });
+	}
+});
+
+test("routing usage counts once across live snapshots, inherited copies and restored follow-ups", async () => {
+	const manager = SessionManager.inMemory();
+	const pi = {
+		appendEntry: (type: string, data?: unknown) => {
+			manager.appendCustomEntry(type, data);
+		},
+	};
+	const context = { modelRegistry: registry as ExtensionContext["modelRegistry"] };
+	const inherited = recordClassifierUsage(pi, context, { provider: "example", model: "cheap", usage: usage(100) });
+	recordClassifierUsageMissing(pi, { provider: "example", model: "cheap" });
+	const h = harness(manager);
+	try {
+		h.coordinator.spawn(undefined, h.request);
+		const own = recordClassifierUsage(pi, context, { provider: "example", model: "cheap", usage: usage(2) });
+		manager.appendCustomEntry("routing:usage-v1", inherited);
+		manager.appendCustomEntry("routing:usage-v1", own);
+		recordClassifierUsageMissing(pi, { provider: "example", model: "cheap" });
+		for (let i = 0; i < 3; i++) {
+			expect(h.coordinator.snapshot()[0]).toMatchObject({ cost: 2, costMissing: 1 });
+		}
+		const checkpoint = h.coordinator.checkpoint();
+		expect(checkpoint.agents[0]).toMatchObject({ cost: 2, costMissing: 1 });
+		h.finish();
+		await Promise.resolve();
+		await Promise.resolve();
+		const restored = harness(manager);
+		try {
+			restored.coordinator.restore(checkpoint, { ctx: restored.ctx, pi: {} });
+			await restored.coordinator.followUp(undefined, "/root/worker", "continue");
+			expect(restored.coordinator.snapshot()[0]).toMatchObject({ cost: 2, costMissing: 1 });
+			recordClassifierUsage(pi, context, { provider: "example", model: "cheap", usage: usage(3) });
+			expect(restored.coordinator.snapshot()[0]).toMatchObject({ cost: 5, costMissing: 1 });
+			restored.finish();
+			await Promise.resolve();
+		} finally {
+			removeRootCoordinator(restored.coordinator.rootSessionId);
+		}
+	} finally {
+		removeRootCoordinator(h.coordinator.rootSessionId);
+	}
+});
+
+test("routing unknown-price records remain lower bounds in the child ledger after JSON persistence", () => {
+	const manager = SessionManager.inMemory();
+	const ledger = new SessionCostLedger([], registry);
+	manager.appendCustomEntry("routing:usage-v1", {
+		version: 1,
+		id: "unknown",
+		provider: "unknown",
+		model: "unknown",
+		usage: usage(),
+	});
+	manager.appendCustomEntry("routing:usage-v1", {
+		version: 1,
+		id: "absent",
+		provider: "example",
+		model: "cheap",
+	});
+	const entries = JSON.parse(JSON.stringify(manager.getEntries()));
+	expect(ledger.collect(entries)).toBe(0);
+	expect(ledger.missing).toBe(2);
+	expect(ledger.collect(entries)).toBe(0);
+	expect(ledger.missing).toBe(0);
+});
+
+test("child unknown assistant, tool, standalone and summary costs are lower bounds, excluding inherited unknowns", () => {
+	const manager = SessionManager.inMemory();
+	const inherited = manager.appendMessage(assistant("unknown"));
+	const tool = (id: string) => ({
+		role: "toolResult" as const,
+		toolCallId: id,
+		toolName: "lookup",
+		content: [],
+		isError: false,
+		timestamp: 2,
+		usage: usage(),
+	});
+	manager.appendMessage(tool("inherited"));
+	const h = harness(manager);
+	try {
+		h.coordinator.spawn(undefined, h.request);
+		expect(h.coordinator.snapshot()[0].costMissing ?? 0).toBe(0);
+		manager.appendMessage(assistant("unknown"));
+		manager.appendMessage(tool("own"));
+		manager.appendUsage("background", "example", "unknown", usage());
+		manager.appendCompaction("summary", inherited, 10, undefined, false, usage());
+		manager.branchWithSummary(inherited, "branch", undefined, false, usage());
+		// A recoverable catalog price and a recorded zero are known, not missing.
+		manager.appendUsage("background", "example", "cheap", usage());
+		manager.appendMessage({ ...tool("free"), usage: usage(0) });
+		for (let i = 0; i < 3; i++) {
+			expect(h.coordinator.snapshot()[0]).toMatchObject({ cost: 2, costMissing: 5 });
+		}
+		expect(h.coordinator.checkpoint().agents[0]).toMatchObject({ cost: 2, costMissing: 5 });
+		h.finish();
+	} finally {
+		removeRootCoordinator(h.coordinator.rootSessionId);
 	}
 });

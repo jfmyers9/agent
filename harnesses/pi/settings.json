@@ -30,7 +30,8 @@
     "anthropic/claude-opus-5",
     "anthropic/claude-opus-4-8",
     "anthropic/claude-sonnet-4-6",
-    "anthropic/claude-haiku-4-5"
+    "anthropic/claude-haiku-4-5",
+    "routing/auto"
   ],
   "skills": [
     "skills"
@@ -76,6 +77,7 @@
     "extensions/token-burden/index.ts",
     "extensions/system-prompt/index.ts",
     "extensions/convergence-loop/index.ts",
+    "extensions/routing/index.ts",
     "extensions/work/index.ts",
     "extensions/tui/index.ts",
     "extensions/spawn/index.ts",

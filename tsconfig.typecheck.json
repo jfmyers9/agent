@@ -25,6 +25,7 @@
     "harnesses/pi/extensions/collapse-transcript/**/*.ts",
     "harnesses/pi/extensions/code-mode/**/*.ts",
     "harnesses/pi/extensions/subagents/**/*.ts",
+    "harnesses/pi/extensions/routing/**/*.ts",
     "harnesses/pi/extensions/work/**/*.ts"
   ],
   "exclude": [

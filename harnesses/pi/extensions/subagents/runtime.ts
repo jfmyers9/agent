@@ -1,4 +1,4 @@
-export type AgentCostSnapshot = { id: string; status: string; cost?: number };
+export type AgentCostSnapshot = { id: string; status: string; cost?: number; costMissing?: number };
 type Coordinator = {
 	snapshot(): ReadonlyArray<AgentCostSnapshot>;
 	pathForSession?(sessionId: string): string | undefined;

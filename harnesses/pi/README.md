@@ -74,6 +74,7 @@ Installed extensions:
 - `fileops/` — replaces the built-in local file workflow with `read`, `search`, `find`, `write`, and a configurable `edit` tool. Default edit mode is hashline.
 - `apply-patch/` — registers Codex's `apply_patch` format for GPT models and switches GPT sessions away from `edit`/`write`.
 - `work/` — `/work` implements one ready Linear ticket in an isolated worktree; `/work loop` watches the queue. Setup is interactive, with no repository config files. See [Linear work runner](#linear-work-runner).
+- `routing/` — optional **Auto — Luna routing** model, shared classification for authorized bounded subagents, and interactive `/routing` preferences. See [Automatic model routing](#automatic-model-routing).
 - `prompt-storage/` — local prompt stash/history. Shortcuts: `alt+s` stash current draft, `ctrl+alt+s` pop a stash, `ctrl+r` search previous prompts.
 - `vim/` — replaces the editor with Vim-style modal editing. Remove it from `settings.json`'s `extensions` list, then reinstall/reload Pi, to disable it.
 - `skillful/` — supports `$skill-name` references with autocomplete/highlighting and registers a `skill` tool that reads current instructions on every invocation while keeping `/skill:<name>` commands available.
@@ -97,6 +98,61 @@ launched `/spawn` sessions are not descendants and are not included.
 - `subagents/` — concurrent nested Pi sessions with messaging, follow-up tasks, interrupts, and `/subagents` for inspection.
 - `runtime-support/` — loads shared package UI support and `/xsettings` once, and gives native Code Mode/tool-search rows compact framing while preserving their renderers and expansion controls. Errors and image results retain native framing.
 - `collapse-transcript/` — keeps the current run's tools and thinking visible, then folds settled activity into timed, expandable rows in fullscreen mode. Assistant prose and standalone notices remain visible; failed tools retain failure counts and their original expanded output. Regular scrollback is unchanged.
+
+### Automatic model routing
+
+Routing is off until explicitly selected; installation does not change the default
+model. Run `/routing setup` to choose an authenticated physical Luna classifier,
+the Luna/Sol/Astra targets, and whether to route authorized bounded subagents.
+Confirming saves personal application-managed preferences under
+`$XDG_STATE_HOME/agent-routing/preferences.json` (default
+`~/.local/state/agent-routing/preferences.json`). No repository configuration or
+hand-maintained dotfile is needed. Canceling setup leaves preferences unchanged.
+
+- `/routing on` or `/model` → **Auto — Luna routing**: opt in for this session.
+- `/routing off`: disable main Auto and pin its last physical model (Sol before any task); the independent subagent preference is unchanged.
+- `/routing status`: inspect mappings, limits, and the last branch-local decision.
+- `/routing setup`: change mappings; affects new tasks, not active continuations.
+- `/routing subagents`: change bounded-subagent routing, independently of delegation permission.
+- Selecting any physical model bypasses main-session routing. Auto selection resumes with its
+  session; it is never written as the startup default by this extension.
+
+For main sessions, Luna receives a bounded text envelope with the current task and relevant preceding
+conversation, not tools or permission to execute it. It uses an ordinary completion
+through existing Pi authentication. The rubric favors Luna for well-understood,
+mechanical work, Sol for normal coding/debugging, and Astra for evidenced deep or
+high-impact uncertainty. Prompt length, edit size, and file counts are not proxies
+for difficulty. Malformed output, timeout, or unavailable classification uses Sol;
+ambiguous continuations retain an already stronger route. Acknowledgements,
+tool continuations, ordinary retries, and compaction do not reclassify. Branch-local
+state survives resume, forks, compaction, and tree navigation; direct/summary
+requests reuse the prior physical model or Sol without another classifier call.
+
+Authorized `spawn_agent` assignments are classified when the independent subagent
+preference is enabled and `fork_turns` explicitly bounds context (`none` or a
+positive integer). This also works while the main session uses a physical model.
+Child classification uses the concrete assignment text; provide self-contained
+assignments, since omitted references conservatively fall back to Sol.
+Explicit model overrides bypass classification. Omitted/`all` forks preserve full
+history and inherit selection; routing never discards history, creates agents,
+changes thinking overrides, relaxes depth/concurrency/ownership rules, or grants
+delegation/review permission. `/spawn` and `/work` have no routing-specific integration.
+
+Decisions show the target, reason, latency, and fallback. Classifier spend is
+included once in `/cost` and descendant totals using versioned session receipts;
+inherited receipts are not charged again. Unreported usage marks a lower-bound
+total. Native `/session` does not include these extension receipts. The default
+classification deadline is 15 seconds with a 1,024-output-token budget where the
+provider supports it; the installed Codex adapter ignores `maxTokens`. Timeouts
+cancel transport and reject oversized/malformed responses; they cannot guarantee
+a server-side billing cap. While an outstanding classifier transport settles,
+session switching/forking/tree navigation is blocked until settlement to keep late usage
+in its original session. Closing the process before usage arrives cannot recover
+unreported provider spend.
+
+`bun run test:pi-routing` runs deterministic policy/protocol/lifecycle tests and
+checks representative labeled fixtures; these are not measured model accuracy or
+paid evaluation results.
 
 ### Production diff pane
 

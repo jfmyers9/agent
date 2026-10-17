@@ -1,6 +1,9 @@
-import { calculateCost, type Usage } from "@earendil-works/pi-ai";
+import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { classifierUsageRecord, priceUsage } from "../routing/accounting";
 import { type AgentCostSnapshot, getSubagentCosts } from "../subagents/runtime";
+
+export { priceUsage } from "../routing/accounting";
 
 type Registry = Pick<ExtensionContext["modelRegistry"], "find">;
 export type CostTotals = {
@@ -17,36 +20,6 @@ export type CostTotals = {
 const nonnegative = (value: number | undefined) =>
 	typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
 
-// Unattributed tool/summary usage can combine several models. Its recorded
-// dollar amount must not be repriced using the currently selected model.
-export function priceUsage(
-	usage: Usage,
-	registry: Registry,
-	provider?: string,
-	modelId?: string,
-	responseModel?: string,
-) {
-	// Recorded costs preserve request-time catalog prices and service-tier
-	// adjustments. Repricing them would silently rewrite historical spend.
-	const recordedCost = usage.cost?.total;
-	if (typeof recordedCost === "number" && Number.isFinite(recordedCost) && recordedCost >= 0) {
-		return { cost: recordedCost, recorded: !provider || !modelId, missing: false };
-	}
-	const requested = provider && modelId ? registry.find(provider, modelId) : undefined;
-	const compat = requested?.compat;
-	const fallback = (compat && "allowedFallbackModels" in compat ? compat.allowedFallbackModels : undefined)?.find(
-		(model) => model.provider === provider && model.model === responseModel,
-	);
-	const model =
-		(provider && responseModel ? registry.find(provider, responseModel) : undefined) ??
-		(fallback && requested ? { ...requested, cost: fallback.cost } : requested);
-	if (model) {
-		const cost = calculateCost(model, { ...usage, cost: { ...usage.cost } }).total;
-		if (Number.isFinite(cost) && cost >= 0) return { cost, recorded: false, missing: false };
-	}
-	return { cost: 0, recorded: true, missing: true };
-}
-
 export function sumSessionCosts(entries: readonly SessionEntry[], registry: Registry): CostTotals {
 	const totals: CostTotals = {
 		input: 0,
@@ -58,12 +31,22 @@ export function sumSessionCosts(entries: readonly SessionEntry[], registry: Regi
 		missing: 0,
 		children: [],
 	};
+	const classifierIds = new Set<string>();
 	for (const entry of entries) {
 		let usage: Usage | undefined;
 		let provider: string | undefined;
 		let model: string | undefined;
 		let responseModel: string | undefined;
-		if (entry.type === "usage") {
+		const classifier = classifierUsageRecord(entry);
+		if (classifier) {
+			if (classifierIds.has(classifier.id)) continue;
+			classifierIds.add(classifier.id);
+			if (!classifier.usage) {
+				totals.missing++;
+				continue;
+			}
+			({ usage, provider, model, responseModel } = classifier);
+		} else if (entry.type === "usage") {
 			({ usage, provider, model } = entry);
 		} else if (entry.type === "compaction" || entry.type === "branch_summary") {
 			usage = entry.usage;
@@ -73,7 +56,9 @@ export function sumSessionCosts(entries: readonly SessionEntry[], registry: Regi
 			} else if (entry.message.role === "toolResult") usage = entry.message.usage;
 		}
 		if (!usage) continue;
-		const priced = priceUsage(usage, registry, provider, model, responseModel);
+		// Routing records freeze known prices when written; an unknown price must
+		// remain a lower bound rather than becoming zero after JSON round-tripping.
+		const priced = priceUsage(usage, classifier ? { find: () => undefined } : registry, provider, model, responseModel);
 		totals.input += nonnegative(usage.input);
 		totals.output += nonnegative(usage.output);
 		totals.self += priced.cost;
@@ -104,12 +89,16 @@ export function combineAgentCosts(
 	// Child transcripts include copied parent messages. The coordinator's ledger
 	// only charges work performed by that child, including subsequent followups.
 	const self = path !== "/root" && own ? nonnegative(own.cost) : totals.self;
+	const missing = path !== "/root" && own?.costMissing !== undefined ? nonnegative(own.costMissing) : totals.missing;
 	const children = [...agents.values()]
 		.filter((agent) => agent.id.startsWith(`${path}/`))
 		.map((agent) => ({ id: agent.id, cost: nonnegative(agent.cost), status: agent.status }))
 		.sort((a, b) => a.id.localeCompare(b.id));
 	const childCost = children.reduce((sum, agent) => sum + agent.cost, 0);
-	return { ...totals, self, children, agents: childCost, total: self + childCost };
+	const childMissing = [...agents.values()]
+		.filter((agent) => agent.id.startsWith(`${path}/`))
+		.reduce((sum, agent) => sum + nonnegative(agent.costMissing), 0);
+	return { ...totals, self, missing: missing + childMissing, children, agents: childCost, total: self + childCost };
 }
 
 export function getSessionCosts(ctx: ExtensionContext): CostTotals {

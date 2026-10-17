@@ -155,16 +155,26 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
  import {
  	type AgentSession,
-@@ -100,6 +101,8 @@
+@@ -39,6 +40,8 @@
  	readonly completedAt?: number;
  	readonly toolUses: number;
  	readonly cost: number;
++	/** Usage records with no usable price; displayed totals are a lower bound. */
++	readonly costMissing?: number;
+ 	readonly tokenCount: number;
+ 	readonly contextPercent?: number;
+ 	readonly compactions: number;
+@@ -100,6 +103,9 @@
+ 	readonly completedAt?: number;
+ 	readonly toolUses: number;
+ 	readonly cost: number;
++	readonly costMissing?: number;
 +	/** Last append-order transcript entry included in cost; absent on legacy checkpoints. */
 +	readonly costLastEntryId?: string | null;
  	readonly tokenCount: number;
  	readonly contextPercent?: number;
  	readonly compactions: number;
-@@ -129,6 +132,7 @@
+@@ -129,6 +135,7 @@
  	activeTools: string[];
  	latestInnerTool?: string;
  	session?: AgentSession;
@@ -172,10 +182,11 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  	runtime?: RunResult["runtime"];
  	abortController: AbortController;
  	request?: SpawnRequest;
-@@ -231,6 +235,10 @@
+@@ -231,6 +238,11 @@
  		isFiniteNumber(value, "startedAt") &&
  		isFiniteNumber(value, "toolUses") &&
  		isFiniteNumber(value, "cost") &&
++		(value.costMissing === undefined || (isFiniteNumber(value, "costMissing") && Number(value.costMissing) >= 0)) &&
 +		(!("costLastEntryId" in value) ||
 +			value.costLastEntryId === undefined ||
 +			value.costLastEntryId === null ||
@@ -183,35 +194,33 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		isFiniteNumber(value, "tokenCount") &&
  		isFiniteNumber(value, "compactions") &&
  		isFiniteNumber(value, "transcriptGeneration") &&
-@@ -272,11 +280,12 @@
+@@ -272,11 +284,12 @@
  	});
  }
  
--function loadPersistedTranscript(file?: string): readonly AgentMessage[] | undefined {
 +function loadPersistedTranscript(file?: string): { entries: SessionEntry[]; messages: readonly AgentMessage[] } | undefined {
+-function loadPersistedTranscript(file?: string): readonly AgentMessage[] | undefined {
  	if (!file || !existsSync(file)) return undefined;
  	try {
  		const manager = SessionManager.open(file);
--		return Object.freeze([...buildSessionContext(manager.getEntries(), manager.getLeafId()).messages]);
 +		const entries = manager.getEntries();
 +		return { entries, messages: Object.freeze([...buildSessionContext(entries, manager.getLeafId()).messages]) };
+-		return Object.freeze([...buildSessionContext(manager.getEntries(), manager.getLeafId()).messages]);
  	} catch {
  		return undefined;
  	}
-@@ -346,13 +355,66 @@
+@@ -346,13 +359,132 @@
  	return undefined;
  }
  
--function reportedCost(usage?: { cost?: { total?: number } }): number {
 +type Registry = Pick<ExtensionContext["modelRegistry"], "find">;
 +
 +function reportedCost(usage?: Usage): number {
+-function reportedCost(usage?: { cost?: { total?: number } }): number {
  	const cost = usage?.cost?.total ?? 0;
  	return Number.isFinite(cost) && cost > 0 ? cost : 0;
  }
  
--function messageCost(message: AgentMessage): number {
--	return message.role === "assistant" || message.role === "toolResult" ? reportedCost(message.usage) : 0;
 +function modelCost(
 +	usage: Usage,
 +	provider: string,
@@ -228,55 +237,132 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
 +	const model =
 +		(responseModel && registry?.find(provider, responseModel)) ||
 +		(requested && fallback ? { ...requested, cost: fallback.cost } : requested);
-+	if (!model) return reportedCost(usage);
++	if (!model) return Number.NaN;
 +	// calculateCost mutates usage.cost; never rewrite persisted provider telemetry.
 +	const cost = calculateCost(model, { ...usage, cost: { ...usage.cost } }).total;
-+	return Number.isFinite(cost) && cost >= 0 ? cost : reportedCost(usage);
++	return Number.isFinite(cost) && cost >= 0 ? cost : Number.NaN;
++}
++
++type ClassifierUsageRecord = {
++	version: 1;
++	id: string;
++	provider: string;
++	model: string;
++	responseModel?: string;
++	usage?: Usage;
++};
++
++// Public custom-entry contract shared with the routing extension.
++function classifierUsageRecord(entry: SessionEntry): ClassifierUsageRecord | undefined {
++	if (entry.type !== "custom" || entry.customType !== "routing:usage-v1") return undefined;
++	const data = entry.data as Partial<ClassifierUsageRecord> | undefined;
++	if (
++		data?.version !== 1 ||
++		typeof data.id !== "string" ||
++		!data.id ||
++		typeof data.provider !== "string" ||
++		typeof data.model !== "string" ||
++		(data.responseModel !== undefined && typeof data.responseModel !== "string") ||
++		(data.usage !== undefined && (!data.usage || typeof data.usage !== "object"))
++	) return undefined;
++	return data as ClassifierUsageRecord;
 +}
 +
 +export function entryCost(entry: SessionEntry, registry?: Registry): number {
-+	if (entry.type === "usage") return modelCost(entry.usage, entry.provider, entry.model, undefined, registry);
++	const classifier = classifierUsageRecord(entry);
++	// The routing writer freezes request-time prices. Unknown is not free.
++	if (classifier) return reportedCost(classifier.usage);
++	if (entry.type === "usage") return modelCost(entry.usage, entry.provider, entry.model, undefined, registry) || 0;
 +	if (entry.type === "compaction" || entry.type === "branch_summary") return reportedCost(entry.usage);
 +	if (entry.type !== "message") return 0;
 +	const message = entry.message;
 +	if (message.role === "assistant")
-+		return modelCost(message.usage, message.provider, message.model, message.responseModel, registry);
++		return modelCost(message.usage, message.provider, message.model, message.responseModel, registry) || 0;
 +	return message.role === "toolResult" ? reportedCost(message.usage) : 0;
++}
++
++/** Count unknown prices separately from the known dollar lower bound. */
++export function entryMissing(entry: SessionEntry, registry?: Registry): number {
++	const classifier = classifierUsageRecord(entry);
++	let usage: Usage | undefined;
++	let cost: number | undefined;
++	if (classifier) {
++		usage = classifier.usage;
++		cost = usage?.cost?.total;
++	} else if (entry.type === "usage") {
++		cost = modelCost(entry.usage, entry.provider, entry.model, undefined, registry);
++	} else if (entry.type === "compaction" || entry.type === "branch_summary") {
++		usage = entry.usage;
++		if (!usage) return 0;
++		cost = usage.cost?.total;
++	} else if (entry.type === "message") {
++		const message = entry.message;
++		if (message.role === "assistant") {
++			cost = modelCost(message.usage, message.provider, message.model, message.responseModel, registry);
++		} else if (message.role === "toolResult" && message.usage) {
++			cost = message.usage.cost?.total;
++		} else return 0;
++	} else return 0;
++	return Number(typeof cost !== "number" || !Number.isFinite(cost) || cost < 0);
 +}
 +
 +/** Charge each persisted entry once, excluding history copied into a new child runtime. */
 +export class SessionCostLedger {
 +	private readonly seen: Set<string>;
++	private readonly classifierIds: Set<string>;
++	missing = 0;
 +	lastEntryId: string | null;
 +	constructor(
 +		entries: readonly SessionEntry[],
 +		private readonly registry?: Registry,
 +	) {
 +		this.seen = new Set(entries.map((entry) => entry.id));
++		this.classifierIds = new Set(entries.flatMap((entry) => {
++			const classifier = classifierUsageRecord(entry);
++			return classifier ? [classifier.id] : [];
++		}));
 +		this.lastEntryId = entries.at(-1)?.id ?? null;
 +	}
 +	collect(entries: readonly SessionEntry[]): number {
 +		let cost = 0;
++		this.missing = 0;
 +		for (const entry of entries) {
 +			if (this.seen.has(entry.id)) continue;
 +			this.seen.add(entry.id);
++			const classifier = classifierUsageRecord(entry);
++			if (classifier) {
++				if (this.classifierIds.has(classifier.id)) continue;
++				this.classifierIds.add(classifier.id);
++			}
 +			cost += entryCost(entry, this.registry);
++			this.missing += entryMissing(entry, this.registry);
 +		}
 +		this.lastEntryId = entries.at(-1)?.id ?? null;
 +		return cost;
 +	}
+-function messageCost(message: AgentMessage): number {
+-	return message.role === "assistant" || message.role === "toolResult" ? reportedCost(message.usage) : 0;
  }
  
  function snapshotOf(agent: LiveAgent): SubagentSnapshot {
-@@ -400,6 +462,7 @@
+@@ -372,6 +504,7 @@
  		completedAt: agent.completedAt,
  		toolUses: agent.toolUses,
  		cost: agent.cost,
++		costMissing: agent.costMissing,
+ 		tokenCount: agent.tokenCount,
+ 		contextPercent: agent.contextPercent,
+ 		compactions: agent.compactions,
+@@ -400,6 +533,8 @@
+ 		completedAt: agent.completedAt,
+ 		toolUses: agent.toolUses,
+ 		cost: agent.cost,
++		costMissing: agent.costMissing,
 +		costLastEntryId: agent.costLastEntryId,
  		tokenCount: agent.tokenCount,
  		contextPercent: agent.contextPercent,
  		compactions: agent.compactions,
-@@ -551,9 +614,11 @@
+@@ -551,9 +686,11 @@
  	}
  
  	snapshot(): readonly SubagentSnapshot[] {
@@ -288,7 +374,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		return Object.freeze({
  			version: 1,
  			agents: Object.freeze([...this.agents.values()].map(persistedStateOf).sort((a, b) => a.id.localeCompare(b.id))),
-@@ -561,6 +626,7 @@
+@@ -561,6 +698,7 @@
  	}
  	persistedAgent(target: string): PersistedSubagentState | undefined {
  		const agent = this.agents.get(target);
@@ -296,14 +382,14 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		return agent ? persistedStateOf(agent) : undefined;
  	}
  
-@@ -569,7 +635,20 @@
+@@ -569,7 +707,22 @@
  		for (const saved of checkpoint.agents) {
  			const wasActive = saved.status === "queued" || saved.status === "running";
  			const transcriptFile = childTranscriptFile(this.rootSessionDir, saved.id, saved.transcriptFile);
--			const restoredMessages = loadPersistedTranscript(transcriptFile);
 +			const transcript = loadPersistedTranscript(transcriptFile);
 +			const restoredMessages = transcript?.messages;
 +			let cost = saved.cost;
++			let costMissing = saved.costMissing ?? 0;
 +			let costLastEntryId = saved.costLastEntryId;
 +			if (transcript) {
 +				// A child can persist usage before its parent checkpoints it. Recover only
@@ -313,22 +399,25 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
 +				const baseline = saved.costLastEntryId === null ? [] : index >= 0 ? entries.slice(0, index + 1) : entries;
 +				const ledger = new SessionCostLedger(baseline, runtime?.ctx.modelRegistry);
 +				cost += ledger.collect(entries);
++				costMissing += ledger.missing;
 +				costLastEntryId = ledger.lastEntryId;
 +			}
+-			const restoredMessages = loadPersistedTranscript(transcriptFile);
  			const agent: LiveAgent = {
  				id: saved.id,
  				parentId: saved.parentId,
-@@ -580,7 +659,8 @@
+@@ -580,7 +733,9 @@
  				error: saved.error,
  				startedAt: saved.startedAt,
  				toolUses: saved.toolUses,
--				cost: saved.cost,
 +				cost,
++				costMissing,
 +				costLastEntryId,
+-				cost: saved.cost,
  				tokenCount: saved.tokenCount,
  				contextPercent: saved.contextPercent,
  				compactions: saved.compactions,
-@@ -782,6 +862,8 @@
+@@ -782,6 +937,8 @@
  	private attachSession(agent: LiveAgent, session: AgentSession, generation: number): void {
  		if (this.disposed || agent.turnGeneration !== generation) return;
  		agent.session = session;
@@ -337,14 +426,14 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		agent.presentationUnregister?.();
  		agent.presentationUnregister = registerPresentationResolver(agent.id, {
  			resolveTool: (name) => session.getToolDefinition(name),
-@@ -793,13 +875,14 @@
+@@ -793,13 +950,14 @@
  		this.childSessions.set(session.sessionManager.getSessionId(), agent.id);
  		bindSessionToRoot(this.rootSessionId, session.sessionManager.getSessionId());
  		agent.sessionUnsubscribe = session.subscribe((event) => {
--			let changed = false;
 +			const previousCost = agent.cost;
 +			this.refreshSessionCost(agent);
 +			let changed = agent.cost !== previousCost;
+-			let changed = false;
  			if (event.type === "compaction_start") {
  				agent.compacting = true;
  				changed = true;
@@ -354,7 +443,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  				this.refreshSessionStats(agent, session);
  				changed = true;
  			}
-@@ -808,7 +891,6 @@
+@@ -808,7 +966,6 @@
  				changed = true;
  				if (!event.aborted) {
  					agent.transcriptGeneration++;
@@ -362,13 +451,14 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  					agent.compactions++;
  					this.refreshSessionStats(agent, session);
  				}
-@@ -928,7 +1010,14 @@
+@@ -928,7 +1085,15 @@
  		this.disposedRuntimes.add(runtime);
  		void runtime.dispose().catch(() => undefined);
  	}
 +	private refreshSessionCost(agent: LiveAgent): void {
 +		if (agent.session && agent.costLedger) {
 +			agent.cost += agent.costLedger.collect(agent.session.sessionManager.getEntries());
++			agent.costMissing = (agent.costMissing ?? 0) + agent.costLedger.missing;
 +			agent.costLastEntryId = agent.costLedger.lastEntryId;
 +		}
 +	}
