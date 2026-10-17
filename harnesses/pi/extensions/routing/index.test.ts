@@ -377,3 +377,58 @@ test("session navigation is guarded until timed-out classifier transport actuall
 		h.entries.filter((entry) => entry.type === "custom" && entry.customType === CLASSIFIER_USAGE_ENTRY_TYPE),
 	).toHaveLength(1);
 });
+
+test("explicit reassess/reset queue branch-local requests without selecting models or spending tokens", async () => {
+	const h = harness(settings());
+	h.model = auto;
+	for (const mode of ["reassess", "reset"]) {
+		await h.command(mode);
+		expect(h.entries.at(-1)).toMatchObject({
+			type: "custom",
+			customType: "routing:assessment-v1",
+			data: { version: 1, mode },
+		});
+		expect(h.notices.at(-1)?.text).toContain("No tokens spent yet");
+		expect(h.statuses.get("routing")).toContain(`${mode} queued`);
+		await h.command("status");
+		expect(h.notices.at(-1)?.text).toContain(`${mode} queued`);
+	}
+	expect((h.entries[0] as any).data.id).not.toBe((h.entries[1] as any).data.id);
+	expect(h.calls).toEqual([]);
+	expect(h.selected).toEqual([]);
+	expect(h.saved).toEqual([]);
+});
+
+test("assessment commands reject physical selections, active turns, and unsettled transports", async () => {
+	const h = harness(settings());
+	for (const mode of ["reassess", "reset"]) {
+		await h.command(mode);
+		expect(h.notices.at(-1)?.text).toContain("Select Auto");
+	}
+	h.model = auto;
+	h.idle = false;
+	await h.command("reset");
+	expect(h.notices.at(-1)?.text).toContain("settle");
+	expect(h.entries).toEqual([]);
+	h.idle = true;
+	let resolve!: (message: AssistantMessage) => void;
+	// Exercise the command after classifier deadline, before transport settlement.
+	const timed = harness({ ...settings(), timeoutMs: 1 });
+	timed.model = auto;
+	timed.completion = () =>
+		new Promise((yes) => {
+			resolve = yes;
+		});
+	await timed.virtual[0].route(
+		{ model: auto, reason: "user", thinkingLevel: "low", messages: [{ role: "user", content: "Task", timestamp: 1 }] },
+		timed.context,
+	);
+	await timed.command("reassess");
+	expect(timed.notices.at(-1)?.text).toContain("settle");
+	expect(timed.entries.some((entry) => entry.type === "custom" && entry.customType === "routing:assessment-v1")).toBe(
+		false,
+	);
+	resolve(reply());
+	await Promise.resolve();
+	await Promise.resolve();
+});

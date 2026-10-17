@@ -1,16 +1,9 @@
 import { expect, test } from "bun:test";
 import type { Api, AssistantMessage, Message, Model, Usage } from "@earendil-works/pi-ai";
 import type { ExtensionContext, ModelRouteRequest } from "@earendil-works/pi-coding-agent";
+import { ASSESSMENT_ENTRY, type AssessmentRequest } from "./affinity.js";
 import type { ClassifierOptions, classifyTask } from "./classifier.js";
-import {
-	isAcknowledgement,
-	isAuto,
-	isRoutingState,
-	physicalModel,
-	type RoutingState,
-	TaskRouter,
-	taskEnvelope,
-} from "./router.js";
+import { isAuto, isRoutingState, physicalModel, type RoutingState, TaskRouter, taskEnvelope } from "./router.js";
 import type { RoutingSettings } from "./settings.js";
 import type { ClassifierResult, ClassifierUsage, TaskEnvelope } from "./types.js";
 
@@ -124,8 +117,18 @@ function harness(
 		find: (provider: string, id: string) => (provider === "fixture" ? catalog.get(id) : undefined),
 		hasConfiguredAuth: (selected: Model<Api>) => !denied.has(selected.id),
 	};
+	const assessments = new Map<string, AssessmentRequest>();
+	const queue = (mode: AssessmentRequest["mode"] = "reassess", id = "session", key = "assessment-1") =>
+		assessments.set(id, { version: 1, id: key, mode });
 	const context = (id = "session") =>
-		({ sessionManager: { getSessionId: () => id }, modelRegistry: registry }) as unknown as ExtensionContext;
+		({
+			sessionManager: {
+				getSessionId: () => id,
+				getBranch: () =>
+					assessments.has(id) ? [{ type: "custom", customType: ASSESSMENT_ENTRY, data: assessments.get(id) }] : [],
+			},
+			modelRegistry: registry,
+		}) as unknown as ExtensionContext;
 	const router = new TaskRouter({
 		loadSettings: options.loadSettings ?? (async () => settings()),
 		classify,
@@ -139,7 +142,7 @@ function harness(
 			decisions.push(decision);
 		},
 	});
-	return { router, context, catalog, denied, dispatches, samples, missing, decisions };
+	return { router, context, catalog, denied, dispatches, samples, missing, decisions, queue };
 }
 
 test("new user tasks classify once to the configured physical tier and preserve the selected thinking level", async () => {
@@ -220,7 +223,7 @@ test("non-user requests use persisted state or Sol when there is no physical his
 	expect(h.dispatches).toHaveLength(1);
 });
 
-test("acknowledgements keep the active task while materially new task text reclassifies", async () => {
+test("all user follow-ups retain affinity until explicit reassessment", async () => {
 	const h = harness();
 	const ctx = h.context();
 	const first = await h.router.route(request(), ctx);
@@ -238,6 +241,9 @@ test("acknowledgements keep the active task while materially new task text recla
 		request({ state: first.state, messages: [user("Continue by redesigning the recovery protocol", 4)] }),
 		ctx,
 	);
+	expect(h.dispatches).toHaveLength(1);
+	h.queue();
+	await h.router.route(request({ state: first.state, messages: [user("Assess the recovery redesign", 5)] }), ctx);
 	expect(h.dispatches).toHaveLength(2);
 	expect(h.dispatches[1].envelope.context).toContain("Previous task:");
 });
@@ -253,10 +259,11 @@ test("ambiguity retains an existing strong physical model and original task, but
 		model: { provider: "fixture", id: "astra" },
 		reason: "Existing decision",
 	};
+	h.queue();
 	const retained = await h.router.route(request({ state: old, messages: [user("Fix it", 3)] }), ctx);
 	expect(retained.model).toBe(models.astra);
 	expect(retained.state).toMatchObject({ tier: "astra", task: old.task, model: old.model });
-	expect(retained.state?.reason).toContain("retaining previous task model");
+	expect(retained.state?.reason).toContain("retaining session model");
 	expect(retained.state?.taskKey).not.toBe(old.taskKey);
 	const fresh = await h.router.route(request({ messages: [user("Fix it")] }), h.context("new"));
 	expect(fresh.model).toBe(models.sol);
@@ -453,6 +460,7 @@ test("explicit hard-scope evidence keeps Astra despite missing details for main 
 		model: { provider: "fixture", id: "luna" },
 		reason: "Known scope",
 	};
+	h.queue();
 	const task = "Diagnose lost concurrent writes after failover; incident logs are not supplied";
 	for (const state of [undefined, old]) {
 		const routed = await h.router.route(request({ state, messages: [user(task)] }), ctx);
@@ -462,7 +470,7 @@ test("explicit hard-scope evidence keeps Astra despite missing details for main 
 	expect((await h.router.subtask({ task }, ctx)).model).toEqual({ provider: "fixture", id: "astra" });
 });
 
-test("ambiguous followups cannot remain on Luna unless they are exact acknowledgements", async () => {
+test("ambiguous followups retain Luna without spending classifier tokens", async () => {
 	const h = harness({ result: { ...classified, tier: "luna", insufficient_context: true } });
 	const old: RoutingState = {
 		version: 1,
@@ -474,15 +482,15 @@ test("ambiguous followups cannot remain on Luna unless they are exact acknowledg
 	};
 	const ctx = h.context();
 	const routed = await h.router.route(request({ state: old, messages: [user("Fix the other issue")] }), ctx);
-	expect(routed.model).toBe(models.sol);
-	expect(routed.state?.tier).toBe("sol");
+	expect(routed.model).toBe(models.luna);
+	expect(routed.state).toBe(old);
 	const acknowledgement = await h.router.route(
 		request({ state: old, messages: [user("yes")], thinkingLevel: "low" }),
 		ctx,
 	);
 	expect(acknowledgement.model).toBe(models.luna);
 	expect(acknowledgement.thinkingLevel).toBe("low");
-	expect(h.dispatches).toHaveLength(1);
+	expect(h.dispatches).toHaveLength(0);
 });
 
 test("task envelopes include bounded conversational context, ignore tool results, and expose image uncertainty", () => {
@@ -530,9 +538,203 @@ test("route/state guards reject malformed persisted state and recognise only the
 		},
 	])
 		expect(isRoutingState(state)).toBe(false);
-	for (const task of ["yes!", " OK ", "proceed."]) expect(isAcknowledgement(task)).toBe(true);
-	for (const task of ["", "yes, but change the API", "continue refactoring", "no"])
-		expect(isAcknowledgement(task)).toBe(false);
+	expect(
+		isRoutingState({
+			version: 1,
+			taskKey: "key",
+			task: "task",
+			tier: "sol",
+			model: { provider: "fixture", id: "sol" },
+			reason: "why",
+			assessmentId: 42,
+		}),
+	).toBe(false);
 	const h = harness();
 	expect(physicalModel({ provider: "fixture", id: "sol" }, h.context())).toBe(models.sol);
+});
+
+test("twenty substantive follow-ups reuse one classification and create no extra usage or decision entries", async () => {
+	const h = harness();
+	const ctx = h.context();
+	const first = await h.router.route(request(), ctx);
+	h.catalog.delete("classifier");
+	h.catalog.delete("sol");
+	for (let i = 0; i < 20; i++) {
+		const next = await h.router.route(
+			request({
+				state: first.state,
+				messages: [user(`Add tests, investigate failure paths, and finish implementation ${i}`, i + 10)],
+				thinkingLevel: "low",
+			}),
+			ctx,
+		);
+		expect(next.model).toBe(first.model);
+		expect(next.state).toBe(first.state);
+		expect(next.thinkingLevel).toBe("low");
+	}
+	expect(h.dispatches).toHaveLength(1);
+	expect(h.samples).toHaveLength(1);
+	expect(h.decisions).toHaveLength(1);
+});
+
+test("reassessment is upgrade-only; reset explicitly permits downgrades, once per request", async () => {
+	for (const mode of ["reassess", "reset"] as const) {
+		for (const current of ["luna", "sol", "astra"] as const) {
+			for (const proposed of ["luna", "sol", "astra"] as const) {
+				const h = harness({ result: { ...classified, tier: proposed } });
+				const state: RoutingState = {
+					version: 1,
+					taskKey: "old",
+					task: "Existing work",
+					tier: current,
+					model: { provider: "fixture", id: current },
+					reason: "Initial route",
+				};
+				h.queue(mode);
+				const ctx = h.context();
+				const next = await h.router.route(request({ state }), ctx);
+				const rank = { luna: 0, sol: 1, astra: 2 };
+				const expected = mode === "reset" || rank[proposed] > rank[current] ? proposed : current;
+				expect(next.model).toBe(models[expected]);
+				expect(next.state?.assessmentId).toBe("assessment-1");
+				const replay = await h.router.route(request({ state: next.state }), ctx);
+				expect(replay.state).toBe(next.state);
+				expect(h.dispatches).toHaveLength(1);
+				expect(h.samples).toHaveLength(1);
+				h.queue(mode, "session", "assessment-2");
+				await h.router.route(request({ state: next.state }), ctx);
+				expect(h.dispatches).toHaveLength(2);
+			}
+		}
+	}
+});
+
+test("same-tier reassessment keeps the exact model despite remapped preferences", async () => {
+	const prefs = settings();
+	prefs.tiers.sol = prefs.tiers.astra;
+	const h = harness({ result: { ...classified, tier: "sol" }, loadSettings: async () => prefs });
+	const state: RoutingState = {
+		version: 1,
+		taskKey: "old",
+		task: "Existing work",
+		tier: "sol",
+		model: { provider: "fixture", id: "sol" },
+		reason: "Initial route",
+	};
+	h.queue();
+	const next = await h.router.route(request({ state }), h.context());
+	expect(next.model).toBe(models.sol);
+	expect(next.state?.reason).toContain("No tier upgrade");
+	h.queue("reset", "session", "reset");
+	expect((await h.router.route(request({ state: next.state }), h.context())).model).toBe(models.astra);
+});
+
+test("failed or ambiguous explicit assessments retain every existing tier and consume the request", async () => {
+	for (const current of ["luna", "sol", "astra"] as const) {
+		for (const result of [fallback, { ...classified, tier: "sol" as const, insufficient_context: true }]) {
+			for (const mode of ["reassess", "reset"] as const) {
+				const h = harness({ result });
+				const state: RoutingState = {
+					version: 1,
+					taskKey: "old",
+					task: "Existing work",
+					tier: current,
+					model: { provider: "fixture", id: current },
+					reason: "Initial route",
+				};
+				h.queue(mode);
+				const next = await h.router.route(request({ state }), h.context());
+				expect(next.model).toBe(models[current]);
+				expect(next.state?.assessmentId).toBe("assessment-1");
+				expect(next.state?.reason).toContain("Unreliable assessment");
+				await h.router.route(request({ state: next.state }), h.context());
+				expect(h.dispatches).toHaveLength(1);
+			}
+		}
+	}
+});
+
+test("aborted reassessment leaves its request unconsumed and retry/summary calls never consume it", async () => {
+	const h = harness();
+	const ctx = h.context();
+	const first = await h.router.route(request(), ctx);
+	h.queue("reset");
+	const abort = new AbortController();
+	abort.abort();
+	await expect(h.router.route(request({ state: first.state, signal: abort.signal }), ctx)).rejects.toThrow();
+	expect(first.state?.assessmentId).toBeUndefined();
+	for (const reason of ["retry", "continuation", "direct"] as const) {
+		const sticky = await h.router.route(request({ reason, state: first.state }), ctx);
+		expect(sticky.state).toBe(first.state);
+	}
+	expect(h.dispatches).toHaveLength(1);
+	const next = await h.router.route(request({ state: first.state }), ctx);
+	expect(next.state?.assessmentId).toBe("assessment-1");
+	expect(h.dispatches).toHaveLength(2);
+});
+
+test("unavailable pinned model fails visibly without spending on classification or substituting", async () => {
+	const h = harness();
+	const ctx = h.context();
+	const first = await h.router.route(request(), ctx);
+	h.denied.add("luna");
+	await expect(h.router.route(request({ state: first.state }), ctx)).rejects.toThrow("authentication");
+	h.queue("reset");
+	await expect(h.router.route(request({ state: first.state }), ctx)).rejects.toThrow("authentication");
+	expect(h.dispatches).toHaveLength(1);
+});
+
+test("cancellation after dispatch records spend but does not consume reassessment", async () => {
+	const controller = new AbortController();
+	let cancel = true;
+	const h = harness({
+		classify: async (_registry, _model, _task, options = {}) => {
+			options.onStarted?.();
+			try {
+				options.onUsage?.(sample);
+				if (cancel) controller.abort();
+				return { ...classified, tier: "astra" };
+			} finally {
+				options.onSettled?.();
+			}
+		},
+	});
+	const state: RoutingState = {
+		version: 1,
+		taskKey: "old",
+		task: "Existing work",
+		tier: "sol",
+		model: { provider: "fixture", id: "sol" },
+		reason: "Initial route",
+	};
+	h.queue();
+	await expect(h.router.route(request({ state, signal: controller.signal }), h.context())).rejects.toThrow();
+	expect(state.assessmentId).toBeUndefined();
+	expect(h.decisions).toHaveLength(0);
+	expect(h.samples).toHaveLength(1);
+	expect(h.router.hasPending(h.context())).toBe(false);
+	cancel = false;
+	const next = await h.router.route(request({ state }), h.context());
+	expect(next.state).toMatchObject({ tier: "astra", assessmentId: "assessment-1" });
+	expect(h.samples).toHaveLength(2);
+});
+
+test("one session's pending reassessment does not classify another session's held route", async () => {
+	const h = harness({ result: { ...classified, tier: "astra" } });
+	const state: RoutingState = {
+		version: 1,
+		taskKey: "old",
+		task: "Existing work",
+		tier: "sol",
+		model: { provider: "fixture", id: "sol" },
+		reason: "Initial route",
+	};
+	h.queue("reset", "one");
+	const other = await h.router.route(request({ state }), h.context("two"));
+	expect(other.state).toBe(state);
+	expect(other.model).toBe(models.sol);
+	expect(h.dispatches).toHaveLength(0);
+	const changed = await h.router.route(request({ state }), h.context("one"));
+	expect(changed.model).toBe(models.astra);
+	expect(h.dispatches).toHaveLength(1);
 });

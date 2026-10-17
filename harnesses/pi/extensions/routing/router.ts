@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Api, Message, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, ModelRoute, ModelRouteRequest } from "@earendil-works/pi-coding-agent";
+import { pendingAssessment } from "./affinity.js";
 import { classifyTask } from "./classifier.js";
 import { isModelRef, modelName, ROUTING_MODEL, ROUTING_PROVIDER, type RoutingSettings } from "./settings.js";
 import type { ClassifierResult, ClassifierUsage, ModelRef, TaskEnvelope, Tier } from "./types.js";
@@ -12,6 +13,8 @@ export interface RoutingState {
 	tier: Tier;
 	model: ModelRef;
 	reason: string;
+	/** Last explicit reassessment consumed on this branch; absent in older sessions. */
+	assessmentId?: string;
 }
 export interface RoutingDecision {
 	kind: "main" | "subagent";
@@ -33,7 +36,8 @@ export function isRoutingState(value: unknown): value is RoutingState {
 		typeof state.task === "string" &&
 		["luna", "sol", "astra"].includes(state.tier) &&
 		isModelRef(state.model) &&
-		typeof state.reason === "string"
+		typeof state.reason === "string" &&
+		(state.assessmentId === undefined || typeof state.assessmentId === "string")
 	);
 }
 
@@ -86,9 +90,7 @@ export function taskEnvelope(
 	};
 }
 
-export function isAcknowledgement(task: string): boolean {
-	return /^(?:yes|ok(?:ay)?|sure|go ahead|do it|continue|proceed|keep going)[.!\s]*$/i.test(task.trim());
-}
+const tierRank: Record<Tier, number> = { luna: 0, sol: 1, astra: 2 };
 
 type RouterOptions = {
 	loadSettings: () => Promise<RoutingSettings | undefined>;
@@ -175,29 +177,30 @@ export class TaskRouter {
 			const settings = await this.settings();
 			return { model: physicalModel(settings.tiers.sol, ctx), thinkingLevel: request.thinkingLevel };
 		}
-		const { envelope, key } = taskEnvelope(request.messages, state);
-		if (state && (state.taskKey === key || isAcknowledgement(envelope.task))) {
+		const assessment = pendingAssessment(ctx, state);
+		// Session affinity is local, not another paid classification. Reusing the
+		// state object also avoids writing a routing record for every user turn.
+		if (state && !assessment) {
 			return { model: physicalModel(state.model, ctx), thinkingLevel: request.thinkingLevel, state };
 		}
+		if (state) physicalModel(state.model, ctx);
+		const { envelope, key } = taskEnvelope(request.messages, state);
 		const settings = await this.settings();
 		// Resolve the fallback up front. Never substitute another provider or
 		// silently route to a weaker target when a configured model is unavailable.
-		physicalModel(settings.tiers.sol, ctx);
+		if (!state) physicalModel(settings.tiers.sol, ctx);
 		const classification = await this.classify(settings, envelope, ctx, request.signal);
 		request.signal?.throwIfAborted();
-		// Missing incident details do not erase positive evidence of hard work.
-		// Preserve an active strong route on ambiguity, never an ambiguous Luna.
+		const recommended =
+			classification.insufficient_context && classification.tier === "luna" ? "sol" : classification.tier;
+		const unreliable = !!classification.fallback || (classification.insufficient_context && recommended !== "astra");
 		const keepPrevious =
-			classification.insufficient_context && classification.tier !== "astra" && state && state.tier !== "luna";
-		const tier = keepPrevious
-			? state.tier
-			: classification.insufficient_context && classification.tier === "luna"
-				? "sol"
-				: classification.tier;
+			state && (unreliable || (assessment?.mode !== "reset" && tierRank[recommended] <= tierRank[state.tier]));
+		const tier = keepPrevious ? state.tier : recommended;
 		const ref = keepPrevious ? state.model : settings.tiers[tier];
 		const model = physicalModel(ref, ctx);
 		const reason = keepPrevious
-			? `Insufficient context; retaining previous task model. ${classification.reason}`
+			? `${unreliable ? "Unreliable assessment" : "No tier upgrade"}; retaining session model. ${classification.reason}`
 			: classification.reason;
 		const next: RoutingState = {
 			version: 1,
@@ -206,6 +209,7 @@ export class TaskRouter {
 			tier,
 			model: { provider: model.provider, id: model.id },
 			reason,
+			...(assessment ? { assessmentId: assessment.id } : {}),
 		};
 		this.options.onDecision?.(ctx, {
 			kind: "main",

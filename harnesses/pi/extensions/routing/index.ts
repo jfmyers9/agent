@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import {
 	type ExtensionAPI,
@@ -7,6 +7,7 @@ import {
 	type VirtualModelStateData,
 } from "@earendil-works/pi-coding-agent";
 import { recordClassifierUsage, recordClassifierUsageMissing } from "./accounting.js";
+import { ASSESSMENT_ENTRY, type AssessmentRequest, pendingAssessment } from "./affinity.js";
 import {
 	isAuto,
 	isRoutingState,
@@ -71,10 +72,11 @@ export function registerRouting(
 	}
 	function updateStatus(ctx: ExtensionContext, model = ctx.model): void {
 		const state = branchRoutingState(ctx);
+		const pending = pendingAssessment(ctx, state);
 		ctx.ui.setStatus(
 			"routing",
 			isAuto(model)
-				? `Auto: ${state?.tier ?? (preferences ? "ready" : "setup required")}`
+				? `Auto: ${state ? `${state.tier} held` : preferences ? "ready" : "setup required"}${pending ? ` (${pending.mode} queued)` : ""}`
 				: preferences?.subagents
 					? "Child Auto"
 					: undefined,
@@ -92,7 +94,7 @@ export function registerRouting(
 			latencyMs: Math.round(decision.latencyMs),
 			...(decision.fallback ? { fallback: decision.fallback } : {}),
 		});
-		if (decision.kind === "main" && isAuto(ctx.model)) ctx.ui.setStatus("routing", `Auto: ${decision.tier}`);
+		if (decision.kind === "main" && isAuto(ctx.model)) ctx.ui.setStatus("routing", `Auto: ${decision.tier} held`);
 		ctx.ui.notify(
 			`Auto${decision.kind === "subagent" ? " child" : ""} → ${modelName(decision.model)} (${decision.tier}, ${Math.round(decision.latencyMs)}ms${decision.fallback ? `, ${decision.fallback}` : ""}): ${reason}`,
 			decision.fallback ? "warning" : "info",
@@ -215,7 +217,7 @@ export function registerRouting(
 	}
 
 	pi.registerCommand("routing", {
-		description: "Opt-in Luna routing: setup | on | off | status | subagents",
+		description: "Session-affine routing: setup | on | off | status | reassess | reset | subagents",
 		handler: async (args, ctx) => {
 			try {
 				const action = args.trim() || "status";
@@ -225,6 +227,23 @@ export function registerRouting(
 				} catch (error) {
 					preferences = undefined;
 					if (action !== "setup" && action !== "off") throw error;
+				}
+				if (action === "reassess" || action === "reset") {
+					if (!isAuto(ctx.model)) throw new Error("Select Auto with /routing on before requesting reassessment.");
+					if (!ctx.isIdle() || router.hasPending(ctx))
+						throw new Error(
+							"Wait for the current turn and classifier transport to settle before requesting reassessment.",
+						);
+					const assessment: AssessmentRequest = { version: 1, id: randomUUID(), mode: action };
+					pi.appendEntry(ASSESSMENT_ENTRY, assessment);
+					updateStatus(ctx);
+					ctx.ui.notify(
+						action === "reset"
+							? "New work queued: the next user message will be classified once and may switch to a cheaper model or another provider. Switching can lose prompt-cache reuse; prefer a fresh session for unrelated work. No tokens spent yet."
+							: "Upgrade-only reassessment queued for the next user message. Same/lower recommendations keep the current model. No tokens spent yet.",
+						"info",
+					);
+					return;
 				}
 				if (action === "setup") {
 					await setup(ctx);
@@ -237,7 +256,10 @@ export function registerRouting(
 					const model = ctx.modelRegistry.find(ROUTING_PROVIDER, ROUTING_MODEL);
 					if (!model || !(await pi.setModel(model)))
 						throw new Error("Auto model could not be selected. Reload Pi and try again.");
-					ctx.ui.notify("Auto routing enabled for this session. Delegation permissions are unchanged.", "info");
+					ctx.ui.notify(
+						"Auto routing enabled: the initial model stays held across follow-ups. Use /routing reassess for an upgrade or /routing reset for new work. Delegation permissions are unchanged.",
+						"info",
+					);
 					return;
 				}
 				if (action === "off") {
@@ -277,11 +299,14 @@ export function registerRouting(
 					);
 					return;
 				}
-				if (action !== "status") throw new Error("Usage: /routing [setup|on|off|status|subagents]");
+				if (action !== "status") throw new Error("Usage: /routing [setup|on|off|status|reassess|reset|subagents]");
 				const state = branchRoutingState(ctx);
+				const pending = pendingAssessment(ctx, state);
 				ctx.ui.notify(
 					[
 						`Auto: ${isAuto(ctx.model) ? "on" : "off"}. Delegation permissions are unchanged.`,
+						"Session affinity: follow-ups reuse the current model without classification. /routing reassess allows upgrades; /routing reset allows a new work-unit model.",
+						`Next assessment: ${pending ? `${pending.mode} queued for next Auto user message` : state ? "none (model held)" : "initial task"}.`,
 						...(preferences
 							? [
 									`Classifier: ${modelName(preferences.classifier)} (${preferences.timeoutMs}ms; ${preferences.maxTokens} output-token budget where supported).`,

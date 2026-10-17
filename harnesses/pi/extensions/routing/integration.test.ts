@@ -11,6 +11,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { CLASSIFIER_USAGE_ENTRY_TYPE } from "./accounting";
+import { pendingAssessment } from "./affinity";
 import { branchRoutingState, registerRouting } from "./index";
 import { ROUTING_MODEL, ROUTING_PROVIDER, type RoutingSettings } from "./settings";
 
@@ -143,8 +144,8 @@ async function fixture(configured = true) {
 		get saves() {
 			return saves;
 		},
-		classifier: () =>
-			step(JSON.stringify({ tier: "luna", reason: "Specified local edit.", insufficient_context: false })),
+		classifier: (tier: "luna" | "sol" | "astra" = "luna") =>
+			step(JSON.stringify({ tier, reason: "Fixture capability assessment.", insufficient_context: false })),
 		auto: () => runtime.getModel(ROUTING_PROVIDER, ROUTING_MODEL)!,
 		close: async () => {
 			for (const session of sessions) session.dispose();
@@ -253,5 +254,95 @@ test("native route context reports unconfigured routing and unavailable authenti
 		} finally {
 			await h.close();
 		}
+	}
+}, 15_000);
+
+test("native session makes one classifier call across twenty substantive user follow-ups", async () => {
+	const h = await fixture();
+	try {
+		const session = await h.open();
+		await session.setModel(h.auto());
+		h.faux.setResponses([h.classifier(), h.step("Initial work done.")]);
+		await session.prompt("Implement the supplied local change.");
+		const state = branchRoutingState(session.extensionRunner.createContext());
+		const initialEntries = session.sessionManager.getEntries();
+		const receiptCount = (entries: typeof initialEntries) =>
+			entries.filter((entry) => entry.type === "custom" && entry.customType === CLASSIFIER_USAGE_ENTRY_TYPE).length;
+		const routeCount = (entries: typeof initialEntries) =>
+			entries.filter((entry) => entry.type === "custom" && entry.customType === "pi.virtual-model-state").length;
+		for (let i = 0; i < 20; i++) {
+			h.faux.setResponses([h.step("Follow-up complete.")]);
+			await session.prompt(`Also add regression coverage for scenario ${i}`);
+			expect(branchRoutingState(session.extensionRunner.createContext())).toEqual(state);
+		}
+		expect(h.faux.state.callCount).toBe(22);
+		expect(receiptCount(session.sessionManager.getEntries())).toBe(1);
+		expect(routeCount(session.sessionManager.getEntries())).toBe(routeCount(initialEntries));
+		expect(h.dispatches.every((model) => model === "luna")).toBe(true);
+		expect(h.errors).toEqual([]);
+	} finally {
+		await h.close();
+	}
+}, 15_000);
+
+test("native queued reassessment survives compaction/resume and consumption follows tree and fork state", async () => {
+	const h = await fixture();
+	try {
+		let session = await h.open();
+		await session.setModel(h.auto());
+		h.faux.setResponses([h.classifier(), h.step("Initial work done.")]);
+		await session.prompt("Implement the supplied local change.");
+		const originalLeaf = session.sessionManager.getLeafId()!;
+		await session.prompt("/routing reassess");
+		expect(h.faux.state.callCount).toBe(2);
+		const requestedLeaf = session.sessionManager.getLeafId()!;
+		const ctx = () => session.extensionRunner.createContext();
+		const queued = pendingAssessment(ctx(), branchRoutingState(ctx()))!;
+		expect(queued.mode).toBe("reassess");
+		session.sessionManager.appendCompaction("Existing task summary", requestedLeaf, 500);
+		const file = session.sessionManager.getSessionFile()!;
+		session.dispose();
+		session = await h.open(SessionManager.open(file), false);
+		expect(pendingAssessment(ctx(), branchRoutingState(ctx()))).toEqual(queued);
+		h.faux.setResponses([h.classifier("astra"), h.step("Hard task complete.")]);
+		await session.prompt("Assess the cross-component recovery redesign.");
+		const upgraded = branchRoutingState(ctx())!;
+		expect(upgraded).toMatchObject({ tier: "astra", assessmentId: queued.id });
+		expect(pendingAssessment(ctx(), upgraded)).toBeUndefined();
+		expect(h.dispatches.slice(-2)).toEqual(["luna", "astra"]);
+
+		// Forks inherit the consumed request and do not pay to reassess the same assignment.
+		const fork = SessionManager.forkFrom(file, h.cwd, join(h.root, "affinity-forks"));
+		session.dispose();
+		session = await h.open(fork, false);
+		h.faux.setResponses([h.step("Additional test done.")]);
+		await session.prompt("Also add a test for cancellation.");
+		expect(h.dispatches.at(-1)).toBe("astra");
+		expect(h.faux.state.callCount).toBe(5);
+		expect(pendingAssessment(ctx(), branchRoutingState(ctx()))).toBeUndefined();
+
+		// Explicit reset allows a cheaper model; ordinary follow-ups do not.
+		await session.prompt("/routing reset");
+		expect(h.faux.state.callCount).toBe(5);
+		h.faux.setResponses([h.classifier(), h.step("Mechanical work done.")]);
+		await session.prompt("New work: apply the supplied mechanical replacement.");
+		expect(branchRoutingState(ctx())?.tier).toBe("luna");
+		expect(h.faux.state.callCount).toBe(7);
+
+		// Requests on another branch do not leak backwards through navigation.
+		await session.navigateTree(originalLeaf, { summarize: false });
+		expect(pendingAssessment(ctx(), branchRoutingState(ctx()))).toBeUndefined();
+		h.faux.setResponses([h.step("Original branch work done.")]);
+		await session.prompt("Add documentation for the original change.");
+		expect(h.faux.state.callCount).toBe(8);
+		await session.navigateTree(requestedLeaf, { summarize: false });
+		expect(pendingAssessment(ctx(), branchRoutingState(ctx()))).toEqual(queued);
+		h.faux.setResponses([h.classifier("sol"), h.step("Branch assessment complete.")]);
+		await session.prompt("Investigate the revised implementation.");
+		expect(branchRoutingState(ctx())).toMatchObject({ tier: "sol", assessmentId: queued.id });
+		expect(h.faux.state.callCount).toBe(10);
+		expect(h.errors).toEqual([]);
+	} finally {
+		await h.close();
 	}
 }, 15_000);

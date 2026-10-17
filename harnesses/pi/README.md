@@ -112,7 +112,9 @@ hand-maintained dotfile is needed. Canceling setup leaves preferences unchanged.
 - `/routing on` or `/model` → **Auto — Luna routing**: opt in for this session.
 - `/routing off`: disable main Auto and pin its last physical model (Sol before any task); the independent subagent preference is unchanged.
 - `/routing status`: inspect mappings, limits, and the last branch-local decision.
-- `/routing setup`: change mappings; affects new tasks, not active continuations.
+- `/routing setup`: change mappings; existing session models stay held until explicit reassessment/reset.
+- `/routing reassess`: classify the next user message once, allowing only a higher tier. Same/lower recommendations retain the exact current model.
+- `/routing reset`: declare new work and classify the next user message once, permitting a cheaper model or another provider. Prefer a fresh session for unrelated work.
 - `/routing subagents`: change bounded-subagent routing, independently of delegation permission.
 - Selecting any physical model bypasses main-session routing. Auto selection resumes with its
   session; it is never written as the startup default by this extension.
@@ -122,11 +124,31 @@ conversation, not tools or permission to execute it. It uses an ordinary complet
 through existing Pi authentication. The rubric favors Luna for well-understood,
 mechanical work, Sol for normal coding/debugging, and Astra for evidenced deep or
 high-impact uncertainty. Prompt length, edit size, and file counts are not proxies
-for difficulty. Malformed output, timeout, or unavailable classification uses Sol;
-ambiguous continuations retain an already stronger route. Acknowledgements,
-tool continuations, ordinary retries, and compaction do not reclassify. Branch-local
-state survives resume, forks, compaction, and tree navigation; direct/summary
-requests reuse the prior physical model or Sol without another classifier call.
+for difficulty. The first Auto task is classified once, with Sol as the fallback.
+Afterward, **all user follow-ups and steering messages retain the session's model**
+without calling Luna again—not just acknowledgements. There is no periodic or
+keyword-based reassessment, automatic escalation, or automatic downgrade.
+Use `/routing reassess` when capability needs increase; use `/routing reset` for a
+new work unit that may justify switching down. These commands require idle Auto
+with no unsettled classifier request and spend no tokens until the next user
+message. The latest queued command wins. Failed or ambiguous assessments keep
+the current model; explicit evidence for Astra can still upgrade it. Aborting
+does not consume the request. Missing authentication for the held model fails
+visibly; select a physical model to override it rather than silently substituting.
+
+Session affinity and queued/consumed requests follow the session branch through
+reload, resume, forks, compaction, and tree navigation. Older saved routes acquire
+affinity automatically. Ordinary retries and direct/summary calls do not consume
+queued requests or invoke classification. `/routing off` and later `on` preserve
+the branch's route and any queued request; `/routing status` shows both.
+
+**Caching:** this eliminates repeated classifier input/output usage and avoids
+routine model switches. It preserves opportunities for provider prompt-cache
+reuse, not guaranteed cache hits: prefix changes, eviction, expiry, and provider
+rules still apply. Switching models can require processing the conversation on a
+cold cache. There is no inferred dollar break-even threshold or measured savings
+claim. One initial task plus 20 ordinary follow-ups makes one classifier call,
+not 21; execution-model requests and their conversation tokens still occur.
 
 Authorized `spawn_agent` assignments are classified when the independent subagent
 preference is enabled and `fork_turns` explicitly bounds context (`none` or a
