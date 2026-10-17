@@ -73,6 +73,7 @@ Installed extensions:
 - `fast-mode.ts` — defaults off; only `/fast` (toggle) or `/fast on|toggle` can enable OpenAI priority processing for first-party GPT Responses routes (`openai`, including ChatGPT sign-in, and legacy `openai-codex`). `/fast off` disables it; `/fast status` reports status without changing it. There is no keyboard shortcut. The `fast` label beside the model means **priority requested**, not confirmed. State is not persisted; startup, new/resumed/forked sessions, reloads, and session-tree navigation reset it to off, ignoring older saved overrides. Unsupported providers/endpoints remain unchanged, and reasoning effort is unaffected. OpenAI controls eligibility and higher cost/quota consumption. Pi's displayed cost can undercount if the provider omits its actual service tier; this extension does not modify usage accounting. Uses native request hooks, not a replacement provider; custom cross-provider routing is not supported.
 - `fileops/` — replaces the built-in local file workflow with `read`, `search`, `find`, `write`, and a configurable `edit` tool. Default edit mode is hashline.
 - `apply-patch/` — registers Codex's `apply_patch` format for GPT models and switches GPT sessions away from `edit`/`write`.
+- `work/` — `/work` implements one ready Linear ticket in an isolated worktree; `/work loop` watches the queue. Setup is interactive, with no repository config files. See [Linear work runner](#linear-work-runner).
 - `prompt-storage/` — local prompt stash/history. Shortcuts: `alt+s` stash current draft, `ctrl+alt+s` pop a stash, `ctrl+r` search previous prompts.
 - `vim/` — replaces the editor with Vim-style modal editing. Remove it from `settings.json`'s `extensions` list, then reinstall/reload Pi, to disable it.
 - `skillful/` — supports `$skill-name` references with autocomplete/highlighting and registers a `skill` tool that reads current instructions on every invocation while keeping `/skill:<name>` commands available.
@@ -255,6 +256,73 @@ file or copy credentials into this repository. Restart Pi or run `/reload`
 after changing the server config; `/mcp` shows connection status, and
 `/mcp reconnect linear` reconnects an existing server after sign-in.
 For Firefox Containers, see the [shared sign-in guidance](../../README.md#linear).
+
+### Linear work runner
+
+Run `/work` from a repository to configure and process one eligible ticket. Use
+`/work loop` to keep processing, polling every 60 seconds when the queue is empty.
+This first version uses fresh **pi** workers with the coordinator's selected model
+and thinking level; it is not yet a Codex/Claude adapter or detached daemon.
+
+The first invocation asks for a Linear project, a readiness label (recommended:
+`agent-ready`; empty explicitly disables the label gate), intake statuses, base
+branch, verification command, publication mode, and ticket timeout. Draft PRs are
+the recommended default; direct push to the configured base requires explicit
+authorization. The final confirmation shows the entire policy. Subsequent starts
+reuse it; `/work settings` changes it interactively. No dotfiles are required.
+Linear must be signed in, Git must have a commit identity, and draft PR mode needs
+an authenticated `gh` CLI. The runner uses `origin`; a changed or separate push
+URL requires new authorization.
+
+Tickets must be assigned to the configured authenticated user, belong to the
+selected project, match the readiness gate and intake types, and have all blocking
+issues completed. Triage is excluded unless selected during setup. Candidates are
+ordered by priority, then identifier. Missing dependency data fails closed. Issue
+assignment stays with the human; a local execution lock and In Progress state
+represent the runner's claim.
+
+Each attempt fetches the configured remote base into a managed ref, creates a
+unique branch/worktree outside the checkout, and launches a fresh worker. The
+worker reads repository instructions and implements locally; the coordinator
+independently runs the configured checks, validates a Conventional Commit message,
+and commits/publishes only after rechecking ownership, requirements, readiness,
+and blockers. Dirty/staged work in the original checkout is untouched. Suspected
+sensitive files, large staged diffs, unexpected commits, and changed Git remotes
+require human inspection. Direct push refuses an advanced base instead of
+pulling, rebasing, or force-pushing. Draft PRs leave Linear in an existing review
+state when available, otherwise In Progress; opening a PR does **not** complete
+the issue. Successful direct pushes move the issue to a completed state.
+
+Controls:
+
+- `/work status`: owning session and recent attempts, outcomes, and worktree paths.
+- `/work pause`: finish the current ticket, then stop; wakes immediately when idle.
+- `/work stop`: interrupt the worker/checks; preserve unfinished work.
+- `/work recover`: recover a dead process's local lock, without restarting work.
+- `/work retry ISSUE`: explicitly return an unpublished attempt to intake and
+  archive its record; the old worktree is retained and a fresh attempt is possible.
+- `/work sync ISSUE`: retry Linear updates for a **confirmed** publication without
+  publishing again. Ambiguous push/PR outcomes require remote inspection instead.
+
+Settings, locks, attempt records, worker transcripts, verification logs, and
+worktrees live under `$XDG_STATE_HOME/agent-work` (default
+`~/.local/state/agent-work`), managed by the application. Settings are keyed by the
+repository's canonical Git common directory, so its worktrees share a policy.
+One coordinator holds the local queue at a time, even across repositories.
+Failed/interrupted attempts are excluded from automatic reselection. Their Linear
+issue remains In Progress with a failure comment when available. Ambiguous
+publication stops the loop; confirmed publication with failed Linear updates is
+recorded as needing sync. No worktrees or branches are deleted automatically.
+Reload, shutdown, and session-tree navigation stop the runner; restart is manual.
+
+This is a **local** coordinator, not a distributed lease or an OS sandbox. Linear
+MCP has no atomic claim primitive here, so do not run competing coordinators on
+other machines. Workers run repository code and shell commands with your local
+permissions; their tool policy blocks direct external/delegation tools but cannot
+prevent arbitrary shell/network actions. Run only trusted repositories/tickets.
+The runner does not auto-merge PRs, monitor merges, perform formal review, recover
+ambiguous publications automatically, or enforce a monetary budget. Per-ticket
+time limits are cooperative for worker/tool operations that support cancellation.
 
 ## Context Guard core
 
