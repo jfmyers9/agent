@@ -9,6 +9,8 @@ export type Tier = "luna" | "sol" | "astra";
 
 export interface TaskEnvelope {
 	task: string;
+	/** Source text was clipped before reaching the classifier's own budgets. */
+	truncated?: boolean;
 	context?: string;
 	knownScope?: string[];
 	uncertainties?: string[];

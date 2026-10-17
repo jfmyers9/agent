@@ -123,6 +123,9 @@ hand-maintained dotfile is needed. Canceling setup leaves preferences unchanged.
   keeps Auto selected. The pin bypasses automatic classification until
   `/routing reassess` or `/routing reset` releases it; selecting Auto from a
   physical model also clears an existing pin. Auto is never written as the startup default.
+  Reassessment uses the manually selected model as its baseline, even before the
+  first automatic route. A manual target outside the configured tiers has no known
+  capability ordering, so only `/routing reset` permits switching away from it.
 
 For main sessions, Luna receives a bounded text envelope with the current task and relevant preceding
 conversation, not tools or permission to execute it. It uses an ordinary completion
@@ -141,6 +144,9 @@ classifier request and its usage; tool continuations do not add classifier calls
 This trial can therefore cost more than session-affinity-only routing. `/routing
 reassess` still queues an explicit one-turn upgrade-only check. Missing
 authentication for the held model fails visibly rather than silently substituting.
+
+Clipped source text is marked as incomplete through the entire classification
+pipeline, so omitted scope cannot produce a confident Luna recommendation.
 
 Session affinity and queued/consumed requests follow the session branch through
 reload, resume, forks, compaction, and tree navigation. Older saved routes acquire
@@ -165,6 +171,11 @@ Explicit model overrides bypass classification. Omitted/`all` forks preserve ful
 history and inherit selection; routing never discards history, creates agents,
 changes thinking overrides, relaxes depth/concurrency/ownership rules, or grants
 delegation/review permission. `/spawn` and `/work` have no routing-specific integration.
+Qualified child overrides (`provider/model-id`) resolve against authenticated
+catalog targets; short names still use the model scope for disambiguation.
+Child sessions inherit physical catalog/auth data but have their own model
+runtime and virtual-route callbacks. SDK integrations loading session-bound
+routers must likewise use separate `ModelRuntime` instances for live sessions.
 
 Decisions show the target, reason, latency, and fallback. Classifier spend is
 included once in `/cost` and descendant totals using versioned session receipts;
@@ -175,8 +186,10 @@ provider supports it; the installed Codex adapter ignores `maxTokens`. Timeouts
 cancel transport and reject oversized/malformed responses; they cannot guarantee
 a server-side billing cap. While an outstanding classifier transport settles,
 session switching/forking/tree navigation is blocked until settlement to keep late usage
-in its original session. Closing the process before usage arrives cannot recover
-unreported provider spend.
+in its original session. Reload/shutdown records any still-unsettled classifier
+request as unknown spend before invalidating its extension API. Late responses
+afterward do not replace that marker; the total remains a lower bound. Closing
+the process before shutdown can record that marker cannot recover unreported spend.
 
 `bun run test:pi-routing` runs deterministic policy/protocol/lifecycle tests and
 checks representative labeled fixtures; these are not measured model accuracy or

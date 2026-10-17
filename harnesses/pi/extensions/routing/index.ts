@@ -1,17 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import {
-	type ExtensionAPI,
-	type ExtensionContext,
-	VIRTUAL_MODEL_STATE_ENTRY,
-	type VirtualModelStateData,
-} from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, VIRTUAL_MODEL_STATE_ENTRY } from "@earendil-works/pi-coding-agent";
 import { recordClassifierUsage, recordClassifierUsageMissing } from "./accounting.js";
 import { ASSESSMENT_ENTRY, type AssessmentRequest, pendingAssessment } from "./affinity.js";
 import { manualPin, recordPin } from "./pin.js";
 import {
+	branchRoutingState,
 	isAuto,
-	isRoutingState,
 	physicalModel,
 	type RoutingDecision,
 	type RoutingState,
@@ -39,15 +34,7 @@ function pinnedModelStatus(model: ModelRef): string {
 	return `Auto → ${clean(model.id)} · ${clean(model.provider)} (manual pin)`;
 }
 
-export function branchRoutingState(ctx: ExtensionContext): RoutingState | undefined {
-	for (const entry of [...ctx.sessionManager.getBranch()].reverse()) {
-		if (entry.type !== "custom" || entry.customType !== VIRTUAL_MODEL_STATE_ENTRY) continue;
-		const data = entry.data as VirtualModelStateData | undefined;
-		if (data?.provider === ROUTING_PROVIDER && data.modelId === ROUTING_MODEL && isRoutingState(data.state))
-			return data.state;
-	}
-	return undefined;
-}
+export { branchRoutingState } from "./router.js";
 
 function availableModels(ctx: ExtensionContext): Model<Api>[] {
 	return ctx.modelRegistry.getAvailable().filter((model) => model.api !== "pi-virtual" && model.input.includes("text"));
@@ -78,6 +65,23 @@ export function registerRouting(
 	async function loadSettings(): Promise<RoutingSettings | undefined> {
 		preferences = await store.load();
 		return preferences;
+	}
+	function holdManualModel(ctx: ExtensionContext, model: ModelRef): void {
+		const state = branchRoutingState(ctx);
+		if (state && modelName(state.model) === modelName(model)) return;
+		// Unknown manual targets have no capability ordering; reassess retains them until reset.
+		const tier =
+			TIERS.findLast((tier) => preferences && modelName(preferences.tiers[tier]) === modelName(model)) ?? "manual";
+		const next: RoutingState = {
+			...state,
+			version: 1,
+			taskKey: state?.taskKey ?? "",
+			task: state?.task ?? "",
+			tier,
+			model,
+			reason: "Manual model selection is the current execution baseline.",
+		};
+		pi.appendEntry(VIRTUAL_MODEL_STATE_ENTRY, { provider: ROUTING_PROVIDER, modelId: ROUTING_MODEL, state: next });
 	}
 	function updateStatus(ctx: ExtensionContext, model = ctx.model): void {
 		const state = branchRoutingState(ctx);
@@ -127,6 +131,7 @@ export function registerRouting(
 		thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"],
 		route: (request, ctx) => router.route(request, ctx),
 	});
+	pi.on("session_shutdown", (_event, ctx) => router.close(ctx));
 	registerSubagentRouting(pi, {
 		isEnabled: () => preferences?.subagents === true,
 		route: (envelope, ctx, signal) => router.subtask(envelope, ctx, signal),
@@ -138,6 +143,8 @@ export function registerRouting(
 			preferences = undefined;
 			if (isAuto(ctx.model)) ctx.ui.notify(String(error), "error");
 		}
+		const pin = manualPin(ctx);
+		if (pin) holdManualModel(ctx, pin);
 		updateStatus(ctx);
 	});
 	pi.on("before_agent_start", async (_event, ctx) => {
@@ -162,6 +169,7 @@ export function registerRouting(
 		if (!internalModelSelection && isAuto(event.previousModel) && !isAuto(event.model) && event.source !== "restore") {
 			const model = physicalModel({ provider: event.model.provider, id: event.model.id }, ctx);
 			recordPin(pi, { provider: model.provider, id: model.id });
+			holdManualModel(ctx, { provider: model.provider, id: model.id });
 			const auto = ctx.modelRegistry.find(ROUTING_PROVIDER, ROUTING_MODEL);
 			if (!auto) throw new Error("Auto model is unavailable; reload Pi and retry the model selection.");
 			if (!(await setRoutingModel(auto)))
@@ -272,6 +280,8 @@ export function registerRouting(
 							"Wait for the current turn and classifier transport to settle before requesting reassessment.",
 						);
 					const assessment: AssessmentRequest = { version: 1, id: randomUUID(), mode: action };
+					const pin = manualPin(ctx);
+					if (pin) holdManualModel(ctx, pin);
 					recordPin(pi);
 					pi.appendEntry(ASSESSMENT_ENTRY, assessment);
 					updateStatus(ctx);

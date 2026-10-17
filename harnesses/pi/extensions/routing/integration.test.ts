@@ -10,6 +10,7 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { sumSessionCosts } from "../tui/cost";
 import { CLASSIFIER_USAGE_ENTRY_TYPE } from "./accounting";
 import { pendingAssessment } from "./affinity";
 import { branchRoutingState, registerRouting } from "./index";
@@ -33,7 +34,7 @@ async function fixture(configured = true) {
 	});
 	const faux = fauxProvider({
 		provider: "routing-fixture",
-		models: ["luna", "sol", "astra"].map((id) => ({
+		models: ["luna", "sol", "astra", "manual"].map((id) => ({
 			id,
 			reasoning: false,
 			contextWindow: 32_000,
@@ -76,7 +77,12 @@ async function fixture(configured = true) {
 			return fauxAssistantMessage(content, { stopReason });
 		};
 	}
-	async function open(manager = SessionManager.create(cwd, join(root, "sessions")), initial = true) {
+	async function open(
+		manager = SessionManager.create(cwd, join(root, "sessions")),
+		initial = true,
+		options: { runtime?: ModelRuntime; registerProvider?: boolean } = {},
+	) {
+		const sessionRuntime = options.runtime ?? runtime;
 		const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
 		const loader = new DefaultResourceLoader({
 			cwd,
@@ -92,7 +98,7 @@ async function fixture(configured = true) {
 				{
 					name: "routing-fixture",
 					factory: (pi) => {
-						pi.registerProvider(provider);
+						if (options.registerProvider !== false) pi.registerProvider(provider);
 						registerRouting(pi, {
 							load: async () => (configured ? prefs : undefined),
 							save: async () => {
@@ -108,7 +114,7 @@ async function fixture(configured = true) {
 		const { session } = await createAgentSession({
 			cwd,
 			agentDir,
-			modelRuntime: runtime,
+			modelRuntime: sessionRuntime,
 			resourceLoader: loader,
 			settingsManager,
 			sessionManager: manager,
@@ -127,10 +133,10 @@ async function fixture(configured = true) {
 		});
 		sessions.push(session);
 		await session.bindExtensions({ mode: "rpc", onError: (error) => errors.push(error) });
-		await runtime.refresh({ allowNetwork: false, providers: [faux.provider.id] });
+		await sessionRuntime.refresh({ allowNetwork: false, providers: [faux.provider.id] });
 		// Registration queues availability refreshes; wait for the synchronous registry snapshot used by routes.
-		await runtime.getAvailable();
-		expect(runtime.hasConfiguredAuth(faux.provider.id)).toBe(true);
+		await sessionRuntime.getAvailable();
+		expect(sessionRuntime.hasConfiguredAuth(faux.provider.id)).toBe(true);
 		return session;
 	}
 	return {
@@ -383,6 +389,176 @@ test("native physical model selection pins it for the session while Auto stays s
 		expect(h.faux.state.callCount).toBe(2);
 		expect(h.errors).toEqual([]);
 	} finally {
+		await h.close();
+	}
+}, 15_000);
+
+test("child runtimes inherit physical catalog/auth without replacing parent routes or receipts", async () => {
+	const h = await fixture();
+	try {
+		const parent = await h.open();
+		await parent.setModel(h.auto());
+		await parent.setModel(h.runtime.getModel("routing-fixture", "astra")!);
+		const runner = await import(
+			new URL("./runtime/agent-runner.ts", import.meta.resolve("@luan.sh/pi-subagents")).href
+		);
+		const childRuntime = await runner.createChildModelRuntime(parent.extensionRunner.createContext().modelRegistry);
+		expect(childRuntime).not.toBe(h.runtime);
+		expect(childRuntime.getModel(ROUTING_PROVIDER, ROUTING_MODEL)).toBeUndefined();
+		expect(childRuntime.hasConfiguredAuth("routing-fixture")).toBe(true);
+		const child = await h.open(undefined, true, { runtime: childRuntime, registerProvider: false });
+		h.faux.setResponses([h.step("Parent stays pinned.")]);
+		await parent.prompt("Continue the parent assignment.");
+		expect(h.dispatches).toEqual(["astra"]);
+		await child.setModel(childRuntime.getModel(ROUTING_PROVIDER, ROUTING_MODEL)!);
+		h.faux.setResponses([h.classifier("sol"), h.step("Independent child work.")]);
+		await child.prompt("Work on the isolated child assignment.");
+		const receipts = (session: Session) =>
+			session.sessionManager
+				.getEntries()
+				.filter((entry) => entry.type === "custom" && entry.customType === CLASSIFIER_USAGE_ENTRY_TYPE);
+		expect(receipts(parent)).toHaveLength(0);
+		expect(receipts(child)).toHaveLength(1);
+		child.dispose();
+		h.faux.setResponses([h.step("Parent works after child disposal.")]);
+		await parent.prompt("Continue after the child is closed.");
+		expect(h.dispatches.at(-1)).toBe("astra");
+		await parent.prompt("/routing reset");
+		h.faux.setResponses([h.classifier("sol"), h.step("Parent reassessed.")]);
+		await parent.prompt("New parent work.");
+		expect(receipts(parent)).toHaveLength(1);
+		expect(receipts(child)).toHaveLength(1);
+		expect(h.errors).toEqual([]);
+	} finally {
+		await h.close();
+	}
+}, 15_000);
+
+test("native reassessment retains the manually selected baseline, including before an initial route", async () => {
+	for (const initialRoute of [false, true]) {
+		const h = await fixture();
+		try {
+			const session = await h.open();
+			await session.setModel(h.auto());
+			if (initialRoute) {
+				h.faux.setResponses([h.classifier("luna"), h.step("Initial Luna work.")]);
+				await session.prompt("Correct the supplied typo.");
+			}
+			await session.setModel(h.runtime.getModel("routing-fixture", "astra")!);
+			h.faux.setResponses([h.step("Manual Astra work.")]);
+			await session.prompt("Continue on my selected model.");
+			await session.prompt("/routing reassess");
+			expect(manualPin(session.extensionRunner.createContext())).toBeUndefined();
+			h.faux.setResponses([h.classifier("luna"), h.step("Retain current Astra baseline.")]);
+			await session.prompt("Add the focused test.");
+			expect(h.dispatches.at(-1)).toBe("astra");
+			expect(branchRoutingState(session.extensionRunner.createContext())).toMatchObject({
+				tier: "astra",
+				model: { provider: "routing-fixture", id: "astra" },
+			});
+			expect(h.errors).toEqual([]);
+		} finally {
+			await h.close();
+		}
+	}
+}, 15_000);
+
+test("manual targets outside tier mappings are retained until an explicit reset", async () => {
+	const h = await fixture();
+	try {
+		const session = await h.open();
+		await session.setModel(h.auto());
+		await session.setModel(h.runtime.getModel("routing-fixture", "manual")!);
+		await session.prompt("/routing reassess");
+		h.faux.setResponses([h.classifier("astra"), h.step("Retain unordered manual target.")]);
+		await session.prompt("Assess the next assignment.");
+		expect(h.dispatches.at(-1)).toBe("manual");
+		expect(branchRoutingState(session.extensionRunner.createContext())?.tier).toBe("manual");
+		await session.prompt("/routing reset");
+		h.faux.setResponses([h.classifier("luna"), h.step("New low-risk work.")]);
+		await session.prompt("New work: apply the supplied typo correction.");
+		expect(h.dispatches.at(-1)).toBe("luna");
+		expect(branchRoutingState(session.extensionRunner.createContext())?.task).toBe(
+			"New work: apply the supplied typo correction.",
+		);
+		expect(h.errors).toEqual([]);
+	} finally {
+		await h.close();
+	}
+}, 15_000);
+
+test("a manual model selection during native classification controls the pending dispatch", async () => {
+	const h = await fixture();
+	try {
+		const session = await h.open();
+		await session.setModel(h.auto());
+		h.faux.setResponses([
+			async () => {
+				await session.setModel(h.runtime.getModel("routing-fixture", "astra")!);
+				return fauxAssistantMessage(
+					JSON.stringify({ tier: "luna", reason: "Simple work.", insufficient_context: false }),
+				);
+			},
+			h.step("The manual choice wins this request."),
+		]);
+		await session.prompt("Classify, then begin the work.");
+		expect(h.dispatches).toEqual(["astra"]);
+		expect(branchRoutingState(session.extensionRunner.createContext())?.model.id).toBe("astra");
+		expect(manualPin(session.extensionRunner.createContext())?.id).toBe("astra");
+		expect(
+			session.sessionManager
+				.getEntries()
+				.filter((entry) => entry.type === "custom" && entry.customType === "routing:decision-v1"),
+		).toHaveLength(0);
+		expect(
+			session.sessionManager
+				.getEntries()
+				.filter((entry) => entry.type === "custom" && entry.customType === CLASSIFIER_USAGE_ENTRY_TYPE),
+		).toHaveLength(1);
+		expect(h.errors).toEqual([]);
+	} finally {
+		await h.close();
+	}
+}, 15_000);
+
+test("reload persists unknown spend before abandoning a timed-out classifier transport", async () => {
+	const h = await fixture();
+	const originalComplete = h.runtime.complete;
+	try {
+		const session = await h.open();
+		await session.setModel(h.auto());
+		let finish!: (message: ReturnType<typeof fauxAssistantMessage>) => void;
+		let transportSignal: AbortSignal | undefined;
+		h.runtime.complete = async (_model, _context, options) => {
+			transportSignal = options?.signal;
+			return new Promise((resolve) => {
+				finish = resolve;
+			});
+		};
+		h.faux.setResponses([h.step("Conservative timeout fallback.")]);
+		await session.prompt("Classify this work with a transport that ignores cancellation.");
+		expect(transportSignal?.aborted).toBe(true);
+		const before = await session.extensionRunner.emit({ type: "session_before_switch", reason: "new" });
+		expect(before?.cancel).toBe(true);
+		await session.reload();
+		const receipts = () =>
+			session.sessionManager
+				.getEntries()
+				.filter((entry) => entry.type === "custom" && entry.customType === CLASSIFIER_USAGE_ENTRY_TYPE);
+		expect(receipts()).toHaveLength(1);
+		expect(receipts()[0]).toMatchObject({ data: { provider: "routing-fixture", model: "luna" } });
+		expect(receipts()[0].data).not.toHaveProperty("usage");
+		expect(
+			sumSessionCosts(session.sessionManager.getEntries(), session.extensionRunner.createContext().modelRegistry)
+				.missing,
+		).toBe(1);
+		finish(fauxAssistantMessage(JSON.stringify({ tier: "luna", reason: "Late result.", insufficient_context: false })));
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(receipts()).toHaveLength(1); // No stale callback or duplicate missing-usage receipt.
+		expect(h.errors).toEqual([]);
+	} finally {
+		h.runtime.complete = originalComplete;
 		await h.close();
 	}
 }, 15_000);

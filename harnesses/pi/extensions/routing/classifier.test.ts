@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { Api, AssistantMessage, Context, Model, StreamOptions, Usage } from "@earendil-works/pi-ai";
 import { CLASSIFIER_PROMPT, classifyTask, parseClassification } from "./classifier";
 import { ROUTING_EVALUATION_CASES } from "./evaluation";
+import { taskEnvelope } from "./router";
 import type { Classification, ClassifierUsage, TaskEnvelope } from "./types";
 
 const model: Model<Api> = {
@@ -420,4 +421,28 @@ test("onStarted precedes dispatch and onSettled handles a synchronous registry e
 		}),
 	).toMatchObject({ fallback: "error" });
 	expect(events).toEqual(["started", "dispatch", "settled"]);
+});
+
+test("upstream conversation clipping marks uncertainty before classifier budgets are applied", async () => {
+	const plan = response(`A local change. ${"x".repeat(2100)} Preserve cross-service ordering under concurrency.`);
+	const { envelope: clipped } = taskEnvelope([
+		plan,
+		{ role: "user", content: "Implement the plan above.", timestamp: 1 },
+	]);
+	expect(clipped.context).not.toContain("cross-service ordering");
+	expect(clipped.truncated).toBe(true);
+	const h = harness();
+	const result = await classifyTask(h.registry, model, clipped);
+	expect(JSON.parse(h.calls[0].context.messages[0].content as string).truncated).toBe(true);
+	expect(result).toMatchObject({ tier: "sol", insufficient_context: true, fallback: "insufficient-context" });
+
+	const fullContext = taskEnvelope([
+		{ role: "user", content: "a".repeat(2000), timestamp: 1 },
+		response("b".repeat(2000)),
+		{ role: "user", content: "c".repeat(2000), timestamp: 2 },
+		response("d".repeat(2000)),
+		{ role: "user", content: "Proceed.", timestamp: 3 },
+	]).envelope;
+	expect(fullContext.context).toHaveLength(8000);
+	expect(fullContext.truncated).toBe(true);
 });

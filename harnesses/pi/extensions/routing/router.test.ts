@@ -788,3 +788,60 @@ test("one session's pending reassessment does not classify another session's hel
 	expect(changed.model).toBe(models.astra);
 	expect(h.dispatches).toHaveLength(2);
 });
+
+test("shutdown marks only its unsettled classifier spend unknown, once, and suppresses late accounting", async () => {
+	const pending: { done: ReturnType<typeof deferred<ClassifierResult>>; options: ClassifierOptions }[] = [];
+	const h = harness({
+		classify: async (_registry, _model, _envelope, options = {}) => {
+			const done = deferred<ClassifierResult>();
+			pending.push({ done, options });
+			options.onStarted?.();
+			try {
+				return await done.promise;
+			} finally {
+				options.onSettled?.();
+			}
+		},
+	});
+	const one = h.context("one");
+	const two = h.context("two");
+	const first = h.router.subtask({ task: "First assignment" }, one);
+	const second = h.router.subtask({ task: "Second assignment" }, two);
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(h.router.hasPending(one)).toBe(true);
+	expect(h.router.hasPending(two)).toBe(true);
+	h.router.close(one);
+	h.router.close(one);
+	expect(h.missing).toEqual(["one"]);
+	expect(h.router.hasPending(one)).toBe(false);
+	expect(h.router.hasPending(two)).toBe(true);
+	pending[0].options.onUsage?.(sample);
+	pending[0].done.resolve(classified);
+	pending[1].options.onUsage?.(sample);
+	pending[1].done.resolve(classified);
+	await Promise.all([first, second]);
+	expect(h.samples.map((entry) => entry.session)).toEqual(["two"]);
+	expect(h.missing).toEqual(["one"]);
+	expect(h.router.hasPending(two)).toBe(false);
+});
+
+test("reset starts a fresh cumulative scope instead of carrying completed work or clipping flags", async () => {
+	const h = harness();
+	const old: RoutingState = {
+		version: 1,
+		taskKey: "old",
+		task: "Completed distributed recovery redesign",
+		taskTruncated: true,
+		tier: "astra",
+		model: { provider: "fixture", id: "astra" },
+		reason: "Previous work",
+	};
+	h.queue("reset");
+	const fresh = await h.router.route(request({ state: old, messages: [user("Fix the supplied typo")] }), h.context());
+	expect(fresh.state?.task).toBe("Fix the supplied typo");
+	expect(fresh.state?.taskTruncated).toBeUndefined();
+	expect(h.dispatches[0].envelope.context).toBeUndefined();
+	expect(h.dispatches[0].envelope.truncated).toBeUndefined();
+	expect(taskEnvelope([user("Continue")], old).envelope.truncated).toBe(true);
+});

@@ -75,7 +75,7 @@ function effortOptions(model: Model<Api>): { reasoningEffort?: ThinkingLevel | "
 
 /** Per-field JSON-encoded budgets also bound control characters and escaping, not just plain text. */
 function boundedEnvelope(envelope: TaskEnvelope): { envelope: TaskEnvelope; truncated: boolean } {
-	let truncated = false;
+	let truncated = envelope.truncated === true;
 	function clip(value: string, budget: number): string {
 		if (JSON.stringify(value).length <= budget) return value;
 		truncated = true;

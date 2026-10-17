@@ -11,7 +11,7 @@ export type ClassifierUsageSample = {
 	responseModel?: string;
 	usage: Usage;
 };
-// Omitted usage means the request settled without telemetry, not a free request.
+// Omitted usage means spend is unknown, including a transport abandoned at shutdown, not free.
 export type ClassifierUsageRecord = Omit<ClassifierUsageSample, "usage"> & { version: 1; id: string; usage?: Usage };
 
 export function classifierUsageRecord(entry: SessionEntry): ClassifierUsageRecord | undefined {
@@ -56,7 +56,7 @@ export function recordClassifierUsage(
 	return data;
 }
 
-/** Use only after a request settles without usage, not while a late response is still possible. */
+/** Record unknown spend on settlement without telemetry, or before abandoning a transport at shutdown. */
 export function recordClassifierUsageMissing(
 	pi: Pick<ExtensionAPI, "appendEntry">,
 	sample: Omit<ClassifierUsageSample, "usage">,

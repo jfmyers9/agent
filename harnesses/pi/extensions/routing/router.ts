@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import type { Api, Message, Model } from "@earendil-works/pi-ai";
-import type { ExtensionContext, ModelRoute, ModelRouteRequest } from "@earendil-works/pi-coding-agent";
+import {
+	type ExtensionContext,
+	type ModelRoute,
+	type ModelRouteRequest,
+	VIRTUAL_MODEL_STATE_ENTRY,
+	type VirtualModelStateData,
+} from "@earendil-works/pi-coding-agent";
 import { pendingAssessment } from "./affinity.js";
 import { classifyTask } from "./classifier.js";
 import { manualPin } from "./pin.js";
@@ -11,17 +17,18 @@ export interface RoutingState {
 	version: 1;
 	taskKey: string;
 	task: string;
-	tier: Tier;
+	tier: Tier | "manual";
 	model: ModelRef;
 	reason: string;
 	/** Last explicit reassessment consumed on this branch; absent in older sessions. */
 	assessmentId?: string;
+	taskTruncated?: boolean;
 }
 export interface RoutingDecision {
 	kind: "main" | "subagent";
 	task: string;
 	model: ModelRef;
-	tier: Tier;
+	tier: RoutingState["tier"];
 	reason: string;
 	latencyMs: number;
 	fallback?: string;
@@ -35,11 +42,22 @@ export function isRoutingState(value: unknown): value is RoutingState {
 		state?.version === 1 &&
 		typeof state.taskKey === "string" &&
 		typeof state.task === "string" &&
-		["luna", "sol", "astra"].includes(state.tier) &&
+		["luna", "sol", "astra", "manual"].includes(state.tier) &&
 		isModelRef(state.model) &&
 		typeof state.reason === "string" &&
-		(state.assessmentId === undefined || typeof state.assessmentId === "string")
+		(state.assessmentId === undefined || typeof state.assessmentId === "string") &&
+		(state.taskTruncated === undefined || typeof state.taskTruncated === "boolean")
 	);
+}
+
+export function branchRoutingState(ctx: Pick<ExtensionContext, "sessionManager">): RoutingState | undefined {
+	for (const entry of [...ctx.sessionManager.getBranch()].reverse()) {
+		if (entry.type !== "custom" || entry.customType !== VIRTUAL_MODEL_STATE_ENTRY) continue;
+		const data = entry.data as VirtualModelStateData | undefined;
+		if (data?.provider === ROUTING_PROVIDER && data.modelId === ROUTING_MODEL && isRoutingState(data.state))
+			return data.state;
+	}
+	return undefined;
 }
 
 export function physicalModel(ref: ModelRef, ctx: Pick<ExtensionContext, "modelRegistry">): Model<Api> {
@@ -73,25 +91,32 @@ export function taskEnvelope(
 ): { envelope: TaskEnvelope; key: string } {
 	const latest = messages.findLastIndex((message) => message.role === "user");
 	const current = latest >= 0 ? messages[latest]! : undefined;
-	const task = current ? text(current).slice(0, 12_000) : "";
+	let truncated = previous?.taskTruncated === true;
+	function clip(value: string, limit: number): string {
+		if (value.length > limit) truncated = true;
+		return value.slice(0, limit);
+	}
+	const task = current ? clip(text(current), 12_000) : "";
 	const preceding = messages
 		.slice(0, latest < 0 ? messages.length : latest)
 		.filter((message) => message.role === "user" || message.role === "assistant")
 		.slice(-4)
-		.map((message) => `${message.role}: ${text(message).slice(0, 2000)}`)
+		.map((message) => `${message.role}: ${clip(text(message), 2000)}`)
 		.filter((item) => !/^(user|assistant):\s*$/.test(item));
 	if (previous)
 		preceding.unshift(`Previous task: ${previous.task}\nPrevious route: ${previous.tier}; ${previous.reason}`);
-	const context = preceding.join("\n\n").slice(-8000);
+	const fullContext = preceding.join("\n\n");
+	if (fullContext.length > 8000) truncated = true;
+	const context = fullContext.slice(-8000);
 	return {
-		envelope: { task, ...(context ? { context } : {}) },
+		envelope: { task, ...(context ? { context } : {}), ...(truncated ? { truncated: true } : {}) },
 		key: createHash("sha256")
 			.update(JSON.stringify(current ?? { task, context }))
 			.digest("hex"),
 	};
 }
 
-const tierRank: Record<Tier, number> = { luna: 0, sol: 1, astra: 2 };
+const tierRank: Record<RoutingState["tier"], number> = { luna: 0, sol: 1, astra: 2, manual: Infinity };
 
 type RouterOptions = {
 	loadSettings: () => Promise<RoutingSettings | undefined>;
@@ -102,10 +127,30 @@ type RouterOptions = {
 };
 
 export class TaskRouter {
-	private readonly transports = new Map<string, number>();
+	private readonly transports = new Map<string, Set<() => void>>();
 	constructor(private readonly options: RouterOptions) {}
 	hasPending(ctx: ExtensionContext): boolean {
-		return (this.transports.get(ctx.sessionManager.getSessionId()) ?? 0) > 0;
+		return (this.transports.get(ctx.sessionManager.getSessionId())?.size ?? 0) > 0;
+	}
+	/** Persist unresolved spend while the extension API still belongs to this session. */
+	close(ctx: ExtensionContext): void {
+		const session = ctx.sessionManager.getSessionId();
+		for (const abandon of this.transports.get(session) ?? []) abandon();
+		this.transports.delete(session);
+	}
+	private pinnedRoute(
+		request: ModelRouteRequest<RoutingState>,
+		ctx: ExtensionContext,
+		state?: RoutingState,
+	): ModelRoute<RoutingState> | undefined {
+		const pin = manualPin(ctx);
+		if (!pin) return;
+		// A model-selection event can persist a newer baseline while classification awaits.
+		return {
+			model: physicalModel(pin, ctx),
+			thinkingLevel: request.thinkingLevel,
+			state: branchRoutingState(ctx) ?? state,
+		};
 	}
 	private async settings(): Promise<RoutingSettings> {
 		const settings = await this.options.loadSettings();
@@ -137,13 +182,19 @@ export class TaskRouter {
 		let settled = false;
 		let started = false;
 		let usage = false;
+		let abandoned = false;
+		const abandon = () => {
+			if (abandoned) return;
+			if (!usage) this.options.onMissingUsage?.(ctx, settings.classifier);
+			abandoned = true;
+		};
 		const onSettled = () => {
 			if (settled || !started) return;
 			settled = true;
-			const count = (this.transports.get(session) ?? 1) - 1;
-			if (count > 0) this.transports.set(session, count);
-			else this.transports.delete(session);
-			if (!usage) this.options.onMissingUsage?.(ctx, settings.classifier);
+			const pending = this.transports.get(session);
+			pending?.delete(abandon);
+			if (pending?.size === 0) this.transports.delete(session);
+			if (!usage && !abandoned) this.options.onMissingUsage?.(ctx, settings.classifier);
 		};
 		return await (this.options.classify ?? classifyTask)(ctx.modelRegistry, classifier, envelope, {
 			signal,
@@ -151,9 +202,15 @@ export class TaskRouter {
 			maxTokens: settings.maxTokens,
 			onStarted: () => {
 				started = true;
-				this.transports.set(session, (this.transports.get(session) ?? 0) + 1);
+				let pending = this.transports.get(session);
+				if (!pending) {
+					pending = new Set();
+					this.transports.set(session, pending);
+				}
+				pending.add(abandon);
 			},
 			onUsage: (sample) => {
+				if (abandoned) return; // Reload recorded unknown spend; never call the stale extension API.
 				this.options.onUsage?.(ctx, sample);
 				usage = true;
 			},
@@ -164,10 +221,8 @@ export class TaskRouter {
 	async route(request: ModelRouteRequest<RoutingState>, ctx: ExtensionContext): Promise<ModelRoute<RoutingState>> {
 		request.signal?.throwIfAborted();
 		const state = isRoutingState(request.state) ? request.state : undefined;
-		const pin = manualPin(ctx);
-		if (pin) {
-			return { model: physicalModel(pin, ctx), thinkingLevel: request.thinkingLevel, state };
-		}
+		const pinned = this.pinnedRoute(request, ctx, state);
+		if (pinned) return pinned;
 		if (request.reason !== "user") {
 			const sticky = request.failed ?? request.previous;
 			if (sticky && sticky.model.api !== ("pi-virtual" as string))
@@ -180,10 +235,15 @@ export class TaskRouter {
 			// Compaction/direct calls must never invoke a second classifier. A fresh
 			// child without inherited state is assigned Sol, not routed recursively.
 			const settings = await this.settings();
-			return { model: physicalModel(settings.tiers.sol, ctx), thinkingLevel: request.thinkingLevel };
+			return (
+				this.pinnedRoute(request, ctx, state) ?? {
+					model: physicalModel(settings.tiers.sol, ctx),
+					thinkingLevel: request.thinkingLevel,
+				}
+			);
 		}
 		const assessment = pendingAssessment(ctx, state);
-		const { envelope, key } = taskEnvelope(request.messages, state);
+		const { envelope, key } = taskEnvelope(request.messages, assessment?.mode === "reset" ? undefined : state);
 		// Native model-route preflight can repeat for the same user message. Share
 		// its saved decision, but reassess every distinct user turn while on Auto.
 		if (state && !assessment && state.taskKey === key) {
@@ -191,23 +251,29 @@ export class TaskRouter {
 		}
 		if (state) physicalModel(state.model, ctx);
 		const settings = await this.settings();
+		const selected = this.pinnedRoute(request, ctx, state);
+		if (selected) return selected;
 		// Resolve the fallback up front. Never substitute another provider or
 		// silently route to a weaker target when a configured model is unavailable.
 		if (!state) physicalModel(settings.tiers.sol, ctx);
 		const classification = await this.classify(settings, envelope, ctx, request.signal);
 		request.signal?.throwIfAborted();
+		const override = this.pinnedRoute(request, ctx, state);
+		if (override) return override;
 		const recommended =
 			classification.insufficient_context && classification.tier === "luna" ? "sol" : classification.tier;
 		const unreliable = !!classification.fallback || (classification.insufficient_context && recommended !== "astra");
 		const keepPrevious =
 			state && (unreliable || (assessment?.mode !== "reset" && tierRank[recommended] <= tierRank[state.tier]));
 		const tier = keepPrevious ? state.tier : recommended;
-		const ref = keepPrevious ? state.model : settings.tiers[tier];
+		const ref = keepPrevious ? state.model : settings.tiers[recommended];
 		const model = physicalModel(ref, ctx);
 		const reason = keepPrevious
 			? `${unreliable ? "Unreliable assessment" : "No tier upgrade"}; retaining session model. ${classification.reason}`
 			: classification.reason;
-		const activeTask = state ? `${state.task}\nFollow-up: ${envelope.task}`.slice(-2000) : envelope.task.slice(0, 2000);
+		const cumulative =
+			state && assessment?.mode !== "reset" ? `${state.task}\nFollow-up: ${envelope.task}` : envelope.task;
+		const activeTask = cumulative.slice(-2000);
 		const next: RoutingState = {
 			version: 1,
 			taskKey: key,
@@ -216,6 +282,9 @@ export class TaskRouter {
 			model: { provider: model.provider, id: model.id },
 			reason,
 			...((assessment?.id ?? state?.assessmentId) ? { assessmentId: assessment?.id ?? state?.assessmentId } : {}),
+			...(cumulative.length > 2000 || (assessment?.mode !== "reset" && state?.taskTruncated)
+				? { taskTruncated: true }
+				: {}),
 		};
 		this.options.onDecision?.(ctx, {
 			kind: "main",

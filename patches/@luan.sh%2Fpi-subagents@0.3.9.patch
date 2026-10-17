@@ -11,10 +11,31 @@ index 14bbc5987461fae2ed661b389e165e87c88bc113..3233e7edd26c67a4a22d512316164dfd
  
  All agents share the same directory. In detail:
  - All agents have access to the same container and filesystem as you.
+diff --git a/src/extension.ts b/src/extension.ts
+index 99628c59daa93635f151624bc6a91fdad96b0a95..6cb5c1157fe4c766438252d4142987f9b6c00f35 100644
+--- a/src/extension.ts
++++ b/src/extension.ts
+@@ -183,7 +183,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
+ 	};
+ 	const restoreRootCoordinator = (context: ExtensionContext): void => {
+ 		const sessionId = context.sessionManager.getSessionId();
+-		const checkpoint = latestSubagentTreeCheckpoint(context.sessionManager.getBranch());
++		const checkpoint = latestSubagentTreeCheckpoint(context.sessionManager.getEntries());
+ 		coordinator = createRootCoordinator(sessionId, {
+ 			...config,
+ 			rootSessionDir: subagentSessionRoot(context),
 diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
+index f860da634b38fe1da0341952a84b230f7dec0003..8b03bade3bf0d5bdc59feb68d6ccddb10b80d291 100644
 --- a/src/runtime/agent-runner.ts
 +++ b/src/runtime/agent-runner.ts
-@@ -7,6 +7,8 @@
+@@ -1,5 +1,5 @@
+ import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+-import { clampThinkingLevel, getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
++import { clampThinkingLevel, getSupportedThinkingLevels, type Api, type CredentialStore, type Model } from "@earendil-works/pi-ai";
+ import {
+ 	type AgentSession,
+ 	type AgentSessionEvent,
+@@ -7,17 +7,18 @@ import {
  	type CreateAgentSessionRuntimeResult,
  	createAgentSession,
  	createAgentSessionRuntime,
@@ -23,7 +44,11 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  	DefaultResourceLoader,
  	type ExtensionAPI,
  	type ExtensionContext,
-@@ -17,7 +19,6 @@
+ 	getAgentDir,
+-	type ModelRuntime,
++	ModelRuntime,
+ 	type SessionEntry,
+ 	SessionManager,
  	type SessionStartEvent,
  	SettingsManager,
  } from "@earendil-works/pi-coding-agent";
@@ -31,7 +56,51 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  import { SUBAGENT_TASK_MESSAGE_TYPE } from "../core/fork-history.ts";
  import { primePromptEnvelope } from "../protocol/prompt-envelope.ts";
  import { buildAgentPrompt } from "../core/prompts.ts";
-@@ -183,6 +184,7 @@
+@@ -165,17 +166,32 @@ function subscribeToolActivity(session: AgentSession, onToolActivity?: (activity
+ 	});
+ }
+ 
+-type ModelRegistryRuntimeBoundary = { runtime?: ModelRuntime };
+-
+-/**
+- * Pi 0.84 exposes ModelRuntime only through ModelRegistry's private compatibility field.
+- * Remove this adapter when the extension context exposes its runtime publicly.
+- */
+-function modelRuntimeFor(modelRegistry: ExtensionContext["modelRegistry"]): ModelRuntime {
+-	// type-boundary: Pi 0.84's ModelRegistry owns this runtime; the AgentSession factory validates it immediately.
+-	const runtime = (modelRegistry as object as ModelRegistryRuntimeBoundary).runtime;
+-	if (!runtime) throw new Error("Pi model runtime is unavailable to the subagent session");
+-	return runtime;
++type ModelRegistryRuntimeBoundary = {
++	runtime?: Pick<ModelRuntime, "getProviders" | "getAllModels"> & { credentials: CredentialStore; modelsPath?: string };
++};
++
++/** Catalog/auth may be inherited; virtual route callbacks belong to one session. */
++export async function createChildModelRuntime(modelRegistry: ExtensionContext["modelRegistry"]): Promise<ModelRuntime> {
++	// Pi exposes these through private compatibility fields until it offers a runtime fork API.
++	const parent = (modelRegistry as object as ModelRegistryRuntimeBoundary).runtime;
++	if (!parent?.credentials) throw new Error("Pi model runtime is unavailable to the subagent session");
++	const child = await ModelRuntime.create({
++		credentials: parent.credentials,
++		modelsPath: parent.modelsPath ?? null,
++		allowModelNetwork: false,
++		refreshOnCreate: false,
++	});
++	for (const provider of parent.getProviders()) {
++		const models = parent.getAllModels(provider.id).filter((model) => model.api !== "pi-virtual");
++		if (!models.length) continue;
++		child.registerNativeProvider({
++			...provider,
++			getModels: () => models.filter((model): model is Model<Api> => !model.type || model.type === "chat"),
++			getAllModels: () => models,
++		});
++	}
++	await child.refresh({ allowNetwork: false });
++	return child;
+ }
+ 
+ export interface PreparedAgentRun {
+@@ -183,6 +199,7 @@ export interface PreparedAgentRun {
  	agentDir: string;
  	systemPrompt: string;
  	toolNames: string[];
@@ -39,7 +108,7 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  	model: Model<Api> | undefined;
  	thinkingLevel: ThinkingLevel | undefined;
  	loader: DefaultResourceLoader;
-@@ -196,8 +198,24 @@
+@@ -196,8 +213,24 @@ export function parseModelSelector(value: string): string {
  	return selector;
  }
  
@@ -66,7 +135,7 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  }
  
  export async function prepareAgentRun(
-@@ -206,12 +224,20 @@
+@@ -206,12 +239,20 @@ export async function prepareAgentRun(
  	loadResources = true,
  ): Promise<PreparedAgentRun> {
  	const effectiveCwd = options.cwd ?? ctx.cwd;
@@ -88,7 +157,7 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  		noSkills: false,
  		noPromptTemplates: true,
  		noThemes: true,
-@@ -219,7 +245,7 @@
+@@ -219,7 +260,7 @@ export async function prepareAgentRun(
  		systemPromptOverride: () => systemPrompt,
  		appendSystemPromptOverride: () => [],
  	});
@@ -97,7 +166,7 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  
  	const model = resolveModel(ctx, options.agentConfig.model);
  	const thinkingLevel = resolveThinkingLevel(
-@@ -232,7 +258,7 @@
+@@ -232,7 +273,7 @@ export async function prepareAgentRun(
  		thinkingLevel,
  	});
  
@@ -106,7 +175,22 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  }
  
  export function resolveModel(
-@@ -287,12 +313,16 @@
+@@ -240,10 +281,12 @@ export function resolveModel(
+ 	reference: AgentModelReference | string | undefined,
+ ): Model<Api> | undefined {
+ 	if (!reference) return ctx.model;
+-	const models =
+-		ctx.scopedModels.length > 0 ? ctx.scopedModels.map(({ model }) => model) : ctx.modelRegistry.getAvailable();
+ 	const selector =
+ 		typeof reference === "string" ? parseModelSelector(reference) : `${reference.provider}/${reference.id}`;
++	// Scopes disambiguate short names; a qualified override names an authenticated catalog target.
++	const models = selector.includes("/") || ctx.scopedModels.length === 0
++		? ctx.modelRegistry.getAvailable()
++		: ctx.scopedModels.map(({ model }) => model);
+ 	const normalizedSelector = selector.toLowerCase();
+ 	const exactMatches = models.filter(
+ 		(candidate) =>
+@@ -287,12 +330,16 @@ export function resolveThinkingLevel(
  
  export async function runAgent(ctx: ExtensionContext, prompt: string, options: RunOptions): Promise<RunResult> {
  	const prepared = await prepareAgentRun(ctx, options);
@@ -124,7 +208,7 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  			noSkills: false,
  			noPromptTemplates: true,
  			noThemes: true,
-@@ -300,7 +330,7 @@
+@@ -300,7 +347,7 @@ export async function runAgent(ctx: ExtensionContext, prompt: string, options: R
  			systemPromptOverride: () => systemPrompt,
  			appendSystemPromptOverride: () => [],
  		});
@@ -133,7 +217,16 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  		return resourceLoader;
  	};
  
-@@ -358,8 +388,9 @@
+@@ -328,7 +375,7 @@ export async function runAgent(ctx: ExtensionContext, prompt: string, options: R
+ 			agentDir: runtimeAgentDir,
+ 			sessionManager: runtimeSessionManager,
+ 			settingsManager,
+-			modelRuntime: modelRuntimeFor(ctx.modelRegistry),
++			modelRuntime: await createChildModelRuntime(ctx.modelRegistry),
+ 			model,
+ 			thinkingLevel,
+ 			tools: toolNames,
+@@ -358,8 +405,9 @@ export async function runAgent(ctx: ExtensionContext, prompt: string, options: R
  			options.onToolActivity?.({ type: "end", toolName: `extension-error:${error.extensionPath}` });
  		},
  	});
@@ -146,6 +239,7 @@ diff --git a/src/runtime/agent-runner.ts b/src/runtime/agent-runner.ts
  	primePromptEnvelope({
  		provider: model?.provider,
 diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
+index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0ef91af368 100644
 --- a/src/runtime/coordinator.ts
 +++ b/src/runtime/coordinator.ts
 @@ -1,5 +1,6 @@
@@ -155,7 +249,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
  import {
  	type AgentSession,
-@@ -39,6 +40,8 @@
+@@ -39,6 +40,8 @@ export interface SubagentSnapshot {
  	readonly completedAt?: number;
  	readonly toolUses: number;
  	readonly cost: number;
@@ -164,7 +258,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  	readonly tokenCount: number;
  	readonly contextPercent?: number;
  	readonly compactions: number;
-@@ -100,6 +103,9 @@
+@@ -100,6 +103,9 @@ export interface PersistedSubagentState {
  	readonly completedAt?: number;
  	readonly toolUses: number;
  	readonly cost: number;
@@ -174,7 +268,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  	readonly tokenCount: number;
  	readonly contextPercent?: number;
  	readonly compactions: number;
-@@ -129,6 +135,7 @@
+@@ -129,6 +135,7 @@ interface LiveAgent extends Omit<Mutable<PersistedSubagentState>, "forkNonBounda
  	activeTools: string[];
  	latestInnerTool?: string;
  	session?: AgentSession;
@@ -182,7 +276,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  	runtime?: RunResult["runtime"];
  	abortController: AbortController;
  	request?: SpawnRequest;
-@@ -231,6 +238,11 @@
+@@ -231,6 +238,11 @@ function isPersistedAgentState(value: object | null | undefined): value is Persi
  		isFiniteNumber(value, "startedAt") &&
  		isFiniteNumber(value, "toolUses") &&
  		isFiniteNumber(value, "cost") &&
@@ -194,33 +288,35 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		isFiniteNumber(value, "tokenCount") &&
  		isFiniteNumber(value, "compactions") &&
  		isFiniteNumber(value, "transcriptGeneration") &&
-@@ -272,11 +284,12 @@
+@@ -272,11 +284,12 @@ export function latestSubagentTreeCheckpoint(entries: readonly SessionEntry[]):
  	});
  }
  
-+function loadPersistedTranscript(file?: string): { entries: SessionEntry[]; messages: readonly AgentMessage[] } | undefined {
 -function loadPersistedTranscript(file?: string): readonly AgentMessage[] | undefined {
++function loadPersistedTranscript(file?: string): { entries: SessionEntry[]; messages: readonly AgentMessage[] } | undefined {
  	if (!file || !existsSync(file)) return undefined;
  	try {
  		const manager = SessionManager.open(file);
+-		return Object.freeze([...buildSessionContext(manager.getEntries(), manager.getLeafId()).messages]);
 +		const entries = manager.getEntries();
 +		return { entries, messages: Object.freeze([...buildSessionContext(entries, manager.getLeafId()).messages]) };
--		return Object.freeze([...buildSessionContext(manager.getEntries(), manager.getLeafId()).messages]);
  	} catch {
  		return undefined;
  	}
-@@ -346,13 +359,132 @@
+@@ -346,13 +359,132 @@ function transcriptPreview(message?: AgentMessage): TranscriptPreview | undefine
  	return undefined;
  }
  
+-function reportedCost(usage?: { cost?: { total?: number } }): number {
 +type Registry = Pick<ExtensionContext["modelRegistry"], "find">;
 +
 +function reportedCost(usage?: Usage): number {
--function reportedCost(usage?: { cost?: { total?: number } }): number {
  	const cost = usage?.cost?.total ?? 0;
  	return Number.isFinite(cost) && cost > 0 ? cost : 0;
  }
  
+-function messageCost(message: AgentMessage): number {
+-	return message.role === "assistant" || message.role === "toolResult" ? reportedCost(message.usage) : 0;
 +function modelCost(
 +	usage: Usage,
 +	provider: string,
@@ -340,12 +436,10 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
 +		this.lastEntryId = entries.at(-1)?.id ?? null;
 +		return cost;
 +	}
--function messageCost(message: AgentMessage): number {
--	return message.role === "assistant" || message.role === "toolResult" ? reportedCost(message.usage) : 0;
  }
  
  function snapshotOf(agent: LiveAgent): SubagentSnapshot {
-@@ -372,6 +504,7 @@
+@@ -372,6 +504,7 @@ function snapshotOf(agent: LiveAgent): SubagentSnapshot {
  		completedAt: agent.completedAt,
  		toolUses: agent.toolUses,
  		cost: agent.cost,
@@ -353,7 +447,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		tokenCount: agent.tokenCount,
  		contextPercent: agent.contextPercent,
  		compactions: agent.compactions,
-@@ -400,6 +533,8 @@
+@@ -400,6 +533,8 @@ function persistedStateOf(agent: LiveAgent): PersistedSubagentState {
  		completedAt: agent.completedAt,
  		toolUses: agent.toolUses,
  		cost: agent.cost,
@@ -362,7 +456,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		tokenCount: agent.tokenCount,
  		contextPercent: agent.contextPercent,
  		compactions: agent.compactions,
-@@ -551,9 +686,11 @@
+@@ -551,9 +686,11 @@ export class SubagentCoordinator {
  	}
  
  	snapshot(): readonly SubagentSnapshot[] {
@@ -374,7 +468,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		return Object.freeze({
  			version: 1,
  			agents: Object.freeze([...this.agents.values()].map(persistedStateOf).sort((a, b) => a.id.localeCompare(b.id))),
-@@ -561,6 +698,7 @@
+@@ -561,6 +698,7 @@ export class SubagentCoordinator {
  	}
  	persistedAgent(target: string): PersistedSubagentState | undefined {
  		const agent = this.agents.get(target);
@@ -382,10 +476,11 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		return agent ? persistedStateOf(agent) : undefined;
  	}
  
-@@ -569,7 +707,22 @@
+@@ -569,7 +707,22 @@ export class SubagentCoordinator {
  		for (const saved of checkpoint.agents) {
  			const wasActive = saved.status === "queued" || saved.status === "running";
  			const transcriptFile = childTranscriptFile(this.rootSessionDir, saved.id, saved.transcriptFile);
+-			const restoredMessages = loadPersistedTranscript(transcriptFile);
 +			const transcript = loadPersistedTranscript(transcriptFile);
 +			const restoredMessages = transcript?.messages;
 +			let cost = saved.cost;
@@ -402,22 +497,21 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
 +				costMissing += ledger.missing;
 +				costLastEntryId = ledger.lastEntryId;
 +			}
--			const restoredMessages = loadPersistedTranscript(transcriptFile);
  			const agent: LiveAgent = {
  				id: saved.id,
  				parentId: saved.parentId,
-@@ -580,7 +733,9 @@
+@@ -580,7 +733,9 @@ export class SubagentCoordinator {
  				error: saved.error,
  				startedAt: saved.startedAt,
  				toolUses: saved.toolUses,
+-				cost: saved.cost,
 +				cost,
 +				costMissing,
 +				costLastEntryId,
--				cost: saved.cost,
  				tokenCount: saved.tokenCount,
  				contextPercent: saved.contextPercent,
  				compactions: saved.compactions,
-@@ -782,6 +937,8 @@
+@@ -782,6 +937,8 @@ export class SubagentCoordinator {
  	private attachSession(agent: LiveAgent, session: AgentSession, generation: number): void {
  		if (this.disposed || agent.turnGeneration !== generation) return;
  		agent.session = session;
@@ -426,14 +520,14 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		agent.presentationUnregister?.();
  		agent.presentationUnregister = registerPresentationResolver(agent.id, {
  			resolveTool: (name) => session.getToolDefinition(name),
-@@ -793,13 +950,14 @@
+@@ -793,13 +950,14 @@ export class SubagentCoordinator {
  		this.childSessions.set(session.sessionManager.getSessionId(), agent.id);
  		bindSessionToRoot(this.rootSessionId, session.sessionManager.getSessionId());
  		agent.sessionUnsubscribe = session.subscribe((event) => {
+-			let changed = false;
 +			const previousCost = agent.cost;
 +			this.refreshSessionCost(agent);
 +			let changed = agent.cost !== previousCost;
--			let changed = false;
  			if (event.type === "compaction_start") {
  				agent.compacting = true;
  				changed = true;
@@ -443,7 +537,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  				this.refreshSessionStats(agent, session);
  				changed = true;
  			}
-@@ -808,7 +966,6 @@
+@@ -808,7 +966,6 @@ export class SubagentCoordinator {
  				changed = true;
  				if (!event.aborted) {
  					agent.transcriptGeneration++;
@@ -451,7 +545,7 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  					agent.compactions++;
  					this.refreshSessionStats(agent, session);
  				}
-@@ -928,7 +1085,15 @@
+@@ -928,7 +1085,15 @@ export class SubagentCoordinator {
  		this.disposedRuntimes.add(runtime);
  		void runtime.dispose().catch(() => undefined);
  	}
@@ -467,15 +561,3 @@ diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
  		const stats = session.getSessionStats();
  		agent.tokenCount = stats.tokens.total;
  		agent.contextPercent = stats.contextUsage?.percent ?? undefined;
-diff --git a/src/extension.ts b/src/extension.ts
---- a/src/extension.ts
-+++ b/src/extension.ts
-@@ -183,7 +183,7 @@
- 	};
- 	const restoreRootCoordinator = (context: ExtensionContext): void => {
- 		const sessionId = context.sessionManager.getSessionId();
--		const checkpoint = latestSubagentTreeCheckpoint(context.sessionManager.getBranch());
-+		const checkpoint = latestSubagentTreeCheckpoint(context.sessionManager.getEntries());
- 		coordinator = createRootCoordinator(sessionId, {
- 			...config,
- 			rootSessionDir: subagentSessionRoot(context),

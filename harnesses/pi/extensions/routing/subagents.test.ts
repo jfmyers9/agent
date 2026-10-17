@@ -352,3 +352,23 @@ test("duplicate asynchronous routing failures all block without mutating argumen
 	expect(second.input.model).toBeUndefined();
 	expect(h.requests).toHaveLength(1);
 });
+
+test("routed qualified child models resolve natively under an Auto-only model scope", async () => {
+	const h = harness();
+	const auto = { provider: "routing", id: "auto", name: "Auto" };
+	const worker = { ...selection.model, name: "Worker" };
+	const ctx = {
+		...context(),
+		model: auto,
+		scopedModels: [{ model: auto }],
+		modelRegistry: { getAvailable: () => [auto, worker] },
+	} as unknown as ExtensionContext;
+	const event = spawn();
+	expect(await h.call(event, ctx)).toBeUndefined();
+	const runner = await import(new URL("./runtime/agent-runner.ts", import.meta.resolve("@luan.sh/pi-subagents")).href);
+	expect(runner.resolveModel(ctx, event.input.model)).toBe(worker);
+	// Short names remain scoped; qualified choices still require an available target.
+	expect(() => runner.resolveModel(ctx, "worker")).toThrow("Unknown model");
+	expect(() => runner.resolveModel(ctx, "vendor/unavailable")).toThrow("Unknown model");
+	expect(runner.resolveModel(ctx, undefined)).toBe(auto);
+});
