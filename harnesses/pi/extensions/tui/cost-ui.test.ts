@@ -113,6 +113,49 @@ describe("TUI cost integration", () => {
 		expect(chrome?.(240, theme, { modeReserve: 0 }).topRight).not.toContain("· fast");
 	});
 
+	test("Auto shows live physical model status, queued requests, and fast mode without rebuilding context", async () => {
+		ctx.model = { ...ctx.model, provider: "routing", id: "auto", name: "Auto — Luna routing" };
+		await handlers.get("session_start")!({}, ctx);
+		const top = (width = 240) => chrome?.(width, theme, { modeReserve: 0 }).topRight ?? "";
+		expect(top()).toContain("Auto — Luna routing");
+		const reads = ctx.getContextUsage.mock.calls.length;
+		ctx.statuses.set("routing", "Auto → execution-astra · fixture (astra held)");
+		expect(top()).toContain("Auto → execution-astra · fixture (astra held)");
+		expect(top()).not.toContain("Luna routing");
+		ctx.statuses.set("routing", "Auto → execution-astra · fixture (astra held) (reset queued)");
+		expect(top()).toContain("reset queued");
+		ctx.statuses.set("routing", "Auto → execution-sol · fixture (sol held)");
+		ctx.statuses.set("openai-fast-mode", "fast");
+		expect(top()).toContain("Auto → execution-sol · fixture (sol held) · fast");
+		expect(top()).not.toContain("execution-astra");
+		expect(ctx.getContextUsage.mock.calls.length).toBe(reads);
+		for (let width = 1; width <= 100; width++) expect(visibleWidth(top(width))).toBeLessThanOrEqual(width);
+		expect(top(40)).toContain("execution-sol");
+		spyOn(terminal, "terminalRows").mockReturnValue(10);
+		expect(top()).toContain("execution-sol");
+	});
+
+	test("physical selection and session switches cannot inherit an Auto label", async () => {
+		ctx.statuses.set("routing", "Child Auto");
+		await handlers.get("session_start")!({}, ctx);
+		const top = () => chrome?.(240, theme, { modeReserve: 0 }).topRight ?? "";
+		expect(top()).toContain("test-model");
+		expect(top()).not.toContain("Child Auto");
+		ctx.model = { ...ctx.model, provider: "routing", id: "auto" };
+		ctx.statuses.set("routing", "Auto → execution-astra · fixture (astra held)");
+		await handlers.get("model_select")!({ model: ctx.model }, ctx);
+		expect(top()).toContain("execution-astra");
+		ctx.model = { name: "manual-model", contextWindow: 100000 };
+		await handlers.get("model_select")!({ model: ctx.model }, ctx);
+		expect(top()).toContain("manual-model");
+		expect(top()).not.toContain("execution-astra");
+		const second = context("second");
+		second.model = { ...second.model, provider: "routing", id: "auto", name: "New Auto" } as any;
+		await handlers.get("session_start")!({}, second);
+		expect(top()).toContain("New Auto");
+		expect(top()).not.toContain("execution-astra");
+	});
+
 	test("child-only cost updates refresh the idle parent's editor without rebuilding context", async () => {
 		await handlers.get("session_start")!({}, ctx);
 		expect(status()).toContain("$1.25");

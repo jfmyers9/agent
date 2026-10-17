@@ -1,5 +1,6 @@
 import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { ROUTING_MODEL, ROUTING_PROVIDER } from "../routing/settings";
 import { terminalRows } from "../shared/terminal";
 import { registerExtensionEntryRenderer } from "../shared/tui";
 import { ensureConfigExists, loadConfig, type PolishedTuiConfig, saveConfig } from "./config";
@@ -125,6 +126,7 @@ export default function (pi: ExtensionAPI) {
 	let disposed = false;
 	let uiGeneration = 0;
 	let editorSessionIdentity: EditorSessionIdentity | undefined;
+	let mainAutoSelected = false;
 	const turnDurationTimer = new TurnDurationTimer();
 
 	const isStaleCtxError = (error: unknown) =>
@@ -237,7 +239,10 @@ export default function (pi: ExtensionAPI) {
 			statusWidth = safeWidth;
 		}
 		const fast = getFastStatus?.();
-		const topState = fast ? { ...state, modelLabel: `${state.modelLabel} · ${fast}` } : state;
+		// Read live status at render time: routing resolves after agent_start and
+		// may update without a new context snapshot (including queued commands).
+		const modelLabel = (mainAutoSelected && getRoutingStatus?.()) || state.modelLabel;
+		const topState = { ...state, modelLabel: fast ? `${modelLabel} · ${fast}` : modelLabel };
 		const topStatus = renderEditorTopStatus(topState, currentConfig, cwd, theme, statusWidth);
 		return [usageLine, topStatus].filter(Boolean).join("  ");
 	};
@@ -289,6 +294,7 @@ export default function (pi: ExtensionAPI) {
 				: storedContextUsed;
 		const scaledSlices = scaleContextSlicesToUsage(rawContext.slices, contextUsed);
 
+		mainAutoSelected = ctx.model?.provider === ROUTING_PROVIDER && ctx.model?.id === ROUTING_MODEL;
 		state.modelLabel = ctx.model?.name ?? "no-model";
 		state.providerLabel = formatProviderLabel(ctx.model?.provider);
 		state.thinkingLevel = ctx.model?.reasoning ? pi.getThinkingLevel() : undefined;
@@ -417,12 +423,14 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	let getFastStatus: (() => string | undefined) | undefined;
+	let getRoutingStatus: (() => string | undefined) | undefined;
 	const installFooter = (ctx: ExtensionContext) => {
 		const generation = uiGeneration;
 		syncStateIfCurrent(ctx);
 
 		ctx.ui.setFooter((tui, _theme, footerData) => {
 			getFastStatus = () => footerData.getExtensionStatuses().get("openai-fast-mode");
+			getRoutingStatus = () => footerData.getExtensionStatuses().get("routing");
 			requestFooterRender = () => tui.requestRender();
 			const disposeFocusCursor = installFocusCursor(pi, ctx, tui);
 			const unsubscribeBranch = footerData.onBranchChange(() => {
@@ -438,6 +446,7 @@ export default function (pi: ExtensionAPI) {
 			return {
 				dispose: () => {
 					getFastStatus = undefined;
+					getRoutingStatus = undefined;
 					disposeFocusCursor();
 					unsubscribeBranch();
 					requestFooterRender = undefined;

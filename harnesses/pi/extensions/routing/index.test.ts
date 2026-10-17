@@ -173,6 +173,42 @@ function harness(initial?: RoutingSettings) {
 	};
 }
 
+test("status shows the physical model on decisions, resume, tree navigation, and queued reassessment", async () => {
+	const h = harness(settings());
+	h.model = auto;
+	await h.emit("session_start");
+	expect(h.statuses.get("routing")).toBe("Auto: ready");
+	const route = await h.virtual[0].route(
+		{
+			model: auto,
+			reason: "user",
+			thinkingLevel: "low",
+			messages: [{ role: "user", content: "Fix typo", timestamp: 1 }],
+		},
+		h.context,
+	);
+	expect(h.statuses.get("routing")).toBe("Auto → luna · fixture (luna held)");
+	const entry = {
+		type: "custom",
+		customType: VIRTUAL_MODEL_STATE_ENTRY,
+		data: { provider: ROUTING_PROVIDER, modelId: ROUTING_MODEL, state: route.state },
+	} as SessionEntry;
+	h.entries.push(entry);
+	h.statuses.clear();
+	await h.emit("session_start");
+	expect(h.statuses.get("routing")).toBe("Auto → luna · fixture (luna held)");
+	// Stored physical identity wins over current tier mappings.
+	(entry as any).data.state = { ...route.state, tier: "sol", model: { provider: "other", id: "pinned-model" } };
+	await h.emit("session_tree");
+	expect(h.statuses.get("routing")).toBe("Auto → pinned-model · other (sol held)");
+	await h.command("reassess");
+	expect(h.statuses.get("routing")).toBe("Auto → pinned-model · other (sol held) (reassess queued)");
+	expect(h.calls).toHaveLength(1);
+	h.model = models[1];
+	await h.emit("model_select", { model: models[1] });
+	expect(h.statuses.get("routing")).toBe("Child Auto");
+});
+
 test("load registers native Auto without enabling, selecting, saving, or classifying", async () => {
 	const h = harness();
 	expect(h.virtual).toHaveLength(1);

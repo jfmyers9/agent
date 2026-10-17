@@ -112,6 +112,9 @@ hand-maintained dotfile is needed. Canceling setup leaves preferences unchanged.
 - `/routing on` or `/model` → **Auto — Luna routing**: opt in for this session.
 - `/routing off`: disable main Auto and pin its last physical model (Sol before any task); the independent subagent preference is unchanged.
 - `/routing status`: inspect mappings, limits, and the last branch-local decision.
+- The editor status shows the held physical model and provider (for example,
+  `Auto → gpt-6-astra · openai-codex (astra held)`), plus any queued reassessment.
+  This stays visible as the transcript grows; Luna is the classifier, not necessarily the execution model.
 - `/routing setup`: change mappings; existing session models stay held until explicit reassessment/reset.
 - `/routing reassess`: classify the next user message once, allowing only a higher tier. Same/lower recommendations retain the exact current model.
 - `/routing reset`: declare new work and classify the next user message once, permitting a cheaper model or another provider. Prefer a fresh session for unrelated work.

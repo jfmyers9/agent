@@ -30,6 +30,10 @@ import type { ModelRef, Tier } from "./types.js";
 const DECISION_ENTRY = "routing:decision-v1";
 const clean = (value: string) => value.replace(/\p{Cc}/gu, " ").slice(0, 600);
 
+function heldModelStatus(state: Pick<RoutingState, "model" | "tier">): string {
+	return `Auto → ${clean(state.model.id)} · ${clean(state.model.provider)} (${state.tier} held)`;
+}
+
 export function branchRoutingState(ctx: ExtensionContext): RoutingState | undefined {
 	for (const entry of [...ctx.sessionManager.getBranch()].reverse()) {
 		if (entry.type !== "custom" || entry.customType !== VIRTUAL_MODEL_STATE_ENTRY) continue;
@@ -76,7 +80,7 @@ export function registerRouting(
 		ctx.ui.setStatus(
 			"routing",
 			isAuto(model)
-				? `Auto: ${state ? `${state.tier} held` : preferences ? "ready" : "setup required"}${pending ? ` (${pending.mode} queued)` : ""}`
+				? `${state ? heldModelStatus(state) : preferences ? "Auto: ready" : "Auto: setup required"}${pending ? ` (${pending.mode} queued)` : ""}`
 				: preferences?.subagents
 					? "Child Auto"
 					: undefined,
@@ -94,7 +98,7 @@ export function registerRouting(
 			latencyMs: Math.round(decision.latencyMs),
 			...(decision.fallback ? { fallback: decision.fallback } : {}),
 		});
-		if (decision.kind === "main" && isAuto(ctx.model)) ctx.ui.setStatus("routing", `Auto: ${decision.tier} held`);
+		if (decision.kind === "main" && isAuto(ctx.model)) ctx.ui.setStatus("routing", heldModelStatus(decision));
 		ctx.ui.notify(
 			`Auto${decision.kind === "subagent" ? " child" : ""} → ${modelName(decision.model)} (${decision.tier}, ${Math.round(decision.latencyMs)}ms${decision.fallback ? `, ${decision.fallback}` : ""}): ${reason}`,
 			decision.fallback ? "warning" : "info",
