@@ -634,3 +634,58 @@ test("native incomplete and malformed assessments both upgrade Luna to Sol witho
 		}
 	}
 }, 15_000);
+
+test("native Auto child dispatch is visible in subagent snapshots and tool results before settlement", async () => {
+	const base = import.meta.resolve("@luan.sh/pi-subagents");
+	const { createRootCoordinator, removeRootCoordinator } = await import(new URL("./runtime/coordinator.ts", base).href);
+	const { listAgentsResult } = await import(new URL("./tools/list-agents/result.ts", base).href);
+	const h = await fixture();
+	const rootId = `model-display-${h.root}`;
+	try {
+		const session = await h.open();
+		await session.setModel(h.auto());
+		h.faux.setResponses([h.classifier("sol"), h.step("Child work complete.")]);
+		const coordinator = createRootCoordinator(rootId, {
+			maxConcurrency: 2,
+			run: async (_ctx: unknown, prompt: string, options: any) => {
+				options.onRuntimeResolved({ model: { provider: ROUTING_PROVIDER, id: ROUTING_MODEL }, thinkingLevel: "off" });
+				options.onSessionCreated(session);
+				await session.prompt(prompt);
+				return { session, responseText: session.getLastAssistantText(), runtime: { dispose: async () => {} } };
+			},
+		});
+		const seen: any[] = [];
+		let resolveSettled!: () => void;
+		const settled = new Promise<void>((resolve) => {
+			resolveSettled = resolve;
+		});
+		coordinator.subscribe((event: any) => {
+			if (event.type === "updated") seen.push(event.agent);
+			if (event.type === "settled") resolveSettled();
+		});
+		coordinator.spawn(undefined, {
+			taskName: "worker",
+			message: "Implement the scoped configuration option.",
+			pi: {},
+			ctx: { cwd: h.cwd, sessionManager: SessionManager.inMemory() },
+			agentConfig: { model: { provider: ROUTING_PROVIDER, id: ROUTING_MODEL } },
+			forkTurns: "none",
+		});
+		await settled;
+		expect(seen.some((agent) => agent.status === "running" && agent.model?.id === "sol")).toBe(true);
+		expect(seen.some((agent) => agent.model?.id === "luna")).toBe(false); // Classifier is not the execution model.
+		const listed = listAgentsResult(coordinator.snapshot(), undefined);
+		expect(listed.details.agents[0]).toMatchObject({
+			model: "routing-fixture/sol",
+			selectedModel: "routing/auto",
+			thinkingLevel: "off",
+			status: "idle",
+		});
+		expect(session.model?.api).toBe("pi-virtual");
+		expect(coordinator.checkpoint().agents[0].model).toEqual({ provider: ROUTING_PROVIDER, id: ROUTING_MODEL });
+		expect(h.errors).toEqual([]);
+	} finally {
+		removeRootCoordinator(rootId);
+		await h.close();
+	}
+}, 15_000);

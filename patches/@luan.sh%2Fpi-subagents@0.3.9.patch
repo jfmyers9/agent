@@ -239,7 +239,7 @@ index f860da634b38fe1da0341952a84b230f7dec0003..8b03bade3bf0d5bdc59feb68d6ccddb1
  	primePromptEnvelope({
  		provider: model?.provider,
 diff --git a/src/runtime/coordinator.ts b/src/runtime/coordinator.ts
-index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0ef91af368 100644
+index 29496d515e70843531b9e82918e6dd23e468a395..fc9ed0562f98b3796298b8eb7fcbfe8c4d646013 100644
 --- a/src/runtime/coordinator.ts
 +++ b/src/runtime/coordinator.ts
 @@ -1,5 +1,6 @@
@@ -249,7 +249,7 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
  import {
  	type AgentSession,
-@@ -39,6 +40,8 @@ export interface SubagentSnapshot {
+@@ -39,11 +40,15 @@ export interface SubagentSnapshot {
  	readonly completedAt?: number;
  	readonly toolUses: number;
  	readonly cost: number;
@@ -258,7 +258,14 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  	readonly tokenCount: number;
  	readonly contextPercent?: number;
  	readonly compactions: number;
-@@ -100,6 +103,9 @@ export interface PersistedSubagentState {
+ 	readonly activity?: { readonly kind: "compacting" } | { readonly kind: "tool"; readonly name: string };
+ 	readonly model?: AgentModelReference;
++	/** Launch-time selection when it differs from the physical execution model. */
++	readonly selectedModel?: AgentModelReference;
+ 	readonly thinkingLevel?: ThinkingLevel;
+ 	readonly transcriptAvailable: boolean;
+ }
+@@ -100,11 +105,17 @@ export interface PersistedSubagentState {
  	readonly completedAt?: number;
  	readonly toolUses: number;
  	readonly cost: number;
@@ -268,7 +275,15 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  	readonly tokenCount: number;
  	readonly contextPercent?: number;
  	readonly compactions: number;
-@@ -129,6 +135,7 @@ interface LiveAgent extends Omit<Mutable<PersistedSubagentState>, "forkNonBounda
+ 	readonly model?: AgentModelReference;
+ 	readonly thinkingLevel?: ThinkingLevel;
++	/** Last child dispatch; keep model/thinkingLevel as the selection for restoration. */
++	readonly dispatchedModel?: AgentModelReference;
++	readonly dispatchedThinkingLevel?: ThinkingLevel;
+ 	readonly transcriptFile?: string;
+ 	readonly transcriptGeneration: number;
+ 	readonly forkNonBoundaryTimestamps?: readonly number[];
+@@ -129,6 +140,7 @@ interface LiveAgent extends Omit<Mutable<PersistedSubagentState>, "forkNonBounda
  	activeTools: string[];
  	latestInnerTool?: string;
  	session?: AgentSession;
@@ -276,7 +291,16 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  	runtime?: RunResult["runtime"];
  	abortController: AbortController;
  	request?: SpawnRequest;
-@@ -231,6 +238,11 @@ function isPersistedAgentState(value: object | null | undefined): value is Persi
+@@ -218,6 +230,8 @@ function isPersistedAgentState(value: object | null | undefined): value is Persi
+ 	const status = "status" in value ? value.status : undefined;
+ 	const model = "model" in value ? value.model : undefined;
+ 	const thinkingLevel = "thinkingLevel" in value ? value.thinkingLevel : undefined;
++	const dispatchedModel = "dispatchedModel" in value ? value.dispatchedModel : undefined;
++	const dispatchedThinkingLevel = "dispatchedThinkingLevel" in value ? value.dispatchedThinkingLevel : undefined;
+ 	const completionDelivery = "completionDelivery" in value ? value.completionDelivery : undefined;
+ 	return (
+ 		"cwd" in value &&
+@@ -231,6 +245,11 @@ function isPersistedAgentState(value: object | null | undefined): value is Persi
  		isFiniteNumber(value, "startedAt") &&
  		isFiniteNumber(value, "toolUses") &&
  		isFiniteNumber(value, "cost") &&
@@ -288,7 +312,18 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  		isFiniteNumber(value, "tokenCount") &&
  		isFiniteNumber(value, "compactions") &&
  		isFiniteNumber(value, "transcriptGeneration") &&
-@@ -272,11 +284,12 @@ export function latestSubagentTreeCheckpoint(entries: readonly SessionEntry[]):
+@@ -244,6 +263,10 @@ function isPersistedAgentState(value: object | null | undefined): value is Persi
+ 		(!("error" in value) || value.error === undefined || typeof value.error === "string") &&
+ 		(model === undefined || (typeof model === "object" && model !== null && isModelReference(model))) &&
+ 		(thinkingLevel === undefined || (typeof thinkingLevel === "string" && isThinkingLevel(thinkingLevel))) &&
++		(dispatchedModel === undefined ||
++			(typeof dispatchedModel === "object" && dispatchedModel !== null && isModelReference(dispatchedModel))) &&
++		(dispatchedThinkingLevel === undefined ||
++			(typeof dispatchedThinkingLevel === "string" && isThinkingLevel(dispatchedThinkingLevel))) &&
+ 		(!("transcriptFile" in value) || value.transcriptFile === undefined || typeof value.transcriptFile === "string") &&
+ 		(!("forkNonBoundaryTimestamps" in value) ||
+ 			value.forkNonBoundaryTimestamps === undefined ||
+@@ -272,11 +295,12 @@ export function latestSubagentTreeCheckpoint(entries: readonly SessionEntry[]):
  	});
  }
  
@@ -303,7 +338,7 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  	} catch {
  		return undefined;
  	}
-@@ -346,13 +359,132 @@ function transcriptPreview(message?: AgentMessage): TranscriptPreview | undefine
+@@ -346,18 +370,142 @@ function transcriptPreview(message?: AgentMessage): TranscriptPreview | undefine
  	return undefined;
  }
  
@@ -439,7 +474,17 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  }
  
  function snapshotOf(agent: LiveAgent): SubagentSnapshot {
-@@ -372,6 +504,7 @@ function snapshotOf(agent: LiveAgent): SubagentSnapshot {
+ 	const activeTool = agent.activeTools.at(-1);
+ 	const visibleTool = activeTool === "exec" && agent.latestInnerTool ? agent.latestInnerTool : activeTool;
++	const model = agent.dispatchedModel ?? agent.model;
++	const selectedModel =
++		agent.model && model && (agent.model.provider !== model.provider || agent.model.id !== model.id)
++			? agent.model
++			: undefined;
+ 	return Object.freeze({
+ 		id: agent.id,
+ 		rootSessionId: agent.rootSessionId,
+@@ -372,6 +520,7 @@ function snapshotOf(agent: LiveAgent): SubagentSnapshot {
  		completedAt: agent.completedAt,
  		toolUses: agent.toolUses,
  		cost: agent.cost,
@@ -447,7 +492,19 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  		tokenCount: agent.tokenCount,
  		contextPercent: agent.contextPercent,
  		compactions: agent.compactions,
-@@ -400,6 +533,8 @@ function persistedStateOf(agent: LiveAgent): PersistedSubagentState {
+@@ -380,8 +529,9 @@ function snapshotOf(agent: LiveAgent): SubagentSnapshot {
+ 			: visibleTool
+ 				? { kind: "tool" as const, name: visibleTool }
+ 				: undefined,
+-		model: agent.model ? Object.freeze({ ...agent.model }) : undefined,
+-		thinkingLevel: agent.thinkingLevel,
++		model: model ? Object.freeze({ ...model }) : undefined,
++		selectedModel: selectedModel ? Object.freeze({ ...selectedModel }) : undefined,
++		thinkingLevel: agent.dispatchedModel ? agent.dispatchedThinkingLevel : agent.thinkingLevel,
+ 		transcriptAvailable: Boolean(agent.session || agent.restoredMessages),
+ 	});
+ }
+@@ -400,11 +550,15 @@ function persistedStateOf(agent: LiveAgent): PersistedSubagentState {
  		completedAt: agent.completedAt,
  		toolUses: agent.toolUses,
  		cost: agent.cost,
@@ -456,7 +513,14 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  		tokenCount: agent.tokenCount,
  		contextPercent: agent.contextPercent,
  		compactions: agent.compactions,
-@@ -551,9 +686,11 @@ export class SubagentCoordinator {
+ 		model: agent.model ? Object.freeze({ ...agent.model }) : undefined,
+ 		thinkingLevel: agent.thinkingLevel,
++		dispatchedModel: agent.dispatchedModel ? Object.freeze({ ...agent.dispatchedModel }) : undefined,
++		dispatchedThinkingLevel: agent.dispatchedThinkingLevel,
+ 		transcriptFile: agent.session?.sessionManager.getSessionFile?.() ?? agent.transcriptFile,
+ 		transcriptGeneration: agent.transcriptGeneration,
+ 		forkNonBoundaryTimestamps: Object.freeze([...agent.forkNonBoundaryTimestamps].sort((a, b) => a - b)),
+@@ -551,9 +705,11 @@ export class SubagentCoordinator {
  	}
  
  	snapshot(): readonly SubagentSnapshot[] {
@@ -468,7 +532,7 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  		return Object.freeze({
  			version: 1,
  			agents: Object.freeze([...this.agents.values()].map(persistedStateOf).sort((a, b) => a.id.localeCompare(b.id))),
-@@ -561,6 +698,7 @@ export class SubagentCoordinator {
+@@ -561,6 +717,7 @@ export class SubagentCoordinator {
  	}
  	persistedAgent(target: string): PersistedSubagentState | undefined {
  		const agent = this.agents.get(target);
@@ -476,7 +540,7 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  		return agent ? persistedStateOf(agent) : undefined;
  	}
  
-@@ -569,7 +707,22 @@ export class SubagentCoordinator {
+@@ -569,7 +726,22 @@ export class SubagentCoordinator {
  		for (const saved of checkpoint.agents) {
  			const wasActive = saved.status === "queued" || saved.status === "running";
  			const transcriptFile = childTranscriptFile(this.rootSessionDir, saved.id, saved.transcriptFile);
@@ -500,7 +564,7 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  			const agent: LiveAgent = {
  				id: saved.id,
  				parentId: saved.parentId,
-@@ -580,7 +733,9 @@ export class SubagentCoordinator {
+@@ -580,12 +752,16 @@ export class SubagentCoordinator {
  				error: saved.error,
  				startedAt: saved.startedAt,
  				toolUses: saved.toolUses,
@@ -511,7 +575,14 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  				tokenCount: saved.tokenCount,
  				contextPercent: saved.contextPercent,
  				compactions: saved.compactions,
-@@ -782,6 +937,8 @@ export class SubagentCoordinator {
+ 				model: saved.model ? { ...saved.model } : undefined,
+ 				thinkingLevel: saved.thinkingLevel,
++				dispatchedModel: saved.dispatchedModel ? { ...saved.dispatchedModel } : undefined,
++				dispatchedThinkingLevel: saved.dispatchedThinkingLevel,
+ 				completionDelivery: saved.completionDelivery ?? "parent",
+ 				transcriptGeneration: saved.transcriptGeneration,
+ 				transcriptFile,
+@@ -782,6 +958,8 @@ export class SubagentCoordinator {
  	private attachSession(agent: LiveAgent, session: AgentSession, generation: number): void {
  		if (this.disposed || agent.turnGeneration !== generation) return;
  		agent.session = session;
@@ -520,7 +591,7 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  		agent.presentationUnregister?.();
  		agent.presentationUnregister = registerPresentationResolver(agent.id, {
  			resolveTool: (name) => session.getToolDefinition(name),
-@@ -793,13 +950,14 @@ export class SubagentCoordinator {
+@@ -793,13 +971,21 @@ export class SubagentCoordinator {
  		this.childSessions.set(session.sessionManager.getSessionId(), agent.id);
  		bindSessionToRoot(this.rootSessionId, session.sessionManager.getSessionId());
  		agent.sessionUnsubscribe = session.subscribe((event) => {
@@ -528,6 +599,13 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
 +			const previousCost = agent.cost;
 +			this.refreshSessionCost(agent);
 +			let changed = agent.cost !== previousCost;
++			// Observe only this child's own dispatches, never copied parent history or
++			// auxiliary classifier calls. message_start exposes the model while streaming.
++			if ((event.type === "message_start" || event.type === "message_end") && event.message.role === "assistant" && event.message.api !== "pi-virtual") {
++				agent.dispatchedModel = { provider: event.message.provider, id: event.message.model };
++				agent.dispatchedThinkingLevel = event.message.thinkingLevel;
++				changed = true;
++			}
  			if (event.type === "compaction_start") {
  				agent.compacting = true;
  				changed = true;
@@ -537,7 +615,7 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  				this.refreshSessionStats(agent, session);
  				changed = true;
  			}
-@@ -808,7 +966,6 @@ export class SubagentCoordinator {
+@@ -808,7 +994,6 @@ export class SubagentCoordinator {
  				changed = true;
  				if (!event.aborted) {
  					agent.transcriptGeneration++;
@@ -545,7 +623,7 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  					agent.compactions++;
  					this.refreshSessionStats(agent, session);
  				}
-@@ -928,7 +1085,15 @@ export class SubagentCoordinator {
+@@ -928,7 +1113,15 @@ export class SubagentCoordinator {
  		this.disposedRuntimes.add(runtime);
  		void runtime.dispose().catch(() => undefined);
  	}
@@ -561,3 +639,46 @@ index 29496d515e70843531b9e82918e6dd23e468a395..70e74d5fe6b6d50d34aa05c502b14f0e
  		const stats = session.getSessionStats();
  		agent.tokenCount = stats.tokens.total;
  		agent.contextPercent = stats.contextUsage?.percent ?? undefined;
+diff --git a/src/tools/result.ts b/src/tools/result.ts
+index b35d4f66572584899eb5913f4dd2a6bfb64cbec0..01af8e0b51b441b0f747e161abad8fe3a3b94c66 100644
+--- a/src/tools/result.ts
++++ b/src/tools/result.ts
+@@ -11,6 +11,7 @@ export interface AgentRecord {
+ 	status: SubagentSnapshot["status"];
+ 	description: string;
+ 	model?: string;
++	selectedModel?: string;
+ 	thinkingLevel?: string;
+ 	startedAt: number;
+ 	completedAt?: number;
+@@ -60,6 +61,7 @@ export function agentRecord(
+ 			status: agent.status,
+ 			description: agent.description,
+ 			model: agent.model ? `${agent.model.provider}/${agent.model.id}` : undefined,
++			selectedModel: agent.selectedModel ? `${agent.selectedModel.provider}/${agent.selectedModel.id}` : undefined,
+ 			thinkingLevel: agent.thinkingLevel,
+ 			startedAt: agent.startedAt,
+ 			completedAt: agent.completedAt,
+diff --git a/src/ui/agent-summary.ts b/src/ui/agent-summary.ts
+index 4995298204c54ba28fc0943b78d26dbd485ee0af..5140b9341b036abccac194e52ffa923fa7c4b3c9 100644
+--- a/src/ui/agent-summary.ts
++++ b/src/ui/agent-summary.ts
+@@ -9,7 +9,7 @@ import type { SubagentSnapshot, SubagentStatus, TranscriptPreview } from "../run
+ 
+ type AgentRowSummary = Pick<
+ 	SubagentSnapshot,
+-	"status" | "startedAt" | "completedAt" | "cost" | "model" | "thinkingLevel"
++	"status" | "startedAt" | "completedAt" | "cost" | "model" | "selectedModel" | "thinkingLevel"
+ >;
+ 
+ export function formatAgentCost(cost: number): string {
+@@ -68,7 +68,8 @@ export function renderAgentIdentity(
+ export function renderAgentMetadata(colors: TuiTheme, agent: AgentRowSummary, now: number, separator = " · "): string {
+ 	const duration = colors.fg("text.muted", formatAgentDuration((agent.completedAt ?? now) - agent.startedAt));
+ 	const cost = colors.fg("text.muted", formatAgentCost(agent.cost));
+-	const model = agent.model ? colors.fg("text.secondary", `${agent.model.provider}/${agent.model.id}`) : undefined;
++	const selected = agent.selectedModel ? ` (via ${agent.selectedModel.provider}/${agent.selectedModel.id})` : "";
++	const model = agent.model ? colors.fg("text.secondary", `${agent.model.provider}/${agent.model.id}${selected}`) : undefined;
+ 	const thinking = agent.thinkingLevel ? colors.fg("text.muted", agent.thinkingLevel) : undefined;
+ 	return [model, thinking, duration, cost]
+ 		.filter((value): value is string => value !== undefined)

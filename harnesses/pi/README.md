@@ -188,6 +188,13 @@ Child sessions inherit physical catalog/auth data but have their own model
 runtime and virtual-route callbacks. SDK integrations loading session-bound
 routers must likewise use separate `ModelRuntime` instances for live sessions.
 
+For children that inherit Auto, `/subagents` shows `provider/model (via routing/auto)`
+once their own response starts. `list_agents` reports the physical execution
+target in `model` and preserves the virtual selection in `selectedModel`.
+The displayed thinking level is the dispatched level. Subsequent responses
+refresh the display, and checkpoints preserve it without pinning resumed work
+to the last physical target. Copied parent history is not a child dispatch.
+
 Decisions show the target, reason, latency, and fallback. Classifier spend is
 included once in `/cost` and descendant totals using versioned session receipts;
 inherited receipts are not charged again. Unreported usage marks a lower-bound
