@@ -83,6 +83,37 @@ function formatProviderLabel(provider: string | undefined): string {
 	return known[provider] ?? provider.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function assistantProvider(message: unknown): string | undefined {
+	return message &&
+		typeof message === "object" &&
+		"role" in message &&
+		message.role === "assistant" &&
+		"provider" in message &&
+		typeof message.provider === "string"
+		? message.provider
+		: undefined;
+}
+
+function dispatchedProvider(ctx: ExtensionContext, activeMessage?: unknown): string | undefined {
+	const selected = ctx.model;
+	const virtual =
+		selected?.api === ("pi-virtual" as string) ||
+		(selected?.provider === ROUTING_PROVIDER && selected.id === ROUTING_MODEL);
+	if (!virtual) return selected?.provider;
+	const streaming = assistantProvider(activeMessage);
+	if (streaming) return streaming;
+	// Selection remains virtual. Dispatch is recorded on physical assistant messages,
+	// including those before compaction; resume/tree navigation must stay on this branch.
+	const branch = ctx.sessionManager.getBranch();
+	for (let i = branch.length - 1; i >= 0; i--) {
+		const entry = branch[i];
+		if (entry.type !== "message") continue;
+		const provider = assistantProvider(entry.message);
+		if (provider) return provider;
+	}
+	return undefined;
+}
+
 function truncateUsageLine(line: string, width: number): string {
 	return line ? truncateToWidth(line, Math.max(1, width), "") : "";
 }
@@ -116,6 +147,7 @@ export default function (pi: ExtensionAPI) {
 	let projectRefreshPending = false;
 
 	let activeProvider: string | null = null;
+	let usageModelProvider: string | undefined;
 	let refreshTimer: ReturnType<typeof setInterval> | null = null;
 	let costTimer: ReturnType<typeof setInterval> | undefined;
 	let usageBarCache: UsageBarCache | null = null;
@@ -271,7 +303,8 @@ export default function (pi: ExtensionAPI) {
 
 		syncCosts(ctx);
 		const usage = ctx.getContextUsage();
-		const contextWindow = ctx.model?.contextWindow ?? usage?.contextWindow ?? 0;
+		// Pi already resolves virtual selections to the physical response's limits.
+		const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
 		const measuredContextTokens = typeof usage?.tokens === "number" && usage.tokens > 0 ? usage.tokens : undefined;
 		const contextMessages = buildSessionContext(
 			ctx.sessionManager.getEntries(),
@@ -296,7 +329,8 @@ export default function (pi: ExtensionAPI) {
 
 		mainAutoSelected = ctx.model?.provider === ROUTING_PROVIDER && ctx.model?.id === ROUTING_MODEL;
 		state.modelLabel = ctx.model?.name ?? "no-model";
-		state.providerLabel = formatProviderLabel(ctx.model?.provider);
+		usageModelProvider = dispatchedProvider(ctx, activeMessage);
+		state.providerLabel = formatProviderLabel(usageModelProvider ?? ctx.model?.provider);
 		state.thinkingLevel = ctx.model?.reasoning ? pi.getThinkingLevel() : undefined;
 		state.contextPercent = usage?.percent ?? (contextWindow > 0 ? (contextUsed / contextWindow) * 100 : null);
 		state.contextTotal = contextWindow;
@@ -307,6 +341,10 @@ export default function (pi: ExtensionAPI) {
 			pulseLastContextSlicesForMessage(activeMessage);
 		}
 		state.contextUsageEstimated = measuredContextTokens === undefined;
+		if (detectUsageProvider(usageModelProvider) !== activeProvider) {
+			fetchUsage(usageModelProvider);
+			if (activeProvider) startRefreshTimer();
+		}
 	};
 
 	const syncStateIfCurrent = (ctx: ExtensionContext, activeMessage?: unknown) => {
@@ -368,8 +406,8 @@ export default function (pi: ExtensionAPI) {
 		refresh();
 	};
 
-	const applyUsageResult = (provider: string, snapshot: UsageSnapshot) => {
-		if (disposed) return;
+	const applyUsageResult = (provider: string, snapshot: UsageSnapshot, generation: number) => {
+		if (!isCurrent(generation)) return;
 		if (activeProvider !== provider) return;
 		const cached = usageCache.get(provider);
 		if (snapshot.windows.length === 0 && snapshot.error && cached?.windows.length) return;
@@ -406,18 +444,20 @@ export default function (pi: ExtensionAPI) {
 			refresh();
 		}
 
+		const generation = uiGeneration;
 		fetchUsageForProvider(provider)
-			.then((snapshot) => applyUsageResult(provider, snapshot))
+			.then((snapshot) => applyUsageResult(provider, snapshot, generation))
 			.catch(() => {});
 	};
 
 	const startRefreshTimer = () => {
 		stopRefreshTimer();
+		const generation = uiGeneration;
 		refreshTimer = setInterval(() => {
 			if (!activeProvider) return;
 			const provider = activeProvider;
 			fetchUsageForProvider(provider)
-				.then((snapshot) => applyUsageResult(provider, snapshot))
+				.then((snapshot) => applyUsageResult(provider, snapshot, generation))
 				.catch(() => {});
 		}, USAGE_REFRESH_INTERVAL);
 	};
@@ -438,10 +478,7 @@ export default function (pi: ExtensionAPI) {
 				tui.requestRender();
 			});
 
-			if (ctx.model?.provider) {
-				fetchUsage(ctx.model.provider);
-				startRefreshTimer();
-			}
+			if (activeProvider) startRefreshTimer();
 
 			return {
 				dispose: () => {
@@ -484,6 +521,11 @@ export default function (pi: ExtensionAPI) {
 		ensureConfigExists();
 		currentConfig = loadConfig();
 		usageBarsVisible = currentConfig.usageBars.visible;
+		activeProvider = null;
+		state.usage = null;
+		state.usageLines = undefined;
+		usageBarCache = null;
+		stopRefreshTimer();
 		ctx.ui.setWorkingVisible(false);
 		installFooter(ctx);
 		installEditor(ctx);
@@ -511,7 +553,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			if (mode !== "on" && mode !== "off" && mode !== "toggle") {
-				ctx.ui.notify("Usage: /usage-bars [on|off]", "error");
+				ctx.ui.notify("Usage: /usage-bars [on|off|toggle]", "error");
 				return;
 			}
 			usageBarsVisible = mode === "toggle" ? !usageBarsVisible : mode === "on";
@@ -528,7 +570,10 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Failed to save usage-bars setting", "error");
 				return;
 			}
-			if (usageBarsVisible && ctx.model?.provider) fetchUsage(ctx.model.provider);
+			if (usageBarsVisible) {
+				if (!syncStateIfCurrent(ctx)) return;
+				fetchUsage(usageModelProvider);
+			}
 			ctx.ui.notify(`usage-bars ${usageBarsVisible ? "on" : "off"}`, "info");
 			refresh();
 		},
@@ -605,12 +650,14 @@ export default function (pi: ExtensionAPI) {
 		refresh();
 	});
 
-	pi.on("model_select", async (event, ctx) => {
+	pi.on("model_select", async (_event, ctx) => {
 		if (!syncStateIfCurrent(ctx)) return;
-		if (event.model?.provider) {
-			fetchUsage(event.model.provider);
-			startRefreshTimer();
-		}
+		refresh();
+	});
+
+	pi.on("message_start", async (event, ctx) => {
+		if (!assistantProvider(event.message)) return;
+		if (!syncStateIfCurrent(ctx, event.message)) return;
 		refresh();
 	});
 

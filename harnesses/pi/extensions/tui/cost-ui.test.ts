@@ -9,6 +9,7 @@ import { emptyFooterState, renderEditorContextStatus } from "./footer";
 import * as git from "./git";
 import extension from "./index";
 import * as runtime from "./runtime";
+import * as usage from "./usage";
 
 const theme = { fg: (_role: string, text: string) => text } as any;
 type Handler = (...args: any[]) => any;
@@ -39,6 +40,7 @@ describe("TUI cost integration", () => {
 			modelRegistry: { find: () => undefined },
 			sessionManager: {
 				getEntries: mock(() => entries),
+				getBranch: mock(() => []),
 				getSessionId: () => id,
 				getSessionName: () => undefined,
 				getLeafId: () => "usage",
@@ -62,6 +64,26 @@ describe("TUI cost integration", () => {
 		return chrome?.(240, theme, { modeReserve: 0 }).bottomRight ?? "";
 	}
 
+	function top() {
+		return chrome?.(240, theme, { modeReserve: 0 }).topRight ?? "";
+	}
+
+	function snapshot(provider: string, usedPercent = 37): usage.UsageSnapshot {
+		return {
+			provider,
+			windows: [{ label: "Week", usedPercent, windowSecs: 604800, resetSecs: 3600 }],
+			fetchedAt: Date.now(),
+		};
+	}
+
+	function auto(...providers: string[]) {
+		ctx.model = { provider: "routing", id: "auto", api: "pi-virtual", name: "Auto", contextWindow: 0 };
+		ctx.sessionManager.getBranch.mockReturnValue(
+			providers.map((provider) => ({ type: "message", message: { role: "assistant", provider, model: "physical" } })),
+		);
+		spyOn(config, "loadConfig").mockReturnValue({ ...config.defaultConfig, usageBars: { visible: true } });
+	}
+
 	beforeEach(() => {
 		handlers = new Map();
 		commands = new Map();
@@ -78,6 +100,8 @@ describe("TUI cost integration", () => {
 		spyOn(globalThis, "clearInterval").mockImplementation(((timer: Timer) => timers.delete(timer)) as any);
 		spyOn(config, "loadConfig").mockReturnValue(config.defaultConfig);
 		spyOn(config, "ensureConfigExists").mockImplementation(() => {});
+		spyOn(config, "saveConfig").mockImplementation(() => {});
+		spyOn(usage, "fetchUsageForProvider").mockImplementation(async (provider) => snapshot(provider));
 		spyOn(terminal, "terminalRows").mockReturnValue(40);
 		spyOn(cursor, "installFocusCursor").mockReturnValue(() => {});
 		spyOn(editor, "installEditorComposition").mockImplementation(() => {});
@@ -102,6 +126,124 @@ describe("TUI cost integration", () => {
 		await handlers.get("session_shutdown")?.({}, ctx);
 		installCoordinatorLookup(() => undefined);
 		mock.restore();
+	});
+
+	test("Auto restores quota from the last physical response and uses native physical context limits", async () => {
+		auto("anthropic", "openai-codex");
+		ctx.getContextUsage.mockReturnValue({ tokens: 25000, contextWindow: 200000, percent: 12.5 });
+		await handlers.get("session_start")!({}, ctx);
+		expect(usage.fetchUsageForProvider).toHaveBeenCalledTimes(1);
+		expect(usage.fetchUsageForProvider).toHaveBeenCalledWith("codex");
+		expect(top()).toContain("OpenAI Week");
+		expect(top()).toContain("37%");
+		expect(status()).toContain("12.5% 25k/200k");
+		expect(status()).toContain("━");
+		expect([...timers].some((timer) => timer.interval === usage.USAGE_REFRESH_INTERVAL)).toBe(true);
+	});
+
+	test("a newly routed response switches quota once, without fetching on every streaming update", async () => {
+		auto("openai-codex");
+		await handlers.get("session_start")!({}, ctx);
+		const message = { role: "assistant", provider: "anthropic", model: "physical", content: [] };
+		await handlers.get("message_start")!({ message }, ctx);
+		expect(top()).toContain("Anthropic Week");
+		expect(top()).not.toContain("OpenAI Week");
+		for (let i = 0; i < 3; i++) await handlers.get("message_update")!({ message }, ctx);
+		expect(usage.fetchUsageForProvider).toHaveBeenCalledTimes(2);
+		expect(usage.fetchUsageForProvider).toHaveBeenLastCalledWith("claude");
+		[...timers].find((timer) => timer.interval === usage.USAGE_REFRESH_INTERVAL)!.callback();
+		expect(usage.fetchUsageForProvider).toHaveBeenLastCalledWith("claude");
+	});
+
+	test("branch navigation switches providers and clears quota on an empty branch", async () => {
+		auto("openai-codex");
+		await handlers.get("session_start")!({}, ctx);
+		ctx.sessionManager.getBranch.mockReturnValue([
+			{ type: "message", message: { role: "assistant", provider: "anthropic" } },
+			{ type: "compaction" },
+		]);
+		await handlers.get("session_tree")!({}, ctx);
+		expect(top()).toContain("Anthropic Week");
+		ctx.sessionManager.getBranch.mockReturnValue([]);
+		await handlers.get("session_tree")!({}, ctx);
+		expect(top()).not.toContain("Week");
+		expect([...timers].some((timer) => timer.interval === usage.USAGE_REFRESH_INTERVAL)).toBe(false);
+	});
+
+	test("a fresh virtual session waits for physical dispatch instead of inventing a provider", async () => {
+		auto();
+		await handlers.get("session_start")!({}, ctx);
+		expect(usage.fetchUsageForProvider).not.toHaveBeenCalled();
+		const message = { role: "assistant", provider: "openai-codex", content: [] };
+		await handlers.get("message_start")!({ message }, ctx);
+		expect(top()).toContain("OpenAI Week");
+	});
+
+	test("other virtual models also use physical dispatch, while direct models use their selection", async () => {
+		auto("anthropic");
+		ctx.model = { ...ctx.model, provider: "other-router", id: "smart" };
+		await handlers.get("session_start")!({}, ctx);
+		expect(top()).toContain("Anthropic Week");
+		ctx.model = { provider: "openai-codex", id: "direct", name: "Direct", contextWindow: 100000 };
+		await handlers.get("model_select")!({ model: ctx.model }, ctx);
+		expect(top()).toContain("OpenAI Week");
+		ctx.model = { ...ctx.model, provider: "unsupported" };
+		await handlers.get("model_select")!({ model: ctx.model }, ctx);
+		expect(top()).not.toContain("Week");
+	});
+
+	test("enabling bars under Auto refreshes the physical provider and persists the visibility", async () => {
+		auto("openai-codex");
+		await handlers.get("session_start")!({}, ctx);
+		await commands.get("usage-bars")!.handler("off", ctx);
+		expect(top()).not.toContain("Week");
+		await commands.get("usage-bars")!.handler("on", ctx);
+		expect(top()).toContain("OpenAI Week");
+		expect(usage.fetchUsageForProvider).toHaveBeenLastCalledWith("codex");
+		expect(config.saveConfig).toHaveBeenLastCalledWith(expect.objectContaining({ usageBars: { visible: true } }));
+	});
+
+	test("late quota responses cannot overwrite a different routed provider", async () => {
+		let finish!: (value: usage.UsageSnapshot) => void;
+		spyOn(usage, "fetchUsageForProvider").mockImplementation((provider) =>
+			provider === "codex"
+				? new Promise((resolve) => {
+						finish = resolve;
+					})
+				: Promise.resolve(snapshot(provider)),
+		);
+		auto("openai-codex");
+		await handlers.get("session_start")!({}, ctx);
+		await handlers.get("message_start")!({ message: { role: "assistant", provider: "anthropic" } }, ctx);
+		finish(snapshot("codex", 99));
+		await Promise.resolve();
+		expect(top()).toContain("Anthropic Week");
+		expect(top()).not.toContain("99%");
+	});
+
+	test("session switches ignore a prior session's late response even for the same provider", async () => {
+		let finish!: (value: usage.UsageSnapshot) => void;
+		spyOn(usage, "fetchUsageForProvider").mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		auto("openai-codex");
+		await handlers.get("session_start")!({}, ctx);
+		await handlers.get("session_start")!({}, ctx);
+		finish(snapshot("codex", 99));
+		await Promise.resolve();
+		expect(top()).toContain("37%");
+		expect(top()).not.toContain("99%");
+	});
+
+	test("post-compaction unknown usage retains the physical window and marks the context estimate", async () => {
+		auto("openai-codex");
+		ctx.getContextUsage.mockReturnValue({ tokens: null, contextWindow: 200000, percent: null });
+		ctx.getSystemPrompt = () => "x".repeat(4000);
+		await handlers.get("session_start")!({}, ctx);
+		expect(status()).toContain("~0.5% ~1k/200k");
 	});
 
 	test("fast mode status appears beside the model and disappears without rebuilding context", async () => {

@@ -82,6 +82,12 @@ Installed extensions:
 - `token-burden/` — reports prompt/session token categories, tool burden, and skill burden.
 - `tui/` — owns Pi footer/editor chrome for cwd, git, model/thinking, context, tokens, cost, and local `/usage-bars [on|off|toggle]` rendering.
 
+`/usage-bars on` enables provider quota bars (off by default); the preference is
+saved in `tui.json`. With Auto or another virtual model, quota follows the physical
+assistant provider, including on resume and branch navigation. A new virtual
+session waits for its first physical response before showing quota. Context bars
+use Pi's physical-model context limits, not the virtual selection's unset limits.
+
 The status cost is the session-wide list-price estimate, including all branches
 and all nested subagents. An `agents $…` suffix shows the included worker share
 when space permits; `/cost` shows the full per-agent breakdown. Worker totals
