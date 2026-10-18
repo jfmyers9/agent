@@ -151,8 +151,31 @@ async function fixture(configured = true) {
 		get saves() {
 			return saves;
 		},
-		classifier: (tier: "luna" | "sol" | "astra" = "luna") =>
-			step(JSON.stringify({ tier, reason: "Fixture capability assessment.", insufficient_context: false })),
+		classifier:
+			(tier: "luna" | "sol" | "astra" = "luna"): FauxResponseStep =>
+			(context, options, state, model) => {
+				const message = context.messages.at(-1)!;
+				const text =
+					typeof message.content === "string"
+						? message.content
+						: message.content
+								.filter((part) => part.type === "text")
+								.map((part) => part.text)
+								.join("");
+				const envelope = JSON.parse(text).envelope;
+				return step(
+					JSON.stringify({
+						tier,
+						reason: "Fixture capability assessment.",
+						insufficient_context: false,
+						active_work: {
+							objective: envelope.activeWork?.objective ?? envelope.task.slice(0, 400),
+							constraints: envelope.activeWork?.constraints ?? [],
+							remaining: ["Complete fixture work"],
+						},
+					}),
+				)(context, options, state, model);
+			},
 		auto: () => runtime.getModel(ROUTING_PROVIDER, ROUTING_MODEL)!,
 		close: async () => {
 			for (const session of sessions) session.dispose();
@@ -232,7 +255,9 @@ test("native persisted branch state survives compaction, resume, tree navigation
 			tier: state?.tier,
 			model: state?.model,
 		});
-		expect(branchRoutingState(child.extensionRunner.createContext())?.task).toContain("continue");
+		expect(branchRoutingState(child.extensionRunner.createContext())?.activeWork?.objective).toBe(
+			state?.activeWork?.objective,
+		);
 		expect(
 			child.sessionManager
 				.getEntries()
@@ -496,7 +521,12 @@ test("a manual model selection during native classification controls the pending
 			async () => {
 				await session.setModel(h.runtime.getModel("routing-fixture", "astra")!);
 				return fauxAssistantMessage(
-					JSON.stringify({ tier: "luna", reason: "Simple work.", insufficient_context: false }),
+					JSON.stringify({
+						tier: "luna",
+						reason: "Simple work.",
+						insufficient_context: false,
+						active_work: { objective: "Begin the work", constraints: [], remaining: ["Implement"] },
+					}),
 				);
 			},
 			h.step("The manual choice wins this request."),
@@ -560,5 +590,47 @@ test("reload persists unknown spend before abandoning a timed-out classifier tra
 	} finally {
 		h.runtime.complete = originalComplete;
 		await h.close();
+	}
+}, 15_000);
+
+test("native incomplete and malformed assessments both upgrade Luna to Sol without losing good scope", async () => {
+	for (const malformed of [false, true]) {
+		const h = await fixture();
+		try {
+			const session = await h.open();
+			await session.setModel(h.auto());
+			h.faux.setResponses([h.classifier("luna"), h.step("Initial bounded work complete.")]);
+			await session.prompt("Correct the supplied typo.");
+			const original = branchRoutingState(session.extensionRunner.createContext())?.activeWork;
+			const brief = {
+				objective: "Implement configuration-editor UI structure",
+				constraints: ["Use the proposed configuration-editor design"],
+				remaining: ["Discover component structure", "Implement and verify the UI"],
+			};
+			h.faux.setResponses([
+				() =>
+					fauxAssistantMessage(
+						malformed
+							? "malformed response"
+							: JSON.stringify({
+									tier: "sol",
+									reason: "Moderate product and codebase discovery.",
+									insufficient_context: true,
+									active_work: brief,
+								}),
+					),
+				h.step("Continue on the conservative Sol model."),
+			]);
+			await session.prompt("Implement the configuration-editor redesign.");
+			expect(h.dispatches.at(-1)).toBe("sol");
+			const state = branchRoutingState(session.extensionRunner.createContext());
+			expect(state?.tier).toBe("sol");
+			expect(state?.activeWork).toEqual(malformed ? original : brief);
+			expect(state?.reason).toContain(malformed ? "Assessment failed" : "Recommended sol");
+			expect(state?.reason).not.toContain("Unreliable");
+			expect(h.errors).toEqual([]);
+		} finally {
+			await h.close();
+		}
 	}
 }, 15_000);

@@ -37,6 +37,7 @@ const classified: ClassifierResult = {
 	reason: "Known narrow task",
 	insufficient_context: false,
 	latencyMs: 7,
+	active_work: { objective: "Correct the specified typo", constraints: [], remaining: ["Apply correction"] },
 };
 const fallback: ClassifierResult = {
 	tier: "sol",
@@ -108,7 +109,15 @@ function harness(
 			config.onStarted?.();
 			try {
 				if (!options.missingUsage) config.onUsage?.(sample);
-				return options.result ?? classified;
+				return {
+					...classified,
+					active_work: {
+						objective: envelope.activeWork?.objective ?? envelope.task.slice(0, 400),
+						constraints: envelope.activeWork?.constraints ?? [],
+						remaining: ["Complete the active work"],
+					},
+					...options.result,
+				};
 			} finally {
 				config.onSettled?.();
 			}
@@ -156,7 +165,7 @@ test("new user tasks classify once to the configured physical tier and preserve 
 		task: "Correct the specified typo",
 		tier: "luna",
 		model: { provider: "fixture", id: "luna" },
-		reason: classified.reason,
+		reason: `Recommended luna; using luna. ${classified.reason}`,
 	});
 	expect(isRoutingState(routed.state)).toBe(true);
 	expect(h.dispatches).toHaveLength(1);
@@ -252,56 +261,60 @@ test("each distinct user turn is reassessed, but same-tier/lower results retain 
 	h.queue();
 	await h.router.route(request({ state: duplicate.state, messages: [user("Assess the recovery redesign", 5)] }), ctx);
 	expect(h.dispatches).toHaveLength(8);
-	expect(h.dispatches[1].envelope.context).toContain("Previous task:");
+	expect(h.dispatches[1].envelope.activeWork).toEqual(first.state?.activeWork);
 });
 
-test("automatic reassessment upgrades cumulative active work but never downgrades", async () => {
+test("automatic reassessment carries the classifier's factual brief and upgrades without downgrading", async () => {
 	const tiers = ["luna", "sol", "luna", "astra"] as const;
-	const tasks: string[] = [];
+	const briefs = [
+		{ objective: "Correct a local typo", constraints: [], remaining: ["Apply correction"] },
+		{
+			objective: "Integrate authentication with retries",
+			constraints: ["Preserve authentication semantics"],
+			remaining: ["Implement and verify flow"],
+		},
+		{
+			objective: "Integrate authentication with retries",
+			constraints: ["Preserve authentication semantics"],
+			remaining: ["Add focused tests"],
+		},
+		{
+			objective: "Resolve partial-failure in authentication integration",
+			constraints: ["Preserve authentication semantics"],
+			remaining: ["Verify cross-service ordering"],
+		},
+	];
+	const envelopes: TaskEnvelope[] = [];
 	const h = harness({
 		classify: async (_registry, _selected, envelope, config = {}) => {
-			const tier = tiers[tasks.length] ?? "astra";
-			tasks.push(envelope.task);
+			const index = envelopes.length;
+			envelopes.push(envelope);
 			config.onStarted?.();
 			config.onUsage?.(sample);
 			config.onSettled?.();
-			return { ...classified, tier, reason: `Turn ${tasks.length} requires ${tier}.` };
+			return { ...classified, tier: tiers[index], active_work: briefs[index] };
 		},
 	});
 	const ctx = h.context();
-	const first = await h.router.route(request({ messages: [user("Fix a local typo", 1)] }), ctx);
-	expect(first.state?.tier).toBe("luna");
-	const second = await h.router.route(
-		request({
-			state: first.state,
-			messages: [user("Now integrate authentication with retries across the service", 2)],
-		}),
-		ctx,
-	);
-	expect(second.state?.tier).toBe("sol");
-	expect(second.model).toBe(models.sol);
-	const simpler = await h.router.route(
-		request({ state: second.state, messages: [user("Add a focused test for the new flow", 3)] }),
-		ctx,
-	);
-	expect(simpler.state?.tier).toBe("sol");
-	expect(simpler.model).toBe(models.sol);
-	const complex = await h.router.route(
-		request({
-			state: simpler.state,
-			messages: [user("Now resolve the cross-service partial-failure and ordering behavior", 4)],
-		}),
-		ctx,
-	);
-	expect(complex.state?.tier).toBe("astra");
-	expect(complex.model).toBe(models.astra);
-	expect(complex.state?.task).toContain("integrate authentication");
-	expect(complex.state?.task).toContain("partial-failure");
-	expect(tasks).toHaveLength(4);
+	let state: RoutingState | undefined;
+	for (const [index, task] of [
+		"Fix a local typo",
+		"Integrate authentication with retries",
+		"Add a focused test",
+		"Resolve cross-service ordering",
+	].entries()) {
+		const route = await h.router.route(request({ state, messages: [user(task, index + 1)] }), ctx);
+		expect(route.model).toBe([models.luna, models.sol, models.sol, models.astra][index]);
+		expect(envelopes[index].activeWork).toEqual(index === 0 ? undefined : briefs[index - 1]);
+		expect(route.state?.activeWork).toEqual(briefs[index]);
+		expect(route.state?.task).toBe(briefs[index].objective);
+		expect(route.state?.taskTruncated).toBeUndefined();
+		state = route.state;
+	}
 	expect(h.samples).toHaveLength(4);
 });
 
-test("ambiguity retains an existing strong physical model and original task, but fresh ambiguity uses Sol", async () => {
+test("ambiguity retains an existing stronger model but fresh ambiguity uses Sol", async () => {
 	const h = harness({ result: { ...classified, tier: "sol", insufficient_context: true, reason: "Missing scope" } });
 	const ctx = h.context();
 	const old: RoutingState = {
@@ -316,8 +329,8 @@ test("ambiguity retains an existing strong physical model and original task, but
 	const retained = await h.router.route(request({ state: old, messages: [user("Fix it", 3)] }), ctx);
 	expect(retained.model).toBe(models.astra);
 	expect(retained.state).toMatchObject({ tier: "astra", model: old.model });
-	expect(retained.state?.task).toContain(old.task);
-	expect(retained.state?.reason).toContain("retaining session model");
+	expect(retained.state?.activeWork).toEqual(classified.active_work);
+	expect(retained.state?.reason).toContain("retaining astra");
 	expect(retained.state?.taskKey).not.toBe(old.taskKey);
 	const fresh = await h.router.route(request({ messages: [user("Fix it")] }), h.context("new"));
 	expect(fresh.model).toBe(models.sol);
@@ -524,7 +537,7 @@ test("explicit hard-scope evidence keeps Astra despite missing details for main 
 	expect((await h.router.subtask({ task }, ctx)).model).toEqual({ provider: "fixture", id: "astra" });
 });
 
-test("ambiguous followups retain Luna while still classifying each new turn", async () => {
+test("ambiguous followups upgrade Luna to conservative Sol while still assessing each new turn", async () => {
 	const h = harness({ result: { ...classified, tier: "luna", insufficient_context: true } });
 	const old: RoutingState = {
 		version: 1,
@@ -536,13 +549,13 @@ test("ambiguous followups retain Luna while still classifying each new turn", as
 	};
 	const ctx = h.context();
 	const routed = await h.router.route(request({ state: old, messages: [user("Fix the other issue")] }), ctx);
-	expect(routed.model).toBe(models.luna);
-	expect(routed.state?.tier).toBe("luna");
+	expect(routed.model).toBe(models.sol);
+	expect(routed.state?.tier).toBe("sol");
 	const acknowledgement = await h.router.route(
 		request({ state: routed.state, messages: [user("yes")], thinkingLevel: "low" }),
 		ctx,
 	);
-	expect(acknowledgement.model).toBe(models.luna);
+	expect(acknowledgement.model).toBe(models.sol);
 	expect(acknowledgement.thinkingLevel).toBe("low");
 	expect(h.dispatches).toHaveLength(2);
 	expect(h.samples).toHaveLength(2);
@@ -568,8 +581,8 @@ test("task envelopes include bounded conversational context, ignore tool results
 		image,
 	]);
 	expect(extracted.envelope.task).toContain("contents have not been classified");
-	expect(extracted.envelope.context).toContain("Known task");
-	expect(extracted.envelope.context).not.toContain("untrusted tool body");
+	expect(extracted.envelope.recentHistory).toContain("Known task");
+	expect(extracted.envelope.recentHistory).not.toContain("untrusted tool body");
 	expect(taskEnvelope([user("x".repeat(20_000))]).envelope.task).toHaveLength(12_000);
 	expect(taskEnvelope([user("First", 1)]).key).not.toBe(taskEnvelope([user("First", 2)]).key);
 });
@@ -679,12 +692,12 @@ test("same-tier reassessment keeps the exact model despite remapped preferences"
 	h.queue();
 	const next = await h.router.route(request({ state }), h.context());
 	expect(next.model).toBe(models.sol);
-	expect(next.state?.reason).toContain("No tier upgrade");
+	expect(next.state?.reason).toContain("retaining sol (upgrade-only)");
 	h.queue("reset", "session", "reset");
 	expect((await h.router.route(request({ state: next.state }), h.context())).model).toBe(models.astra);
 });
 
-test("failed or ambiguous explicit assessments retain every existing tier and consume the request", async () => {
+test("failed or incomplete explicit assessments have a Sol floor and retain stronger models", async () => {
 	for (const current of ["luna", "sol", "astra"] as const) {
 		for (const result of [fallback, { ...classified, tier: "sol" as const, insufficient_context: true }]) {
 			for (const mode of ["reassess", "reset"] as const) {
@@ -699,9 +712,10 @@ test("failed or ambiguous explicit assessments retain every existing tier and co
 				};
 				h.queue(mode);
 				const next = await h.router.route(request({ state }), h.context());
-				expect(next.model).toBe(models[current]);
+				expect(next.model).toBe(models[current === "luna" ? "sol" : current]);
 				expect(next.state?.assessmentId).toBe("assessment-1");
-				expect(next.state?.reason).toContain("Unreliable assessment");
+				expect(next.state?.reason).toContain(result.fallback ? "Assessment failed" : "incomplete task scope");
+				expect(next.state?.reason).not.toContain("Unreliable assessment");
 				await h.router.route(request({ state: next.state }), h.context());
 				expect(h.dispatches).toHaveLength(1);
 			}
@@ -840,8 +854,102 @@ test("reset starts a fresh cumulative scope instead of carrying completed work o
 	h.queue("reset");
 	const fresh = await h.router.route(request({ state: old, messages: [user("Fix the supplied typo")] }), h.context());
 	expect(fresh.state?.task).toBe("Fix the supplied typo");
+	expect(fresh.state?.activeWork?.objective).toBe("Fix the supplied typo");
 	expect(fresh.state?.taskTruncated).toBeUndefined();
-	expect(h.dispatches[0].envelope.context).toBeUndefined();
-	expect(h.dispatches[0].envelope.truncated).toBeUndefined();
-	expect(taskEnvelope([user("Continue")], old).envelope.truncated).toBe(true);
+	expect(h.dispatches[0].envelope.activeWork).toBeUndefined();
+	expect(h.dispatches[0].envelope.recentHistory).toBeUndefined();
+	expect(taskEnvelope([user("Continue")], old).envelope.truncated).toBeUndefined();
+	expect(taskEnvelope([user("Continue")], old).envelope.historyOmitted).toBe(true);
+});
+
+test("the reported UI-redesign uncertainty upgrades an automatic Luna baseline to Sol", async () => {
+	const h = harness({
+		result: {
+			...classified,
+			tier: "sol",
+			insufficient_context: true,
+			reason: "Concrete UI structure and implementation steps require moderate product and codebase discovery.",
+		},
+	});
+	const old: RoutingState = {
+		version: 1,
+		taskKey: "old",
+		task: "Initial bounded task",
+		tier: "luna",
+		model: { provider: "fixture", id: "luna" },
+		reason: "Old route",
+	};
+	const route = await h.router.route(
+		request({ state: old, messages: [user("Implement the configuration-editor redesign")] }),
+		h.context(),
+	);
+	expect(route.model).toBe(models.sol);
+	expect(h.decisions[0]).toMatchObject({ assessment: "incomplete", recommendedTier: "sol", tier: "sol" });
+	expect(route.state?.reason).toContain("using sol");
+	expect(route.state?.reason).not.toContain("Unreliable");
+});
+
+test("legacy clipping flags and long conversations do not become permanent active-scope uncertainty", async () => {
+	const brief = {
+		objective: "Implement the scoped feature",
+		constraints: ["Preserve current behavior"],
+		remaining: ["Add tests"],
+	};
+	const envelopes: TaskEnvelope[] = [];
+	const h = harness({
+		classify: async (_registry, _model, envelope) => {
+			envelopes.push(envelope);
+			return { ...classified, active_work: brief };
+		},
+	});
+	let state: RoutingState = {
+		version: 1,
+		taskKey: "old",
+		task: "old clipped fragment",
+		taskTruncated: true,
+		tier: "luna",
+		model: { provider: "fixture", id: "luna" },
+		reason: "An obsolete assessment reason",
+	};
+	for (let i = 0; i < 20; i++) {
+		const route = await h.router.route(
+			request({
+				state,
+				messages: [assistant("x".repeat(3000)), user("Continue", i + 1)],
+			}),
+			h.context(),
+		);
+		expect(route.model).toBe(models.luna);
+		expect(route.state?.activeWork).toEqual(brief);
+		expect(route.state?.task).toBe(brief.objective);
+		expect(route.state?.taskTruncated).toBeUndefined();
+		expect(envelopes[i].truncated).toBeUndefined();
+		expect(envelopes[i].historyOmitted).toBe(true);
+		expect(envelopes[i].recentHistory).not.toContain("obsolete assessment reason");
+		if (i > 0) expect(envelopes[i].activeWork).toEqual(brief);
+		state = route.state!;
+	}
+});
+
+test("failed assessments retain the last good brief but a reset never resurrects the completed scope", async () => {
+	const old: RoutingState = {
+		version: 1,
+		taskKey: "old",
+		task: "Completed architecture work",
+		tier: "astra",
+		model: { provider: "fixture", id: "astra" },
+		reason: "Old route",
+		activeWork: { objective: "Completed architecture work", constraints: ["Old constraint"], remaining: [] },
+	};
+	for (const reset of [false, true]) {
+		const h = harness({ result: fallback });
+		if (reset) h.queue("reset");
+		const route = await h.router.route(
+			request({ state: old, messages: [user("Start a new small task")] }),
+			h.context(),
+		);
+		expect(route.model).toBe(models.astra);
+		expect(route.state?.activeWork).toEqual(reset ? undefined : old.activeWork);
+		if (reset) expect(route.state?.task).toBe("Start a new small task");
+	}
 });

@@ -39,7 +39,12 @@ function reply(): AssistantMessage {
 		content: [
 			{
 				type: "text",
-				text: JSON.stringify({ tier: "luna", reason: "Known local edit.", insufficient_context: false }),
+				text: JSON.stringify({
+					tier: "luna",
+					reason: "Known local edit.",
+					insufficient_context: false,
+					active_work: { objective: "Correct typo", constraints: [], remaining: ["Apply correction"] },
+				}),
 			},
 		],
 		api: models[0].api,
@@ -494,4 +499,60 @@ test("physical /model choices pin an execution model while keeping Auto selected
 	expect(reassessed.model).toBe(models[0]);
 	expect(h.calls).toHaveLength(1);
 	expect(h.statuses.get("routing")).toBe("Auto → luna · fixture (luna held)");
+});
+
+test("notices and decision receipts distinguish incomplete scope from failed assessments", async () => {
+	const h = harness(settings());
+	h.model = auto;
+	const state = {
+		version: 1,
+		taskKey: "old",
+		task: "A bounded task",
+		tier: "luna",
+		model: { provider: "fixture", id: "luna" },
+		reason: "Previous decision",
+	};
+	const request = {
+		model: auto,
+		reason: "user",
+		thinkingLevel: "low",
+		state,
+		messages: [{ role: "user", content: "Implement the UI redesign.", timestamp: 1 }],
+	};
+	h.completion = async () => ({
+		...reply(),
+		content: [
+			{
+				type: "text",
+				text: JSON.stringify({
+					tier: "sol",
+					reason: "The requested prior design is incomplete.",
+					insufficient_context: true,
+					active_work: {
+						objective: "Implement the UI redesign",
+						constraints: [],
+						remaining: ["Inspect the design and implement"],
+					},
+				}),
+			},
+		],
+	});
+	expect((await h.virtual[0].route(request, h.context)).model).toBe(models[1]);
+	expect(h.notices.at(-1)).toMatchObject({ level: "info" });
+	expect(h.notices.at(-1)?.text).toContain("Recommended sol");
+	expect(h.notices.at(-1)?.text).toContain("using sol");
+	expect(h.notices.at(-1)?.text).not.toContain("Unreliable");
+	expect(
+		h.entries.findLast((entry) => entry.type === "custom" && entry.customType === "routing:decision-v1"),
+	).toMatchObject({ data: { assessment: "incomplete", recommendedTier: "sol", tier: "sol" } });
+	h.completion = async () => {
+		throw new Error("private provider detail");
+	};
+	expect((await h.virtual[0].route(request, h.context)).model).toBe(models[1]);
+	expect(h.notices.at(-1)).toMatchObject({ level: "warning" });
+	expect(h.notices.at(-1)?.text).toContain("Assessment failed (error)");
+	expect(h.notices.at(-1)?.text).not.toContain("private provider detail");
+	expect(
+		h.entries.findLast((entry) => entry.type === "custom" && entry.customType === "routing:decision-v1"),
+	).toMatchObject({ data: { assessment: "failed", fallback: "error", tier: "sol" } });
 });

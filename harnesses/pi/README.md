@@ -127,26 +127,37 @@ hand-maintained dotfile is needed. Canceling setup leaves preferences unchanged.
   first automatic route. A manual target outside the configured tiers has no known
   capability ordering, so only `/routing reset` permits switching away from it.
 
-For main sessions, Luna receives a bounded text envelope with the current task and relevant preceding
-conversation, not tools or permission to execute it. It uses an ordinary completion
-through existing Pi authentication. The rubric favors Luna for well-understood,
-mechanical work, Sol for normal coding/debugging, and Astra for evidenced deep or
-high-impact uncertainty. Prompt length, edit size, and file counts are not proxies
-for difficulty. The first Auto task is classified once, with Sol as the fallback.
-After the initial task, **Auto classifies every distinct new user turn**
-(including acknowledgements and steering), using the current request and a bounded
-summary of cumulative active work. Native preflight duplicates for the same user
-message reuse its saved result. Recommendations can automatically upgrade the
-tier, but same/lower recommendations, failures, and ambiguity retain the exact
-current model. There is no automatic downgrade; use `/routing reset` for new
-work that may justify a cheaper model. Each new user turn adds one bounded Luna
-classifier request and its usage; tool continuations do not add classifier calls.
-This trial can therefore cost more than session-affinity-only routing. `/routing
-reassess` still queues an explicit one-turn upgrade-only check. Missing
-authentication for the held model fails visibly rather than silently substituting.
+For main sessions, Luna receives a bounded current request, a compact active-work
+brief, and relevant recent history—not tools or permission to execute the work.
+The same ordinary authenticated completion recommends a tier and updates the
+brief's objective, grounded constraints, and remaining work. No extra summary
+call is made. Briefs replace one another rather than accumulating request text;
+`/routing reset` starts a fresh brief and excludes the previous work's history.
 
-Clipped source text is marked as incomplete through the entire classification
-pipeline, so omitted scope cannot produce a confident Luna recommendation.
+The rubric requires positive evidence of bounded, mechanical work for Luna.
+Ordinary implementation, UI/product discovery, and codebase inspection are Sol
+work, not insufficient context by themselves. Astra requires positive evidence
+of substantial reasoning depth or cross-cutting correctness risk.
+
+Auto assesses every distinct user turn, including acknowledgements and steering.
+Duplicate preflights reuse their saved decision; tool continuations do not call
+the classifier. Automatic routing only upgrades: same/lower recommendations
+retain the exact current model. Incomplete task scope and failed assessments
+have a conservative **Sol floor**, so they can upgrade Luna to Sol but never
+automatically downgrade Sol/Astra. Only a complete reset assessment may downgrade;
+manual pins still bypass classification.
+
+The input distinguishes clipped task-defining scope from deliberately omitted
+older history. Clipped current requests/explicit scope cannot justify Luna.
+Omitted history alone does not veto a self-contained task or a sufficient brief.
+Legacy clipping flags are not carried forward as permanent uncertainty.
+
+Notices and decision receipts show the recommendation, actual tier, and whether
+an assessment was complete, scope-incomplete, or failed (timeout/protocol/provider).
+Only failed assessments are warnings; missing scope is a valid conservative
+assessment. Each Auto user turn still adds one classifier request and its usage;
+there is no measured cost-saving or classifier-accuracy claim.
+
 
 Session affinity and queued/consumed requests follow the session branch through
 reload, resume, forks, compaction, and tree navigation. Older saved routes acquire

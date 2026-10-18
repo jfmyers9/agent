@@ -25,7 +25,12 @@ const usage: Usage = {
 	totalTokens: 740,
 	cost: { input: 0.0007, output: 0.00003, cacheRead: 0, cacheWrite: 0, total: 0.00073 },
 };
-const label: Classification = { tier: "luna", reason: "Known local edit.", insufficient_context: false };
+const label: Classification = {
+	tier: "luna",
+	reason: "Known local edit.",
+	insufficient_context: false,
+	active_work: { objective: "Correct the specified typo.", constraints: [], remaining: ["Apply the correction"] },
+};
 const envelope: TaskEnvelope = { task: "Correct the specified typo.", knownScope: ["README.md"] };
 
 function response(text = JSON.stringify(label), overrides: Partial<AssistantMessage> = {}): AssistantMessage {
@@ -77,7 +82,11 @@ test("uses one authenticated normal completion, no tools, no speculative effort,
 	expect(call.context.tools).toBeUndefined();
 	expect(call.context.messages).toHaveLength(1);
 	expect(call.context.messages[0].role).toBe("user");
-	expect(JSON.parse(call.context.messages[0].content as string)).toEqual({ envelope, truncated: false });
+	expect(JSON.parse(call.context.messages[0].content as string)).toEqual({
+		envelope,
+		truncated: false,
+		historyOmitted: false,
+	});
 	expect(call.options).toMatchObject({ maxTokens: 1_024, maxRetries: 0, timeoutMs: 8_000 });
 	expect(call.options).not.toHaveProperty("reasoningEffort");
 	expect(call.options).not.toHaveProperty("reasoning");
@@ -96,7 +105,14 @@ test("valid JSON for all tiers round-trips (fixture plumbing, not live classifie
 	);
 	expect(new Set(ROUTING_EVALUATION_CASES.map((item) => item.id)).size).toBe(ROUTING_EVALUATION_CASES.length);
 	for (const item of ROUTING_EVALUATION_CASES) {
-		const h = harness(async () => response(JSON.stringify(item.expected)));
+		const h = harness(async () =>
+			response(
+				JSON.stringify({
+					...item.expected,
+					active_work: { objective: item.envelope.task.slice(0, 400), constraints: [], remaining: [] },
+				}),
+			),
+		);
 		const result = await classifyTask(h.registry, model, item.envelope);
 		expect(result).toMatchObject(item.expected);
 		expect(result.fallback).toBeUndefined();
@@ -119,7 +135,7 @@ test("strict parser rejects malformed JSON, wrong types, extra keys, prose, and 
 		JSON.stringify({ ...label, insufficient_context: "false" }),
 		JSON.stringify({ tier: "luna", reason: "Missing field" }),
 		JSON.stringify({ ...label, confidence: 1 }),
-		" ".repeat(2_049) + JSON.stringify(label),
+		" ".repeat(4_097) + JSON.stringify(label),
 	])
 		expect(parseClassification(text)).toBeUndefined();
 	expect(parseClassification(JSON.stringify({ ...label, reason: "  trimmed  " }))).toEqual({
@@ -180,7 +196,8 @@ test("bounded input accounts for JSON escaping and truncation cannot justify Lun
 	expect(bounded.truncated).toBe(true);
 	expect(bounded.envelope.knownScope).toHaveLength(8);
 	expect(bounded.envelope.uncertainties).toHaveLength(8);
-	expect(result).toMatchObject({ tier: "sol", insufficient_context: true, fallback: "insufficient-context" });
+	expect(result).toMatchObject({ tier: "sol", insufficient_context: true, recommendedTier: "luna" });
+	expect(result.fallback).toBeUndefined();
 	expect(input.task.length).toBe(20_000);
 });
 
@@ -241,7 +258,7 @@ test("virtual and non-chat classifiers and empty tasks never dispatch", async ()
 		});
 	expect(await classifyTask(h.registry, model, { task: " \n" })).toMatchObject({
 		tier: "sol",
-		fallback: "insufficient-context",
+		insufficient_context: true,
 	});
 	expect(h.calls).toHaveLength(0);
 });
@@ -423,26 +440,82 @@ test("onStarted precedes dispatch and onSettled handles a synchronous registry e
 	expect(events).toEqual(["started", "dispatch", "settled"]);
 });
 
-test("upstream conversation clipping marks uncertainty before classifier budgets are applied", async () => {
+test("bounded recent history reports omission without vetoing a self-contained task", async () => {
 	const plan = response(`A local change. ${"x".repeat(2100)} Preserve cross-service ordering under concurrency.`);
 	const { envelope: clipped } = taskEnvelope([
 		plan,
-		{ role: "user", content: "Implement the plan above.", timestamp: 1 },
+		{ role: "user", content: "Rename n to itemCount in the supplied function, preserving behavior.", timestamp: 1 },
 	]);
-	expect(clipped.context).not.toContain("cross-service ordering");
-	expect(clipped.truncated).toBe(true);
+	expect(clipped.recentHistory).not.toContain("cross-service ordering");
+	expect(clipped.historyOmitted).toBe(true);
+	expect(clipped.truncated).toBeUndefined();
 	const h = harness();
 	const result = await classifyTask(h.registry, model, clipped);
-	expect(JSON.parse(h.calls[0].context.messages[0].content as string).truncated).toBe(true);
-	expect(result).toMatchObject({ tier: "sol", insufficient_context: true, fallback: "insufficient-context" });
+	const wire = JSON.parse(h.calls[0].context.messages[0].content as string);
+	expect(wire.historyOmitted).toBe(true);
+	expect(wire.truncated).toBe(false);
+	expect(result).toMatchObject({ tier: "luna", insufficient_context: false });
+	expect(result.fallback).toBeUndefined();
 
-	const fullContext = taskEnvelope([
+	const fullHistory = taskEnvelope([
 		{ role: "user", content: "a".repeat(2000), timestamp: 1 },
 		response("b".repeat(2000)),
 		{ role: "user", content: "c".repeat(2000), timestamp: 2 },
 		response("d".repeat(2000)),
 		{ role: "user", content: "Proceed.", timestamp: 3 },
 	]).envelope;
-	expect(fullContext.context).toHaveLength(8000);
-	expect(fullContext.truncated).toBe(true);
+	expect(fullHistory.recentHistory).toHaveLength(8000);
+	expect(fullHistory.historyOmitted).toBe(true);
+	expect(fullHistory.truncated).toBeUndefined();
+});
+
+test("incomplete referenced scope is a valid conservative assessment, not a protocol failure", async () => {
+	const h = harness(async () =>
+		response(
+			JSON.stringify({
+				...label,
+				tier: "sol",
+				insufficient_context: true,
+				reason: "The requested redesign is not present.",
+			}),
+		),
+	);
+	const result = await classifyTask(h.registry, model, {
+		task: "Implement the redesign discussed above.",
+		recentHistory: "The complete plan was omitted.",
+		historyOmitted: true,
+	});
+	expect(result).toMatchObject({ tier: "sol", recommendedTier: "sol", insufficient_context: true });
+	expect(result.fallback).toBeUndefined();
+});
+
+test("active-work briefs are strictly bounded and malformed briefs fail the response contract", () => {
+	const brief = label.active_work;
+	for (const active_work of [
+		undefined,
+		null,
+		[],
+		{ ...brief, objective: "" },
+		{ ...brief, objective: "x".repeat(401) },
+		{ ...brief, constraints: ["x".repeat(161)] },
+		{ ...brief, constraints: Array(5).fill("constraint") },
+		{ ...brief, remaining: [false] },
+		{ ...brief, remaining: [" "] },
+		{ ...brief, extra: "ignored?" },
+		{ ...brief, objective: "\u0000".repeat(400) },
+	])
+		expect(parseClassification(JSON.stringify({ ...label, active_work }))).toBeUndefined();
+	expect(parseClassification(JSON.stringify(label))?.active_work).toEqual(brief);
+});
+
+test("oversized explicit context and clipped current tasks retain the conservative Sol safeguard", async () => {
+	for (const input of [
+		{ task: "Implement the supplied plan", context: "x".repeat(9000) },
+		{ task: "A partial request", truncated: true },
+	]) {
+		const h = harness();
+		const result = await classifyTask(h.registry, model, input);
+		expect(result).toMatchObject({ tier: "sol", recommendedTier: "luna", insufficient_context: true });
+		expect(result.fallback).toBeUndefined();
+	}
 });

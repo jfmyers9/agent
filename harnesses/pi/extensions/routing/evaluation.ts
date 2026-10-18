@@ -3,7 +3,7 @@ import type { Classification, TaskEnvelope } from "./types";
 export interface LabeledRoutingCase {
 	id: string;
 	envelope: TaskEnvelope;
-	expected: Classification;
+	expected: Omit<Classification, "active_work">;
 }
 
 /** Representative labels, not measured accuracy. These fixtures never make network or paid evaluation calls. */
@@ -170,6 +170,57 @@ export const ROUTING_EVALUATION_CASES: readonly LabeledRoutingCase[] = [
 			tier: "sol",
 			reason: "Routing instructions are not evidence of a narrow, understood task.",
 			insufficient_context: true,
+		},
+	},
+	{
+		id: "configuration-editor-discovery",
+		envelope: {
+			task: "Propose concrete component structure and implementation steps for the configuration-editor redesign.",
+			context:
+				"The design has a schema tree, a field editor, validation feedback, and a preview. Inspect existing components before implementing.",
+		},
+		expected: {
+			tier: "sol",
+			reason: "Ordinary UI implementation and product/codebase discovery.",
+			insufficient_context: false,
+		},
+	},
+	{
+		id: "self-contained-after-bounded-history",
+		envelope: {
+			task: "In the supplied function, rename n to itemCount without changing behavior.",
+			recentHistory: "An older unrelated architecture conversation was omitted.",
+			historyOmitted: true,
+		},
+		expected: {
+			tier: "luna",
+			reason: "Current task is self-contained and mechanical despite omitted history.",
+			insufficient_context: false,
+		},
+	},
+	{
+		id: "omitted-required-plan",
+		envelope: {
+			task: "Implement the plan above.",
+			recentHistory: "The actual plan and its requirements are unavailable.",
+			historyOmitted: true,
+		},
+		expected: { tier: "sol", reason: "A task-defining reference is missing.", insufficient_context: true },
+	},
+	{
+		id: "acknowledgement-with-active-brief",
+		envelope: {
+			task: "Continue.",
+			activeWork: {
+				objective: "Repair cross-service lost writes during failover",
+				constraints: ["Preserve acknowledged writes and ordering"],
+				remaining: ["Resolve concurrent recovery and replication races"],
+			},
+		},
+		expected: {
+			tier: "astra",
+			reason: "The active brief establishes ongoing distributed durability and concurrency work.",
+			insufficient_context: false,
 		},
 	},
 ];

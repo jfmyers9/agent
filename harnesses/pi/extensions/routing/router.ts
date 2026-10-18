@@ -8,10 +8,10 @@ import {
 	type VirtualModelStateData,
 } from "@earendil-works/pi-coding-agent";
 import { pendingAssessment } from "./affinity.js";
-import { classifyTask } from "./classifier.js";
+import { classifyTask, isActiveWorkBrief } from "./classifier.js";
 import { manualPin } from "./pin.js";
 import { isModelRef, modelName, ROUTING_MODEL, ROUTING_PROVIDER, type RoutingSettings } from "./settings.js";
-import type { ClassifierResult, ClassifierUsage, ModelRef, TaskEnvelope, Tier } from "./types.js";
+import type { ActiveWorkBrief, ClassifierResult, ClassifierUsage, ModelRef, TaskEnvelope, Tier } from "./types.js";
 
 export interface RoutingState {
 	version: 1;
@@ -22,6 +22,7 @@ export interface RoutingState {
 	reason: string;
 	/** Last explicit reassessment consumed on this branch; absent in older sessions. */
 	assessmentId?: string;
+	activeWork?: ActiveWorkBrief;
 	taskTruncated?: boolean;
 }
 export interface RoutingDecision {
@@ -31,6 +32,8 @@ export interface RoutingDecision {
 	tier: RoutingState["tier"];
 	reason: string;
 	latencyMs: number;
+	assessment: "complete" | "incomplete" | "failed";
+	recommendedTier?: Tier;
 	fallback?: string;
 }
 
@@ -46,7 +49,8 @@ export function isRoutingState(value: unknown): value is RoutingState {
 		isModelRef(state.model) &&
 		typeof state.reason === "string" &&
 		(state.assessmentId === undefined || typeof state.assessmentId === "string") &&
-		(state.taskTruncated === undefined || typeof state.taskTruncated === "boolean")
+		(state.taskTruncated === undefined || typeof state.taskTruncated === "boolean") &&
+		(state.activeWork === undefined || isActiveWorkBrief(state.activeWork))
 	);
 }
 
@@ -88,35 +92,74 @@ function text(message: Message): string {
 export function taskEnvelope(
 	messages: readonly Message[],
 	previous?: RoutingState,
+	reset = false,
 ): { envelope: TaskEnvelope; key: string } {
 	const latest = messages.findLastIndex((message) => message.role === "user");
 	const current = latest >= 0 ? messages[latest]! : undefined;
-	let truncated = previous?.taskTruncated === true;
-	function clip(value: string, limit: number): string {
-		if (value.length > limit) truncated = true;
-		return value.slice(0, limit);
-	}
-	const task = current ? clip(text(current), 12_000) : "";
-	const preceding = messages
-		.slice(0, latest < 0 ? messages.length : latest)
-		.filter((message) => message.role === "user" || message.role === "assistant")
+	const fullTask = current ? text(current) : "";
+	const task = fullTask.slice(0, 12_000);
+	const history = reset
+		? []
+		: messages
+				.slice(0, latest < 0 ? messages.length : latest)
+				.filter((message) => message.role === "user" || message.role === "assistant");
+	let historyOmitted = history.length > 4;
+	const preceding = history
 		.slice(-4)
-		.map((message) => `${message.role}: ${clip(text(message), 2000)}`)
+		.map((message) => {
+			const content = text(message);
+			if (content.length > 2000) historyOmitted = true;
+			return `${message.role}: ${content.slice(0, 2000)}`;
+		})
 		.filter((item) => !/^(user|assistant):\s*$/.test(item));
-	if (previous)
-		preceding.unshift(`Previous task: ${previous.task}\nPrevious route: ${previous.tier}; ${previous.reason}`);
-	const fullContext = preceding.join("\n\n");
-	if (fullContext.length > 8000) truncated = true;
-	const context = fullContext.slice(-8000);
+	const activeWork = reset ? undefined : previous?.activeWork;
+	// Legacy sessions keep their model affinity, but raw old task fragments are only history.
+	if (!reset && previous?.task && !activeWork) {
+		preceding.unshift(`Legacy task context (may be incomplete): ${previous.task.slice(0, 2000)}`);
+		if (previous.taskTruncated || previous.task.length > 2000) historyOmitted = true;
+	}
+	const fullHistory = preceding.join("\n\n");
+	if (fullHistory.length > 8000) historyOmitted = true;
+	const recentHistory = fullHistory.slice(-8000);
 	return {
-		envelope: { task, ...(context ? { context } : {}), ...(truncated ? { truncated: true } : {}) },
+		envelope: {
+			task,
+			...(activeWork ? { activeWork } : {}),
+			...(recentHistory ? { recentHistory } : {}),
+			...(historyOmitted ? { historyOmitted: true } : {}),
+			...(fullTask.length > 12_000 ? { truncated: true } : {}),
+		},
 		key: createHash("sha256")
-			.update(JSON.stringify(current ?? { task, context }))
+			.update(JSON.stringify(current ?? { task, recentHistory }))
 			.digest("hex"),
 	};
 }
 
 const tierRank: Record<RoutingState["tier"], number> = { luna: 0, sol: 1, astra: 2, manual: Infinity };
+
+function conservativeTier(result: ClassifierResult): Tier {
+	if (result.fallback) return "sol";
+	return result.insufficient_context && result.tier === "luna" ? "sol" : result.tier;
+}
+
+function assessmentDetails(
+	result: ClassifierResult,
+	tier: RoutingState["tier"],
+	retained = false,
+): Pick<RoutingDecision, "assessment" | "recommendedTier" | "reason" | "fallback"> {
+	const assessment = result.fallback ? "failed" : result.insufficient_context ? "incomplete" : "complete";
+	const recommendedTier = result.fallback ? undefined : (result.recommendedTier ?? result.tier);
+	const origin = result.fallback
+		? `Assessment failed (${result.fallback}); fallback floor Sol`
+		: `Recommended ${recommendedTier}${result.insufficient_context ? " (incomplete task scope; floor Sol)" : ""}`;
+	const action = retained ? `retaining ${tier} (upgrade-only)` : `using ${tier}`;
+	return {
+		assessment,
+		recommendedTier,
+		reason: `${origin}; ${action}. ${result.reason}`,
+		...(result.fallback ? { fallback: result.fallback } : {}),
+	};
+}
 
 type RouterOptions = {
 	loadSettings: () => Promise<RoutingSettings | undefined>;
@@ -243,7 +286,7 @@ export class TaskRouter {
 			);
 		}
 		const assessment = pendingAssessment(ctx, state);
-		const { envelope, key } = taskEnvelope(request.messages, assessment?.mode === "reset" ? undefined : state);
+		const { envelope, key } = taskEnvelope(request.messages, state, assessment?.mode === "reset");
 		// Native model-route preflight can repeat for the same user message. Share
 		// its saved decision, but reassess every distinct user turn while on Auto.
 		if (state && !assessment && state.taskKey === key) {
@@ -260,40 +303,37 @@ export class TaskRouter {
 		request.signal?.throwIfAborted();
 		const override = this.pinnedRoute(request, ctx, state);
 		if (override) return override;
-		const recommended =
-			classification.insufficient_context && classification.tier === "luna" ? "sol" : classification.tier;
-		const unreliable = !!classification.fallback || (classification.insufficient_context && recommended !== "astra");
-		const keepPrevious =
-			state && (unreliable || (assessment?.mode !== "reset" && tierRank[recommended] <= tierRank[state.tier]));
+		const recommended = conservativeTier(classification);
+		// Failure or missing scope has a Sol floor; it must never strand Auto on Luna.
+		// Only a complete reset assessment may downgrade an already stronger baseline.
+		const downgradeAllowed =
+			assessment?.mode === "reset" && !classification.fallback && !classification.insufficient_context;
+		const keepPrevious = state && !downgradeAllowed && tierRank[recommended] <= tierRank[state.tier];
 		const tier = keepPrevious ? state.tier : recommended;
 		const ref = keepPrevious ? state.model : settings.tiers[recommended];
 		const model = physicalModel(ref, ctx);
-		const reason = keepPrevious
-			? `${unreliable ? "Unreliable assessment" : "No tier upgrade"}; retaining session model. ${classification.reason}`
-			: classification.reason;
-		const cumulative =
-			state && assessment?.mode !== "reset" ? `${state.task}\nFollow-up: ${envelope.task}` : envelope.task;
-		const activeTask = cumulative.slice(-2000);
+		const details = assessmentDetails(classification, tier, !!keepPrevious);
+		const updatedBrief = classification.fallback ? undefined : classification.active_work;
+		const activeWork = updatedBrief ?? (assessment?.mode === "reset" ? undefined : state?.activeWork);
 		const next: RoutingState = {
 			version: 1,
 			taskKey: key,
-			task: activeTask,
+			task:
+				activeWork?.objective ??
+				(keepPrevious && assessment?.mode !== "reset" ? state.task : envelope.task.slice(0, 400)),
+			...(activeWork ? { activeWork } : {}),
 			tier,
 			model: { provider: model.provider, id: model.id },
-			reason,
+			reason: details.reason,
 			...((assessment?.id ?? state?.assessmentId) ? { assessmentId: assessment?.id ?? state?.assessmentId } : {}),
-			...(cumulative.length > 2000 || (assessment?.mode !== "reset" && state?.taskTruncated)
-				? { taskTruncated: true }
-				: {}),
 		};
 		this.options.onDecision?.(ctx, {
 			kind: "main",
 			task: envelope.task,
 			model: next.model,
 			tier,
-			reason,
 			latencyMs: classification.latencyMs,
-			...(classification.fallback ? { fallback: classification.fallback } : {}),
+			...details,
 		});
 		return { model, thinkingLevel: request.thinkingLevel, state: next };
 	}
@@ -308,7 +348,7 @@ export class TaskRouter {
 		physicalModel(settings.tiers.sol, ctx);
 		const classification = await this.classify(settings, envelope, ctx, signal);
 		signal?.throwIfAborted();
-		const tier = classification.insufficient_context && classification.tier === "luna" ? "sol" : classification.tier;
+		const tier = conservativeTier(classification);
 		const model = physicalModel(settings.tiers[tier], ctx);
 		const ref = { provider: model.provider, id: model.id };
 		this.options.onDecision?.(ctx, {
@@ -316,9 +356,8 @@ export class TaskRouter {
 			task: envelope.task,
 			model: ref,
 			tier,
-			reason: classification.reason,
+			...assessmentDetails(classification, tier),
 			latencyMs: classification.latencyMs,
-			...(classification.fallback ? { fallback: classification.fallback } : {}),
 		});
 		return { model: ref, reason: classification.reason };
 	}

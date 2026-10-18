@@ -103,6 +103,8 @@ export function registerRouting(
 			kind: decision.kind,
 			model: decision.model,
 			tier: decision.tier,
+			assessment: decision.assessment,
+			...(decision.recommendedTier ? { recommendedTier: decision.recommendedTier } : {}),
 			reason,
 			taskKey: createHash("sha256").update(decision.task).digest("hex"),
 			latencyMs: Math.round(decision.latencyMs),
