@@ -136,9 +136,26 @@ describe("TUI cost integration", () => {
 		expect(usage.fetchUsageForProvider).toHaveBeenCalledWith("codex");
 		expect(top()).toContain("OpenAI Week");
 		expect(top()).toContain("37%");
+		expect(top()).toContain("━");
+		expect(top()).toContain("─");
 		expect(status()).toContain("12.5% 25k/200k");
 		expect(status()).toContain("━");
 		expect([...timers].some((timer) => timer.interval === usage.USAGE_REFRESH_INTERVAL)).toBe(true);
+	});
+
+	test("quota chrome respects ANSI widths and repaints when the theme changes", async () => {
+		auto("openai-codex");
+		await handlers.get("session_start")!({}, ctx);
+		const colored = (code: number) => ({ fg: (_role: string, text: string) => `\x1b[${code}m${text}\x1b[39m` });
+		const first = colored(32);
+		const second = colored(36);
+		expect(chrome?.(240, first, { modeReserve: 0 }).topRight).toContain("\x1b[32m37%");
+		expect(chrome?.(240, second, { modeReserve: 0 }).topRight).toContain("\x1b[36m37%");
+		expect(chrome?.(240, second, { modeReserve: 0 }).topRight).not.toContain("\x1b[32m");
+		for (let width = 1; width <= 120; width++) {
+			expect(visibleWidth(chrome?.(width, second, { modeReserve: 0 }).topRight ?? "")).toBeLessThanOrEqual(width);
+		}
+		expect(usage.fetchUsageForProvider).toHaveBeenCalledTimes(1);
 	});
 
 	test("a newly routed response switches quota once, without fetching on every streaming update", async () => {

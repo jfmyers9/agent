@@ -20,6 +20,7 @@ import {
 	type FooterRenderState,
 	renderEditorContextStatus,
 	renderEditorTopStatus,
+	renderUsageBar,
 	scaleContextSegmentsToUsage,
 	scaleContextSlicesToUsage,
 } from "./footer";
@@ -30,6 +31,7 @@ import { detectUsageProvider, fetchUsageForProvider, USAGE_REFRESH_INTERVAL, typ
 
 type UsageBarCache = {
 	key: string;
+	theme: Parameters<typeof renderEditorContextStatus>[1];
 	lines: string[];
 };
 
@@ -116,25 +118,6 @@ function dispatchedProvider(ctx: ExtensionContext, activeMessage?: unknown): str
 
 function truncateUsageLine(line: string, width: number): string {
 	return line ? truncateToWidth(line, Math.max(1, width), "") : "";
-}
-
-function formatReset(seconds: number): string {
-	if (!Number.isFinite(seconds) || seconds <= 0) return "now";
-	if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
-	if (seconds < 86400) return `${Math.ceil(seconds / 3600)}h`;
-	return `${Math.ceil(seconds / 86400)}d`;
-}
-
-function renderUsageBarLine(providerLabel: string, windows: UsageSnapshot["windows"], width: number): string {
-	const window = windows.reduce((max, current) => (current.usedPercent > max.usedPercent ? current : max), windows[0]);
-	if (!window) return "";
-	const percent = Math.max(0, Math.min(100, Math.round(window.usedPercent)));
-	const label = `${providerLabel} ${window.label}`.trim();
-	const suffix = ` ${percent}% reset ${formatReset(window.resetSecs)}`;
-	const available = Math.max(4, width - visibleWidth(label) - visibleWidth(suffix) - 3);
-	const filled = Math.max(0, Math.min(available, Math.round((available * percent) / 100)));
-	const bar = `[${"#".repeat(filled)}${"-".repeat(available - filled)}]`;
-	return truncateUsageLine(`${label} ${bar}${suffix}`, width);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -233,9 +216,9 @@ export default function (pi: ExtensionAPI) {
 			windows: state.usage?.windows ?? [],
 		});
 
-	const ensureUsageBarLines = (width: number) => {
+	const ensureUsageBarLines = (width: number, theme: Parameters<typeof renderEditorContextStatus>[1]) => {
 		const key = usageBarKey(width);
-		if (usageBarCache?.key === key) {
+		if (usageBarCache?.key === key && usageBarCache.theme === theme) {
 			state.usageLines = usageBarCache.lines;
 			return;
 		}
@@ -246,8 +229,8 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		const lines = [renderUsageBarLine(state.providerLabel, state.usage.windows, width)].filter(Boolean);
-		usageBarCache = { key, lines };
+		const lines = [renderUsageBar(state.providerLabel, state.usage.windows, theme, width)].filter(Boolean);
+		usageBarCache = { key, theme, lines };
 		state.usageLines = lines;
 	};
 
@@ -260,7 +243,7 @@ export default function (pi: ExtensionAPI) {
 		let usageLine = "";
 		if (usageBarsVisible) {
 			const usageWidth = Math.max(20, Math.min(56, Math.floor(safeWidth * 0.36)));
-			ensureUsageBarLines(usageWidth);
+			ensureUsageBarLines(usageWidth, theme);
 			usageLine = truncateUsageLine(state.usageLines?.[0] ?? "", usageWidth);
 		}
 
@@ -490,7 +473,9 @@ export default function (pi: ExtensionAPI) {
 					stopRefreshTimer();
 					stopContextPulse();
 				},
-				invalidate() {},
+				invalidate() {
+					usageBarCache = null;
+				},
 				render(): string[] {
 					return [];
 				},

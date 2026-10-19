@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { defaultConfig, type PolishedTuiConfig } from "./config";
-import { emptyFooterState, type FooterRenderState, renderFooter } from "./footer";
+import { emptyFooterState, type FooterRenderState, renderFooter, renderUsageBar } from "./footer";
 
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
 const COLOR_CODES: Record<string, number> = {
@@ -248,5 +248,80 @@ describe("renderFooter", () => {
 		expect(ctxLine).toContain("\x1b[38;2;243;139;168m");
 		expect(ctxLine).toContain("\x1b[38;2;137;220;235m");
 		expect(ctxLine).not.toContain("\x1b[1m");
+	});
+});
+
+describe("renderUsageBar", () => {
+	const window = (usedPercent: number, resetSecs = 3600, label = "Week") => ({
+		label,
+		usedPercent,
+		resetSecs,
+		windowSecs: 604800,
+	});
+
+	test("uses the context rail glyphs with a colored percentage and muted reset countdown", () => {
+		const line = renderUsageBar("OpenAI", [window(37)], theme, 56);
+		expect(visibleWidth(line)).toBe(56);
+		expect(stripAnsi(line)).toMatch(/^OpenAI Week ━+─+ 37% ↻ 1h$/);
+		expect(line).toContain("\x1b[32m37%\x1b[39m");
+		expect(line).toContain("\x1b[2m ↻ 1h\x1b[39m");
+		expect(stripAnsi(line)).not.toMatch(/[#[\]]/);
+	});
+
+	test("shares context-health colors as quota consumption rises", () => {
+		for (const [percent, code] of [
+			[0, 32],
+			[49, 32],
+			[50, 35],
+			[69, 35],
+			[70, 33],
+			[89, 33],
+			[90, 31],
+			[100, 31],
+		]) {
+			const line = renderUsageBar("OpenAI", [window(percent)], theme, 56);
+			expect(line).toContain(`\x1b[${code}m${percent}%\x1b[39m`);
+			if (percent > 0) expect(line).toContain(`\x1b[${code}m━`);
+			if (percent < 100) expect(line).toContain("\x1b[2m─");
+			if (percent === 0) expect(stripAnsi(line)).not.toContain("━");
+			if (percent === 100) expect(stripAnsi(line)).not.toContain("─");
+		}
+	});
+
+	test("keeps showing the most consumed quota window", () => {
+		const line = stripAnsi(renderUsageBar("OpenAI", [window(20, 3600, "5h"), window(82)], theme, 56));
+		expect(line).toContain("OpenAI Week");
+		expect(line).toContain("82%");
+		expect(line).not.toContain("5h");
+	});
+
+	test("fits colored output at every width and preserves the percentage before labels", () => {
+		for (const provider of ["OpenAI", "A very long provider label", "模型"]) {
+			for (let width = 0; width <= 80; width++) {
+				const line = renderUsageBar(provider, [window(37)], theme, width);
+				expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+				if (width >= 3) expect(stripAnsi(line)).toContain("37%");
+				if (width >= 18) expect(stripAnsi(line)).toContain("↻ 1h");
+			}
+		}
+	});
+
+	test("formats reset intervals and clamps quota percentages", () => {
+		for (const [seconds, label] of [
+			[0, "now"],
+			[1, "1m"],
+			[3599, "60m"],
+			[3600, "1h"],
+			[86400, "1d"],
+		] as const) {
+			expect(stripAnsi(renderUsageBar("OpenAI", [window(37, seconds)], theme, 56))).toContain(`↻ ${label}`);
+		}
+		expect(stripAnsi(renderUsageBar("OpenAI", [window(120)], theme, 56))).toContain("100%");
+		expect(stripAnsi(renderUsageBar("OpenAI", [window(-10)], theme, 56))).toContain("0%");
+	});
+
+	test("omits the bar when quota data or terminal space is absent", () => {
+		expect(renderUsageBar("OpenAI", [], theme, 56)).toBe("");
+		expect(renderUsageBar("OpenAI", [window(37)], theme, 0)).toBe("");
 	});
 });

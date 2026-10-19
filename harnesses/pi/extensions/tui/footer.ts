@@ -496,15 +496,58 @@ function renderContextBar(state: FooterRenderState, theme: Theme, width: number,
 	return prefix + renderSegmentedContextBar(state, theme, barWidth) + suffix;
 }
 
+function utilizationColor(percent: number): ThemeColor {
+	if (percent >= 90) return "error";
+	if (percent >= 70) return "warning";
+	if (percent >= 50) return "accent";
+	return "success";
+}
+
+function formatUsageReset(seconds: number): string {
+	if (!Number.isFinite(seconds) || seconds <= 0) return "now";
+	if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
+	if (seconds < 86400) return `${Math.ceil(seconds / 3600)}h`;
+	return `${Math.ceil(seconds / 86400)}d`;
+}
+
+export function renderUsageBar(
+	providerLabel: string,
+	windows: UsageSnapshot["windows"],
+	theme: Theme,
+	width: number,
+): string {
+	if (width <= 0) return "";
+	const window = windows.reduce((max, current) => (current.usedPercent > max.usedPercent ? current : max), windows[0]);
+	if (!window) return "";
+	const percent = Math.max(0, Math.min(100, Math.round(window.usedPercent)));
+	const color = utilizationColor(percent);
+	const metric = theme.fg(color, `${percent}%`);
+	const reset = theme.fg("dim", ` ↻ ${formatUsageReset(window.resetSecs)}`);
+	const label = `${providerLabel} ${window.label}`.trim();
+	// Drop the provider/reset before sacrificing the percentage on narrow terminals.
+	for (const [name, countdown] of [
+		[label, reset],
+		[window.label, reset],
+		[window.label, ""],
+	]) {
+		const prefix = `${theme.fg("muted", name)} `;
+		const suffix = ` ${metric}${countdown}`;
+		const barWidth = width - visibleWidth(prefix) - visibleWidth(suffix);
+		if (barWidth < 4) continue;
+		const filled = Math.max(0, Math.min(barWidth, Math.round((barWidth * percent) / 100)));
+		const bar =
+			theme.fg(color, CONTEXT_BAR_USED.repeat(filled)) + theme.fg("dim", CONTEXT_BAR_FREE.repeat(barWidth - filled));
+		return prefix + bar + suffix;
+	}
+	return truncateToWidth(metric, width, "");
+}
+
 function contextHealthColor(state: FooterRenderState): ThemeColor {
 	const percent =
 		state.contextPercent === null && state.contextTotal > 0
 			? (Math.max(0, state.contextUsed) / state.contextTotal) * 100
 			: (state.contextPercent ?? 0);
-	if (percent >= 90) return "error";
-	if (percent >= 70) return "warning";
-	if (percent >= 50) return "accent";
-	return "success";
+	return utilizationColor(percent);
 }
 
 function renderContextBarVariants(state: FooterRenderState, theme: Theme, width: number): string[] {
