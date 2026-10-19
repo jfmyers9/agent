@@ -29,6 +29,6 @@
     "minTerminalRows": 28
   },
   "usageBars": {
-    "visible": false
+    "visible": true
   }
 }
