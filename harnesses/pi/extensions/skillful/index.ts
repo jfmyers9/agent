@@ -138,6 +138,9 @@ export default function (pi: ExtensionAPI) {
 		refresh();
 		ensureTranscriptHighlight(skillNames);
 
+		// Custom-message runs have no user prompt and must not invoke skills.
+		if (!("prompt" in event) || typeof event.prompt !== "string") return;
+
 		const referenced: string[] = [];
 		const missing: string[] = [];
 		const promptForSkillScan = maskMarkdownCode(event.prompt);

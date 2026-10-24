@@ -159,6 +159,48 @@ describe("skillful extension", () => {
 		expect(handlers.has("input")).toBe(false);
 	});
 
+	test.each([
+		{
+			label: "custom message with text content",
+			event: {
+				messageType: "custom",
+				message: { customType: "notification", content: "$tdd $missing", display: true },
+			},
+		},
+		{
+			label: "custom message with content blocks",
+			event: {
+				messageType: "custom",
+				message: {
+					customType: "notification",
+					content: [{ type: "text", text: "$tdd $missing" }],
+					display: true,
+				},
+			},
+		},
+		{ label: "missing prompt", event: {} },
+		{ label: "undefined prompt", event: { prompt: undefined } },
+		{ label: "null prompt", event: { prompt: null } },
+		{ label: "empty prompt", event: { messageType: "user", prompt: "" } },
+	])("skips skill scanning for $label", async ({ event }) => {
+		const handlers = new Map<string, (event: Record<string, unknown>) => Promise<unknown>>();
+		const pi = {
+			getCommands: () => [
+				{ source: "skill", name: "skill:tdd", sourceInfo: { path: "/skills/tdd/SKILL.md" } },
+			],
+			on: (event: string, handler: (event: Record<string, unknown>) => Promise<unknown>) =>
+				handlers.set(event, handler),
+			registerTool() {},
+			registerMessageRenderer() {},
+			events: { emit() {} },
+		};
+
+		extension(pi as never);
+		const handler = handlers.get("before_agent_start");
+		if (!handler) throw new Error("before_agent_start handler missing");
+		expect(await handler({ type: "before_agent_start", systemPrompt: "base", ...event })).toBeUndefined();
+	});
+
 	test("loads referenced dollar skills as custom messages before agent start", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "skillful-"));
 		const skillPath = join(dir, "SKILL.md");
