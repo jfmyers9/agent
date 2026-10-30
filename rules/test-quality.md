@@ -18,6 +18,10 @@ contract, or failure signal.
 - **Getter/setter tests** — testing that assignment works
 - **Implementation mirroring** — duplicating the production
   formula in the test instead of using known-answer values
+- **Shadow implementations** — rebuilding production logic or
+  orchestration in test helpers, especially code the change moves.
+  Call the owning code or move the test with it; when refactoring,
+  preserve the assertions, not the call sites
 - **Happy-path-only** — only testing success when failure modes
   exist (empty input, invalid data, timeouts)
 - **Coverage padding** — executing code without asserting

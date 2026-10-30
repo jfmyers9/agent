@@ -36,6 +36,12 @@ When a layer leaks, such as domain code importing the transport or a handler
 writing raw frames, name the leak and say where it moves. Recently landed
 code isn't exempt.
 
+When a change adds or relies on a package split, state each package's
+responsibility in one sentence and check imports and placement against it.
+A package implementing its sibling's responsibility, or a capability used by
+several consumers living inside one consumer, signals a possible ownership
+mismatch. Identify the concrete coupling before proposing a boundary change.
+
 Separate the change under review from the ideal end state. Prefer landing
 the reviewable step and stacking the redesign over growing the change.
 

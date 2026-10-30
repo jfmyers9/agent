@@ -112,9 +112,11 @@ any uncertainty that prevents a decision.
 
 Deduplicate by root cause. Fold missing regression coverage into the underlying
 functional finding. Omit cosmetic preferences, routine cleanup, generic hardening,
-and speculative future work. Do not search unchanged code for latent defects;
-mention an encountered pre-existing issue separately only when useful, without
-attributing it to this change.
+and speculative future work. False coverage is not routine cleanup: report tests
+that exercise a test-only copy of changed production logic, because the change's
+claimed behavior is then unverified. Do not search unchanged code for latent
+defects; mention an encountered pre-existing issue separately only when useful,
+without attributing it to this change.
 
 For follow-up reviews, inspect the fixes and affected behavior against current
 code. Revalidate supplied findings and report remaining or newly introduced
