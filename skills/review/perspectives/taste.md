@@ -11,6 +11,8 @@ more coherent design, not to generate a long list of objections.
 - Normal persistence and replay paths instead of special-case reconciliation.
 - Existing primitives that already solve the problem.
 - Clear invariants that make correctness easy to explain.
+- One named rule instead of a policy spread across special cases, such as
+  sentinel values or phase checks inside shared helpers.
 - Layers that each own one protocol or concern. Ask what a familiar system
   puts at each layer (net/http: transport, handlers, services); domain code
   shouldn't build wire responses or choose error codes.
@@ -21,7 +23,8 @@ more coherent design, not to generate a long list of objections.
 
 Look for complexity that exists only because of an unexamined requirement.
 
-When you see a watermark, callback, type check or mutability decision, ask:
+When you see a watermark, callback, type check, sentinel value or mutability
+decision, ask:
 what requirement makes this necessary? Could a different representation
 make the whole mechanism disappear?
 
