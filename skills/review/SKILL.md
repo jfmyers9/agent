@@ -80,16 +80,22 @@ investigate the implementation after that assessment.
 | [Design Coherence](perspectives/coherence.md) | Explicit requirements are supplied |
 
 Use independent subagents for applicable personas whenever delegation is
-available, including a separate Taste reviewer for design changes. Run
-independent passes in parallel within available concurrency. If delegation is
-unavailable, apply the same perspectives sequentially and report the limitation.
+available. Always run Taste as its own reviewer, never merged with another
+persona, when a change adds or replaces a package, type, interface, registration
+surface or connection. Run independent passes in parallel within available
+concurrency. If delegation is unavailable, apply the same perspectives
+sequentially and report the limitation.
 
 Give every reviewer the same objective, scope, base/head, changed-file list,
 relevant intent sources and access to the actual diff and source. Assign a
 persona rather than an arbitrary file slice; cross-file defects require tracing
-the whole affected flow. Reviewers return a brief assessment, checked paths,
-candidate findings with evidence, and unresolved questions. They do not modify
-files or remote state. The primary reviewer owns the final decision.
+the whole affected flow. Brief each persona in its own terms: don't impose
+defect-only filters ("concrete trigger", "omit cosmetics") on Taste. Taste may
+search outside the diff for an existing version of a new concept, and a name
+that encodes the wrong concept is a design problem, not a cosmetic one.
+Reviewers return a brief assessment, checked paths, candidate findings with
+evidence, and unresolved questions. They do not modify files or remote state.
+The primary reviewer owns the final decision.
 
 ## Investigate Candidates
 
@@ -110,9 +116,20 @@ claims against source and existing guards. Reviewer agreement does not establish
 correctness; resolve disagreements with a concrete trace or check, and disclose
 any uncertainty that prevents a decision.
 
+Design findings are a separate class. Keep one when the change introduces a
+material design cost and a concrete, existing alternative removes it:
+re-implemented infrastructure, a concept named or shaped for its first use
+rather than what it is, a missed existing primitive, responsibility in the
+wrong layer, or a cardinality assumption that contradicts neighbouring
+structures. State the cost (what it duplicates, couples or will force to
+change) and the alternative. A design finding needs no runtime trigger, but a
+preference without a concrete alternative and cost is not one.
+
 Deduplicate by root cause. Fold missing regression coverage into the underlying
 functional finding. Omit cosmetic preferences, routine cleanup, generic hardening,
-and speculative future work. False coverage is not routine cleanup: report tests
+and speculative future work. Naming that misstates what a concept is, and
+defensive limits, modes or fields with no caller or prior art, are design
+findings rather than cosmetics. False coverage is not routine cleanup: report tests
 that exercise a test-only copy of changed production logic, because the change's
 claimed behavior is then unverified. Do not search unchanged code for latent
 defects; mention an encountered pre-existing issue separately only when useful,
@@ -120,7 +137,10 @@ without attributing it to this change.
 
 For follow-up reviews, inspect the fixes and affected behavior against current
 code. Revalidate supplied findings and report remaining or newly introduced
-problems. No persisted finding IDs or closure ledger are required.
+problems. No persisted finding IDs or closure ledger are required. When a fix
+adds, replaces or renames a concept, rerun Taste on the new design before
+reporting the change as ready; applying a design proposal is itself a design
+change.
 
 ## Report
 
@@ -141,10 +161,11 @@ that the whole changeset is ready to merge.
 State the review basis: objective and intent source, target, base/head (or local
 `HEAD`), exclusions and applied personas. Include short reviewer assessments
 when they explain the decision, and material disagreements with their resolution.
-Include Taste's strongest one or two concrete alternatives in the approach
-assessment when they materially simplify the design. Label them as proposals,
-separate from defect findings; they receive no severity or finding ID. A Taste
-preference alone does not justify `NO-GO`; a verified material failure can.
+Report Taste's design findings with the other findings, under the design
+finding rules above; they can make the approach `salvageable` and the decision
+`NO-GO / fix`. Include further concrete alternatives in the approach assessment
+as proposals when they materially simplify the design. A preference without a
+concrete alternative and cost does not justify `NO-GO`.
 For each finding, ordered by impact and labeled `F001`, `F002`, etc., provide:
 
 - A short title and severity: critical, high, or medium.
@@ -157,7 +178,9 @@ For each finding, ordered by impact and labeled `F001`, `F002`, etc., provide:
 
 Severity measures impact: `critical` means catastrophic security, data or
 availability failure; `high` means broken core behavior or a likely severe
-failure; `medium` means a bounded material defect. Do not inflate severity
+failure; `medium` means a bounded material defect, or a design finding whose
+cost reviewers or future callers will pay (duplicated infrastructure, a concept
+that must be renamed or reshaped, ownership in the wrong place). Do not inflate severity
 because several reviewers agree.
 
 Explain any approach concern, then summarize checks actually performed and
