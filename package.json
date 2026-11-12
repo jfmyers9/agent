@@ -27,7 +27,7 @@
     "test:pi-spawn": "bun test harnesses/pi/extensions/spawn/index.test.ts",
     "test:pi-vim": "bun test harnesses/pi/extensions/vim/index.test.ts",
     "test:pi-composition": "bun test harnesses/pi/extensions/code-mode/*.test.ts harnesses/pi/extensions/shared/code-mode*.test.ts harnesses/pi/extensions/subagents/*.test.ts",
-    "test:pi-async": "bun test harnesses/pi/extensions/async-questions/*.test.ts",
+    "test:pi-async": "bun test harnesses/pi/extensions/async-questions/*.test.ts harnesses/pi/extensions/session-timers/*.test.ts",
     "test:pi-presentation": "bun test harnesses/pi/extensions/runtime-support/*.test.ts harnesses/pi/extensions/collapse-transcript/*.test.ts"
   },
   "dependencies": {

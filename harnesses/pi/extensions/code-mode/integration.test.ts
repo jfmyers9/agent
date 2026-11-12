@@ -50,6 +50,7 @@ test("installed extensions compose local tools and activate deferred tools", asy
 					"apply-patch",
 					"exec-command",
 					"async-questions",
+					"session-timers",
 				]
 					.map((name) => join(extensionDir, name, "index.ts"))
 					.concat(fixture),
@@ -101,6 +102,7 @@ test("installed extensions compose local tools and activate deferred tools", asy
 		expect(active).not.toContain("bash");
 		expect(active).toContain("request_user_input_async");
 		expect(session.getCallableToolNames()).not.toContain("request_user_input_async");
+		expect(session.getCallableToolNames()).toContain("session_timer");
 		expect(new Set(active).size).toBe(active.length);
 		await session.extensionRunner.emitBeforeAgentStart("fixture prompt", undefined, "Fixture system prompt", { cwd });
 		for (const name of ["exec_command", "write_stdin", "apply_patch", "read"])
@@ -133,6 +135,11 @@ test("installed extensions compose local tools and activate deferred tools", asy
 			);
 		};
 		expect(JSON.stringify(await invoke("codemode", { code: 'text("host-ready")' }))).toContain("host-ready");
+		const timerResult = await invoke("codemode", {
+			code: 'text(await tools.session_timer({action:"create",prompt:"Check the build",interval_seconds:300}));',
+		});
+		expect(JSON.stringify(timerResult)).toContain("timer-1");
+		expect(JSON.stringify(await invoke("session_timer", { action: "list" }))).toContain("Check the build");
 		const result = await invoke("codemode", {
 			code: `// @exec: {"yield_time_ms":1000}
 			text(await tools.read({path:"sample.txt", raw:true}));
@@ -238,6 +245,7 @@ test("installed extensions compose local tools and activate deferred tools", asy
 				.some((entry) => entry.type === "custom" && entry.customType === "pi-conversation/question"),
 		).toBe(true);
 		await session.navigateTree(beforeQuestion, { summarize: false });
+		expect(JSON.stringify(await invoke("session_timer", { action: "list" }))).not.toContain("Check the build");
 		expect(session.getActiveToolNames()).toContain("request_user_input_async");
 		expect(session.getCallableToolNames()).not.toContain("request_user_input_async");
 		expect(session.getActiveToolNames()).not.toContain("bash");

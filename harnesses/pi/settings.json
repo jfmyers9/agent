@@ -67,6 +67,7 @@
     "extensions/exec-command/index.ts",
     "extensions/ask/index.ts",
     "extensions/async-questions/index.ts",
+    "extensions/session-timers/index.ts",
     "extensions/clear.ts",
     "extensions/diff-prod/index.ts",
     "extensions/tuicr.ts",
