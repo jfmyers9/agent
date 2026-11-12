@@ -153,7 +153,7 @@ test("installed extensions compose local tools and activate deferred tools", asy
 		expect(output).toContain("shell-ready");
 		expect(await readFile(join(cwd, "sample.txt"), "utf8")).toBe("changed needle\nsecond line\n");
 		const large = await invoke("codemode", {
-			code: `const result = await tools.exec_command({cmd: "python3 -c 'print(str(1234567890)*9000)'", yield_time_ms:1000}); text(typeof result.details); text(Array.isArray(result.content));`,
+			code: `const result = await tools.exec_command({cmd: "awk 'BEGIN { for (i = 0; i < 9000; i++) print 1234567890 }'", yield_time_ms:1000}); text(typeof result.details); text(Array.isArray(result.content));`,
 		});
 		expect(JSON.stringify(large)).toContain("object");
 		expect(JSON.stringify(large)).toContain("true");
