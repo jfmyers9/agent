@@ -17,6 +17,17 @@ export function needsCompaction(
 	);
 }
 
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+// Compaction callbacks can run after the session that owned ctx was replaced, e.g. once a print-mode
+// run has ended. Reading a stale ctx then throws, which used to replace the real compaction error
+// with "ctx is stale". Always log the original error and never let a callback throw.
+function logError(message: string): void {
+	console.error(`[${MESSAGE_TYPE}] ${message}`);
+}
+
 export default function autoCompactResumeExtension(pi: ExtensionAPI) {
 	let compacting = false;
 
@@ -33,19 +44,29 @@ export default function autoCompactResumeExtension(pi: ExtensionAPI) {
 		ctx.compact({
 			onComplete: () => {
 				compacting = false;
-				if (ctx.hasPendingMessages()) return;
-				pi.sendMessage(
-					{
-						customType: MESSAGE_TYPE,
-						content: "Continue the original request from the compacted context.",
-						display: false,
-					},
-					{ triggerTurn: true, deliverAs: "followUp" },
-				);
+				try {
+					if (ctx.hasPendingMessages()) return;
+					pi.sendMessage(
+						{
+							customType: MESSAGE_TYPE,
+							content: "Continue the original request from the compacted context.",
+							display: false,
+						},
+						{ triggerTurn: true, deliverAs: "followUp" },
+					);
+				} catch (error) {
+					logError(`Compaction finished but the task could not resume: ${errorMessage(error)}`);
+				}
 			},
 			onError: (error) => {
 				compacting = false;
-				if (ctx.hasUI) ctx.ui.notify(`Auto-compaction failed: ${error.message}`, "error");
+				const message = `Auto-compaction failed: ${errorMessage(error)}`;
+				logError(message);
+				try {
+					if (ctx.hasUI) ctx.ui.notify(message, "error");
+				} catch (notifyError) {
+					logError(`Could not report the compaction failure: ${errorMessage(notifyError)}`);
+				}
 			},
 		});
 	});
