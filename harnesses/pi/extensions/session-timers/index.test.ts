@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { registerSessionTimers } from "./index";
 import { MAX_INTERVAL_SECONDS, MAX_TIMERS, type TimerClock, TimerScheduler } from "./scheduler";
 
@@ -29,6 +30,8 @@ function harness() {
 	const messages: any[] = [];
 	const notifications: string[] = [];
 	const statuses: (string | undefined)[] = [];
+	const widgets = new Map<string, unknown>();
+	const renderers = new Map<string, MessageRenderer>();
 	let tool: any;
 	let command: any;
 	let idle = true;
@@ -42,6 +45,7 @@ function harness() {
 		registerCommand: (_name: string, definition: any) => {
 			command = definition;
 		},
+		registerMessageRenderer: (type: string, renderer: MessageRenderer) => renderers.set(type, renderer),
 		sendMessage(message: any, options: any) {
 			if (deliveryError) throw new Error("delivery unavailable");
 			messages.push({ message, options });
@@ -57,6 +61,7 @@ function harness() {
 		ui: {
 			notify: (message: string) => notifications.push(message),
 			setStatus: (_key: string, status: string | undefined) => statuses.push(status),
+			setWidget: (key: string, content: unknown) => widgets.set(key, content),
 		},
 	};
 	registerSessionTimers(pi, clock);
@@ -68,6 +73,8 @@ function harness() {
 		messages,
 		notifications,
 		statuses,
+		widgets,
+		renderers,
 		emit,
 		call: async (args: any, signal?: AbortSignal) => {
 			const result = await tool.execute("call-1", args, signal, undefined, ctx);
@@ -150,10 +157,59 @@ describe("timer scheduler", () => {
 });
 
 describe("session timer extension", () => {
+	test("timer prompts collapse to one line while expansion preserves all model instructions", async () => {
+		const h = harness();
+		await h.call({ action: "create", prompt: "Check the build\nReport failures", interval_seconds: 5 });
+		await h.call({ action: "create", prompt: "Check the tests", interval_seconds: 5 });
+		h.clock.advance(5_000);
+		const message = h.messages[0].message;
+		const renderer = h.renderers.get("session-timer")!;
+		const theme = { fg: (_color: string, text: string) => text } as Theme;
+		const collapsed = renderer(message, { expanded: false, outputPad: 2 }, theme)!;
+		expect(collapsed.render(100)).toEqual(["  ◷ Session timer fired · expand for instructions"]);
+		for (const width of [1, 10, 30]) {
+			const lines = collapsed.render(width);
+			expect(lines).toHaveLength(1);
+			expect(visibleWidth(lines[0]!)).toBeLessThanOrEqual(width);
+		}
+		expect(collapsed.render(0)).toEqual([]);
+		const expanded = renderer(message, { expanded: true, outputPad: 0 }, theme)!
+			.render(300)
+			.map((line) => line.trimEnd())
+			.join("\n");
+		expect(expanded).toContain(message.content);
+		expect(expanded).toContain("timer-1");
+		expect(expanded).toContain("timer-2");
+		expect(expanded).toContain("Check the build\nReport failures");
+		expect(expanded).toContain("Stay within their scope");
+		// Rendering never replaces the full prompt delivered to the model.
+		expect(message.content).toContain("Missed ticks were coalesced");
+	});
+
+	test("resumed timer messages without details also collapse and expand text blocks", () => {
+		const h = harness();
+		const renderer = h.renderers.get("session-timer")!;
+		const theme = { fg: (_color: string, text: string) => text } as Theme;
+		const message = {
+			role: "custom" as const,
+			customType: "session-timer",
+			content: [{ type: "text" as const, text: "Original recurring instructions" }],
+			display: true,
+			timestamp: 0,
+		};
+		expect(renderer(message, { expanded: false, outputPad: 0 }, theme)!.render(100).join("\n")).not.toContain(
+			"Original recurring instructions",
+		);
+		expect(renderer(message, { expanded: true, outputPad: 0 }, theme)!.render(100).join("\n")).toContain(
+			"Original recurring instructions",
+		);
+	});
+
 	test("creates, lists, dispatches a visible follow-up, and cancels conversationally", async () => {
 		const h = harness();
 		const { created } = await h.call({ action: "create", prompt: "Check the build", interval_seconds: 300 });
 		expect(h.messages).toEqual([]);
+		expect(h.widgets.get("session-timers")).toBeFunction();
 		expect((await h.call({ action: "list" })).timers).toEqual([created]);
 		h.clock.advance(300_000);
 		expect(h.messages).toHaveLength(1);
@@ -165,6 +221,7 @@ describe("session timer extension", () => {
 		h.clock.advance(600_000);
 		expect(h.messages).toHaveLength(1);
 		expect(h.statuses.at(-1)).toBeUndefined();
+		expect(h.widgets.get("session-timers")).toBeUndefined();
 	});
 
 	test("busy work and queued user messages take priority; ticks batch and coalesce", async () => {
@@ -205,6 +262,7 @@ describe("session timer extension", () => {
 			await h.call({ action: "create", prompt: "task", interval_seconds: 1 });
 			h.emit(boundary);
 			expect(h.clock.wakes.size).toBe(0);
+			expect(h.widgets.get("session-timers")).toBeUndefined();
 			h.clock.advance(60_000);
 			h.settle();
 			expect(h.messages).toEqual([]);

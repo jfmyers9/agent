@@ -1,15 +1,20 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { MAX_INTERVAL_SECONDS, type TimerClock, TimerScheduler } from "./scheduler";
+import { TimerWidget } from "./widget";
 
 export function registerSessionTimers(pi: ExtensionAPI, clock?: TimerClock): void {
 	let context: ExtensionContext | undefined;
 	let inFlight = false;
 	const scheduler = new TimerScheduler(() => flush(), clock);
+	const widget = new TimerWidget(clock);
 
 	function refresh(): void {
-		if (!context?.hasUI) return;
+		if (!context) return;
 		const timers = scheduler.list();
+		widget.update(context, timers);
+		if (!context.hasUI) return;
 		const pending = timers.filter((timer) => timer.pending).length;
 		context.ui.setStatus(
 			"session-timers",
@@ -50,11 +55,31 @@ export function registerSessionTimers(pi: ExtensionAPI, clock?: TimerClock): voi
 
 	function reset(ctx: ExtensionContext, active: boolean): void {
 		scheduler.clear();
+		widget.clear();
 		inFlight = false;
 		context = ctx;
 		refresh();
 		if (!active) context = undefined;
 	}
+
+	pi.registerMessageRenderer("session-timer", (message, { expanded, outputPad }, theme) => {
+		const label = theme.fg("dim", "◷ Session timer fired");
+		if (!expanded) {
+			const summary = `${" ".repeat(outputPad)}${label}${theme.fg("muted", " · expand for instructions")}`;
+			return {
+				render: (width) => (width > 0 ? [truncateToWidth(summary, width)] : []),
+				invalidate() {},
+			};
+		}
+		const content =
+			typeof message.content === "string"
+				? message.content
+				: message.content
+						.filter((block) => block.type === "text")
+						.map((block) => block.text)
+						.join("\n");
+		return new Text(`${label}\n${content}`, outputPad, 0);
+	});
 
 	pi.registerTool({
 		name: "session_timer",
