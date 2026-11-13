@@ -50,6 +50,12 @@ prevents a meaningful conclusion; continue reviewing independent behavior.
 Use relevant PR descriptions and commits as claims to verify, not proof that
 the implementation achieves its goal.
 
+Separate the requested outcome, the proposed mechanism, and the constraints
+the change must preserve. Identify the consequential assumptions connecting
+them and test those assumptions against source and governing contracts. An
+intentional behavior change still needs evaluation against those contracts;
+documenting a tradeoff does not establish that it is acceptable.
+
 Check that the problem exists, the mechanism achieves the objective, and the
 change preserves relevant acceptance criteria, contracts, and non-goals.
 Consider responsibility placement, ownership, scope, and complexity when they
@@ -66,8 +72,9 @@ instead of cataloguing repairs to code that should be replaced.
 
 Use the personas below for their distinct questions. Read each
 applicable perspective before reviewing; do not invent findings to fill a role.
-Design Coherence and Taste inform the approach assessment. The other personas
-investigate the implementation after that assessment.
+The initial approach assessment is provisional. Every persona may challenge
+both the approach and its implementation. Revisit the approach when source
+tracing reveals a broken premise or a consequence the initial assessment missed.
 
 | Persona / perspective | Apply when these change |
 | --- | --- |
@@ -96,6 +103,13 @@ that encodes the wrong concept is a design problem, not a cosmetic one.
 Reviewers return a brief assessment, checked paths, candidate findings with
 evidence, and unresolved questions. They do not modify files or remote state.
 The primary reviewer owns the final decision.
+
+Preserve independence in the briefing: provide primary sources and distinguish
+the coordinator's interpretations from established facts. Each reviewer should
+independently examine the consequential premises relevant to their perspective.
+Return any premise that could change the decision, the evidence supporting or
+contradicting it, and what remains unresolved. Do not invent objections to
+satisfy this instruction.
 
 ## Investigate Candidates
 
@@ -143,6 +157,16 @@ reporting the change as ready; applying a design proposal is itself a design
 change.
 
 ## Report
+
+Reconcile material findings and unresolved questions before choosing the
+verdict. For each consequential open question, either resolve it with evidence
+or explain how it affects the decision. A verified violation belongs in the
+findings even when the implementation matches its stated design.
+
+Use `INCONCLUSIVE` when a specific, evidence-backed uncertainty prevents a
+supported decision. Do not issue `GO` while leaving a necessary premise
+unresolved in the limitations. Ordinary review limits and speculative concerns
+do not require withholding `GO`.
 
 Lead with an explicit decision for the reviewed scope:
 
