@@ -55,8 +55,9 @@ const MAX_STATUS_SOURCES: usize = 5;
 const FETCH_CACHE_TTL_HOURS: i64 = 24;
 const EXECUTION_RETENTION_DAYS: i64 = 14;
 const MAX_EXECUTION_INDEX_BYTES: i64 = 64 * 1024 * 1024;
-const CONTEXT_SCHEMA_VERSION: i64 = 2;
+const CONTEXT_SCHEMA_VERSION: i64 = 3;
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_millis(750);
+const EXECUTION_SOURCE_DELETE_BATCH: usize = 500;
 #[derive(Deserialize)]
 struct CoreRequest {
     command: String,
@@ -918,6 +919,13 @@ fn ensure_context_schema(conn: &mut Connection) -> Result<(), String> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|err| format!("failed to start content store migration: {err}"))?;
+    // Another process may have migrated while this one waited for the lock.
+    let version: i64 = tx
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|err| format!("failed to read content store schema version: {err}"))?;
+    if version >= CONTEXT_SCHEMA_VERSION {
+        return Ok(());
+    }
     let legacy_rows = if is_legacy_chunks_table(&tx)? {
         Some(load_legacy_chunks(&tx)?)
     } else {
@@ -939,7 +947,8 @@ fn ensure_context_schema(conn: &mut Connection) -> Result<(), String> {
             code_chunk_count INTEGER NOT NULL DEFAULT 0,
             indexed_at TEXT NOT NULL DEFAULT (datetime('now')),
             file_path TEXT,
-            content_hash TEXT
+            content_hash TEXT,
+            content_length INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS search_usage (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -969,6 +978,7 @@ fn ensure_context_schema(conn: &mut Connection) -> Result<(), String> {
     .map_err(|err| format!("failed to initialize content store schema: {err}"))?;
 
     ensure_sources_metadata_columns(&tx)?;
+    backfill_source_content_lengths(&tx)?;
 
     if let Some(rows) = legacy_rows {
         migrate_legacy_chunks(&tx, rows)?;
@@ -988,6 +998,7 @@ fn ensure_sources_metadata_columns(conn: &Connection) -> Result<(), String> {
         "ALTER TABLE sources ADD COLUMN content_hash TEXT",
         "ALTER TABLE sources ADD COLUMN code_chunk_count INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE sources ADD COLUMN display_label TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE sources ADD COLUMN content_length INTEGER NOT NULL DEFAULT 0",
     ] {
         match conn.execute_batch(statement) {
             Ok(()) => {}
@@ -995,6 +1006,19 @@ fn ensure_sources_metadata_columns(conn: &Connection) -> Result<(), String> {
             Err(err) => return Err(format!("failed to update sources schema: {err}")),
         }
     }
+    Ok(())
+}
+
+/// Stores each source's total chunk length on its row so retention never has to
+/// join `sources` against the FTS tables, whose `source_id` is unindexed.
+fn backfill_source_content_lengths(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "UPDATE sources SET content_length = sizes.total \
+         FROM (SELECT source_id, SUM(LENGTH(content)) AS total FROM chunks GROUP BY source_id) AS sizes \
+         WHERE sizes.source_id = sources.id",
+        [],
+    )
+    .map_err(|err| format!("failed to backfill source content lengths: {err}"))?;
     Ok(())
 }
 
@@ -1231,6 +1255,11 @@ fn replace_source_chunks_in_transaction(
     content_hash: Option<&str>,
 ) -> Result<IndexSummary, String> {
     let code_chunks = chunks.iter().filter(|chunk| chunk.has_code).count();
+    // Characters, matching SQLite's LENGTH() used by the backfill.
+    let content_length = chunks
+        .iter()
+        .map(|chunk| chunk.content.chars().count())
+        .sum::<usize>();
     tx.execute(
         "DELETE FROM chunks WHERE source_id IN (SELECT id FROM sources WHERE label = ?1)",
         params![label],
@@ -1244,8 +1273,8 @@ fn replace_source_chunks_in_transaction(
     tx.execute("DELETE FROM sources WHERE label = ?1", params![label])
         .map_err(|err| format!("failed to clear previous source metadata for {label}: {err}"))?;
     tx.execute(
-        "INSERT INTO sources(label, display_label, chunk_count, code_chunk_count, file_path, content_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![label, display_label, chunks.len() as i64, code_chunks as i64, file_path, content_hash],
+        "INSERT INTO sources(label, display_label, chunk_count, code_chunk_count, file_path, content_hash, content_length) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![label, display_label, chunks.len() as i64, code_chunks as i64, file_path, content_hash, content_length as i64],
     )
     .map_err(|err| format!("failed to insert source metadata for {label}: {err}"))?;
 
@@ -1389,7 +1418,7 @@ fn deactivate_source(conn: &mut Connection, label: &str) -> Result<(), String> {
     )
     .map_err(|err| format!("failed to deactivate stale trigram chunks for {label}: {err}"))?;
     tx.execute(
-        "UPDATE sources SET chunk_count = 0, code_chunk_count = 0, content_hash = NULL WHERE label = ?1",
+        "UPDATE sources SET chunk_count = 0, code_chunk_count = 0, content_hash = NULL, content_length = 0 WHERE label = ?1",
         params![label],
     )
     .map_err(|err| format!("failed to deactivate stale source {label}: {err}"))?;
@@ -1803,16 +1832,22 @@ fn execution_source_id(command: &str, output: &str) -> String {
 }
 
 fn cleanup_execution_sources(conn: &mut Connection) -> Result<usize, String> {
-    let tx = conn
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|err| format!("failed to start execution retention transaction: {err}"))?;
-    let mut stmt = tx
+    cleanup_execution_sources_with_limit(conn, MAX_EXECUTION_INDEX_BYTES)
+}
+
+fn cleanup_execution_sources_with_limit(
+    conn: &mut Connection,
+    max_bytes: i64,
+) -> Result<usize, String> {
+    // Read outside the write lock. Execution sources are only ever added with a
+    // newer timestamp and id, so a source chosen for deletion from this snapshot
+    // stays expired or over budget even if other processes index more output
+    // before the deletes run; at worst, those newer sources wait for a later pass.
+    let mut stmt = conn
         .prepare(
-            "SELECT sources.id, COALESCE(SUM(LENGTH(chunks.content)), 0), \
-                    datetime(sources.indexed_at) < datetime('now', ?1) \
-             FROM sources LEFT JOIN chunks ON chunks.source_id = sources.id \
-             WHERE sources.label LIKE '__context_guard_exec_v1__%' \
-             GROUP BY sources.id ORDER BY datetime(sources.indexed_at) DESC, sources.id DESC",
+            "SELECT id, content_length, datetime(indexed_at) < datetime('now', ?1) \
+             FROM sources WHERE label LIKE '__context_guard_exec_v1__%' \
+             ORDER BY datetime(indexed_at) DESC, id DESC",
         )
         .map_err(|err| format!("failed to prepare execution retention query: {err}"))?;
     let rows = stmt
@@ -1832,7 +1867,7 @@ fn cleanup_execution_sources(conn: &mut Connection) -> Result<usize, String> {
     for row in rows {
         let (id, bytes, expired) =
             row.map_err(|err| format!("failed to read execution retention row: {err}"))?;
-        if expired || retained_bytes.saturating_add(bytes) > MAX_EXECUTION_INDEX_BYTES {
+        if expired || retained_bytes.saturating_add(bytes) > max_bytes {
             delete_ids.push(id);
         } else {
             retained_bytes = retained_bytes.saturating_add(bytes);
@@ -1840,19 +1875,28 @@ fn cleanup_execution_sources(conn: &mut Connection) -> Result<usize, String> {
     }
     drop(stmt);
 
-    for id in &delete_ids {
-        tx.execute("DELETE FROM chunks WHERE source_id = ?1", params![id])
-            .map_err(|err| format!("failed to delete retained porter chunks: {err}"))?;
-        tx.execute(
-            "DELETE FROM chunks_trigram WHERE source_id = ?1",
-            params![id],
-        )
-        .map_err(|err| format!("failed to delete retained trigram chunks: {err}"))?;
-        tx.execute("DELETE FROM sources WHERE id = ?1", params![id])
-            .map_err(|err| format!("failed to delete retained source: {err}"))?;
+    // Each FTS delete scans the table because source_id is unindexed, so delete
+    // many sources per statement. Committing per batch keeps each write-lock
+    // hold well under other connections' busy timeout during a large purge.
+    for ids in delete_ids.chunks(EXECUTION_SOURCE_DELETE_BATCH) {
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|err| format!("failed to start execution retention transaction: {err}"))?;
+        let placeholders = vec!["?"; ids.len()].join(", ");
+        for (table, column) in [
+            ("chunks", "source_id"),
+            ("chunks_trigram", "source_id"),
+            ("sources", "id"),
+        ] {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE {column} IN ({placeholders})"),
+                params_from_iter(ids),
+            )
+            .map_err(|err| format!("failed to delete retained {table} rows: {err}"))?;
+        }
+        tx.commit()
+            .map_err(|err| format!("failed to commit execution retention: {err}"))?;
     }
-    tx.commit()
-        .map_err(|err| format!("failed to commit execution retention: {err}"))?;
     conn.execute_batch("PRAGMA optimize; PRAGMA wal_checkpoint(PASSIVE);")
         .map_err(|err| format!("failed to maintain content store: {err}"))?;
     Ok(delete_ids.len())
@@ -2746,4 +2790,196 @@ fn write_text_response_with_details(
         .map_err(|err| format!("failed to serialize response: {err}"))?;
     println!("{payload}");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    struct TempDb(String);
+
+    impl TempDb {
+        fn new(name: &str) -> Self {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos();
+            let path = env::temp_dir().join(format!("context-guard-unit-{name}-{nanos}.db"));
+            Self(path.to_string_lossy().into_owned())
+        }
+    }
+
+    impl Drop for TempDb {
+        fn drop(&mut self) {
+            let _ = remove_sqlite_database(&self.0);
+        }
+    }
+
+    fn add_source(conn: &mut Connection, label: &str, contents: &[&str], age: &str) {
+        let chunks = contents
+            .iter()
+            .map(|content| Chunk {
+                title: "output".to_string(),
+                content: content.to_string(),
+                has_code: false,
+            })
+            .collect::<Vec<_>>();
+        replace_source_chunks(conn, label, label, &chunks, None, None).expect("index source");
+        conn.execute(
+            "UPDATE sources SET indexed_at = datetime('now', ?1) WHERE label = ?2",
+            params![age, label],
+        )
+        .expect("set source age");
+    }
+
+    fn exec_label(name: &str) -> String {
+        format!("__context_guard_exec_v1__{name}")
+    }
+
+    fn source_labels(conn: &Connection) -> Vec<String> {
+        let mut stmt = conn
+            .prepare("SELECT label FROM sources ORDER BY label")
+            .expect("prepare labels");
+        stmt.query_map([], |row| row.get(0))
+            .expect("query labels")
+            .collect::<Result<_, _>>()
+            .expect("read labels")
+    }
+
+    fn orphaned_chunk_count(conn: &Connection) -> i64 {
+        conn.query_row(
+            "SELECT (SELECT COUNT(*) FROM chunks WHERE source_id NOT IN (SELECT id FROM sources)) \
+                  + (SELECT COUNT(*) FROM chunks_trigram WHERE source_id NOT IN (SELECT id FROM sources))",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count orphaned chunks")
+    }
+
+    const RETENTION_FIXTURE_LIMIT: i64 = 120;
+
+    /// Newest to oldest under a 120-character budget. Sizes are SQLite
+    /// `LENGTH` (characters) summed across a source's chunks, and the budget
+    /// is filled greedily: a source that overflows is dropped while older,
+    /// smaller ones may still fit.
+    fn seed_retention_fixture(conn: &mut Connection) {
+        add_source(
+            conn,
+            &exec_label("newest"),
+            &[&"a".repeat(40)],
+            "-1 minutes",
+        );
+        let half = "b".repeat(25);
+        add_source(conn, &exec_label("split"), &[&half, &half], "-2 minutes");
+        add_source(
+            conn,
+            &exec_label("overflow"),
+            &[&"c".repeat(35)],
+            "-3 minutes",
+        );
+        // 15 characters but 30 bytes: counts as 15 toward the budget.
+        add_source(
+            conn,
+            &exec_label("accented"),
+            &[&"é".repeat(15)],
+            "-4 minutes",
+        );
+        // Fills the budget exactly, so it is still retained.
+        add_source(
+            conn,
+            &exec_label("at-limit"),
+            &[&"d".repeat(15)],
+            "-13 days",
+        );
+        // Empty, so it fits the budget, but it is past the retention window.
+        add_source(conn, &exec_label("expired"), &[""], "-15 days");
+        // Not an execution source, so execution retention never applies.
+        add_source(conn, "notes", &[&"n".repeat(500)], "-30 days");
+    }
+
+    fn retained_fixture_labels() -> Vec<String> {
+        let mut labels = vec![
+            exec_label("accented"),
+            exec_label("at-limit"),
+            exec_label("newest"),
+            exec_label("split"),
+            "notes".to_string(),
+        ];
+        labels.sort();
+        labels
+    }
+
+    #[test]
+    fn execution_cleanup_applies_age_and_size_retention() {
+        let db = TempDb::new("retention");
+        let mut conn = open_context_db(&db.0).expect("open db");
+        seed_retention_fixture(&mut conn);
+
+        let deleted = cleanup_execution_sources_with_limit(&mut conn, RETENTION_FIXTURE_LIMIT)
+            .expect("cleanup");
+
+        assert_eq!(deleted, 2);
+        assert_eq!(source_labels(&conn), retained_fixture_labels());
+        assert_eq!(orphaned_chunk_count(&conn), 0);
+    }
+
+    #[test]
+    fn schema_migration_backfills_source_lengths_for_execution_cleanup() {
+        let db = TempDb::new("length-backfill");
+        let mut conn = open_context_db(&db.0).expect("open db");
+        seed_retention_fixture(&mut conn);
+        // Recreate a version 2 store, which has no stored source lengths.
+        conn.execute_batch(
+            "ALTER TABLE sources DROP COLUMN content_length; PRAGMA user_version = 2;",
+        )
+        .expect("downgrade schema");
+        drop(conn);
+
+        let mut conn = open_context_db(&db.0).expect("migrate db");
+        cleanup_execution_sources_with_limit(&mut conn, RETENTION_FIXTURE_LIMIT).expect("cleanup");
+
+        assert_eq!(source_labels(&conn), retained_fixture_labels());
+    }
+
+    fn cleanup_vm_steps(source_count: usize) -> u64 {
+        let db = TempDb::new("cleanup-cost");
+        let mut conn = open_context_db(&db.0).expect("open db");
+        let content = "x".repeat(200);
+        for index in 0..source_count {
+            // The older half is past the retention window and gets deleted.
+            let age = if index < source_count / 2 {
+                "-20 days"
+            } else {
+                "-1 days"
+            };
+            add_source(&mut conn, &exec_label(&index.to_string()), &[&content], age);
+        }
+
+        let steps = Arc::new(AtomicU64::new(0));
+        let counter = Arc::clone(&steps);
+        conn.progress_handler(
+            100,
+            Some(move || {
+                counter.fetch_add(1, Ordering::Relaxed);
+                false
+            }),
+        )
+        .expect("install progress handler");
+        let deleted = cleanup_execution_sources(&mut conn).expect("cleanup");
+        assert_eq!(deleted, source_count / 2);
+        steps.load(Ordering::Relaxed)
+    }
+
+    #[test]
+    fn execution_cleanup_cost_grows_linearly_with_source_count() {
+        let small = cleanup_vm_steps(100);
+        let large = cleanup_vm_steps(400);
+        // Linear work grows ~4x for 4x the sources; scanning the FTS tables
+        // once per source grows ~16x.
+        assert!(
+            large < small * 8,
+            "cleanup VM steps grew from {small} to {large} for 4x the sources"
+        );
+    }
 }
