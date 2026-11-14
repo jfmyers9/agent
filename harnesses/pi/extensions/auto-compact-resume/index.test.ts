@@ -18,7 +18,7 @@ describe("auto compact and resume", () => {
 		const ctx = {
 			getContextUsage: () => ({ tokens: 235_000, contextWindow: 272_000, percent: 86 }),
 			hasPendingMessages: () => false,
-			hasUI: false,
+			hasUI: true,
 			compact(options: any) {
 				compactOptions = options;
 			},
@@ -46,6 +46,33 @@ describe("auto compact and resume", () => {
 		expect(needsCompaction([{ type: "toolCall" }], 224_000, 272_000)).toBe(false);
 	});
 
+	test("leaves headless runs to Pi's inline compaction", () => {
+		// ctx.compact() aborts the running turn. In print mode that settles the prompt as aborted,
+		// the process exits and the summarization is torn down, so the task stops instead of resuming.
+		let turnEnd: ((event: any, ctx: any) => void) | undefined;
+		let compacted = false;
+		const pi = {
+			on(event: string, handler: (event: any, ctx: any) => void) {
+				if (event === "turn_end") turnEnd = handler;
+			},
+			sendMessage() {},
+		} as unknown as ExtensionAPI;
+
+		autoCompactResumeExtension(pi);
+		turnEnd?.(
+			{ message: { content: [{ type: "toolCall" }] } },
+			{
+				getContextUsage: () => ({ tokens: 260_000, contextWindow: 272_000, percent: 96 }),
+				hasPendingMessages: () => false,
+				hasUI: false,
+				compact() {
+					compacted = true;
+				},
+			},
+		);
+		expect(compacted).toBe(false);
+	});
+
 	test("reports the real compaction error even when ctx has gone stale", () => {
 		let turnEnd: ((event: any, ctx: any) => void) | undefined;
 		let compactOptions: any;
@@ -57,13 +84,14 @@ describe("auto compact and resume", () => {
 				throw new Error("sendMessage should not run");
 			},
 		} as unknown as ExtensionAPI;
+		let replaced = false;
 		const stale = () => {
 			throw new Error("This extension ctx is stale after session replacement or reload");
 		};
 		const ctx = {
 			getContextUsage: () => ({ tokens: 235_000, contextWindow: 272_000, percent: 86 }),
 			get hasUI(): boolean {
-				return stale();
+				return replaced ? stale() : true;
 			},
 			hasPendingMessages: stale,
 			compact(options: any) {
@@ -77,6 +105,7 @@ describe("auto compact and resume", () => {
 		try {
 			autoCompactResumeExtension(pi);
 			turnEnd?.({ message: { content: [{ type: "toolCall" }] } }, ctx);
+			replaced = true;
 
 			expect(() => compactOptions.onError(new Error("summarization request timed out"))).not.toThrow();
 			expect(() => compactOptions.onComplete()).not.toThrow();
@@ -93,6 +122,7 @@ describe("auto compact and resume", () => {
 			{ message: { content: [{ type: "toolCall" }] } },
 			{
 				getContextUsage: ctx.getContextUsage,
+				hasUI: true,
 				compact(options: any) {
 					compactOptions = options;
 				},

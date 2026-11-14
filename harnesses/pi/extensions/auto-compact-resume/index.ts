@@ -33,6 +33,10 @@ export default function autoCompactResumeExtension(pi: ExtensionAPI) {
 
 	pi.on("turn_end", (event, ctx: ExtensionContext) => {
 		if (compacting) return;
+		// ctx.compact() aborts the running turn before summarizing. Headless (print/JSON) runs end once
+		// their prompt settles, so that abort exits the process and tears the summarization down. Pi's
+		// own threshold compaction runs inline between turns without aborting, so leave headless runs to it.
+		if (!ctx.hasUI) return;
 
 		const usage = ctx.getContextUsage();
 		const content = "content" in event.message && Array.isArray(event.message.content) ? event.message.content : [];
