@@ -63,7 +63,6 @@
     "extensions/apply-patch/index.ts",
     "extensions/vcc/index.ts",
     "extensions/pretty/index.ts",
-    "extensions/context-guard/index.ts",
     "extensions/exec-command/index.ts",
     "extensions/ask/index.ts",
     "extensions/async-questions/index.ts",

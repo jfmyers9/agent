@@ -44,7 +44,7 @@ describe("fileops read rendering", () => {
 		expect(result.details?.protected).toBe(true);
 		expect(rendered).toContain("Large file read blocked: large.rs");
 		expect(rendered).toContain("Use bounded read arguments");
-		expect(rendered).toContain("cg_process_file");
+		expect(rendered).toContain("exec_command");
 	});
 
 	it("keeps ordinary hashline reads hidden when collapsed", async () => {

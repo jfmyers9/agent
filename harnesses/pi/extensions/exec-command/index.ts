@@ -6,8 +6,6 @@ import {
 	ToolExecutionComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, Text } from "@earendil-works/pi-tui";
-import { resolveCoreBin } from "../context-guard/pi/core.ts";
-import { isExecCommandContextGuardEnabled } from "../context-guard/pi/index.ts";
 import { defineExtensionTui, registerExtensionMessageRenderer, setOrderedAboveEditorWidget } from "../shared/tui";
 import {
 	type RenderTheme,
@@ -199,14 +197,6 @@ function truncateTextToolResultContent(content: unknown): unknown[] | undefined 
 	return changed ? next : undefined;
 }
 
-function parseBooleanToggleArgument(args: string): boolean | undefined | "invalid" {
-	const arg = args.trim().toLowerCase();
-	if (!arg) return undefined;
-	if (arg === "on" || arg === "true" || arg === "enable" || arg === "enabled") return true;
-	if (arg === "off" || arg === "false" || arg === "disable" || arg === "disabled") return false;
-	return "invalid";
-}
-
 function parseStopSessionId(args: string): number | undefined | "invalid" {
 	const value = args.trim().replace(/^#/, "");
 	if (!value) return undefined;
@@ -244,6 +234,7 @@ interface BackgroundTerminalFinishedDetails {
 	session_error?: string;
 	elapsed_ms: number;
 	output_truncated: boolean;
+	full_output_path?: string;
 	original_token_count?: number;
 }
 
@@ -259,6 +250,7 @@ function backgroundTerminalDetailsToUnifiedResult(details: BackgroundTerminalFin
 		session_error: details.session_error,
 		original_token_count: details.original_token_count,
 		output_truncated: details.output_truncated,
+		full_output_path: details.full_output_path,
 		process_id: details.process_id,
 	};
 }
@@ -268,7 +260,6 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 	installUserBashRenderPatch();
 	const tracker = createExecCommandTracker();
 	const sessions = createExecSessionManager();
-	const contextGuard = { enabled: true };
 	let shuttingDown = false;
 	let statusUi: BackgroundTerminalStatusUi | undefined;
 	let lastBackgroundTerminalStatus: string | undefined;
@@ -294,7 +285,7 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 			details.timed_out === true ||
 			details.cancelled === true ||
 			details.terminal_state === "session_error";
-		const footer = (() => {
+		let footer = (() => {
 			if (details.terminal_state === "session_error") return theme.fg("muted", "Session error");
 			if (details.timed_out) return theme.fg("muted", "Timed out");
 			if (details.cancelled) return theme.fg("muted", "Cancelled");
@@ -303,6 +294,9 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 			}
 			return undefined;
 		})();
+		if (details.output_truncated && details.full_output_path) {
+			footer = [footer, theme.fg("muted", `Full output: ${details.full_output_path}`)].filter(Boolean).join("\n");
+		}
 		return renderExecCellComponent(
 			rawCommandToExecCell({
 				command: details.command,
@@ -507,7 +501,6 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 				completionMessageSessions.add(result.process_id);
 			}
 		},
-		contextGuardEnabled: () => contextGuard.enabled && isExecCommandContextGuardEnabled() && resolveCoreBin() !== null,
 	});
 	registerWriteStdinTool(pi, sessions, {
 		onResult: (input, result) => {
@@ -533,6 +526,7 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 			session_error: snapshot.sessionError,
 			elapsed_ms: snapshot.elapsedMs,
 			output_truncated: snapshot.outputTruncated,
+			full_output_path: snapshot.fullOutputPath,
 		};
 		if (snapshot.originalTokenCount !== undefined) {
 			details.original_token_count = snapshot.originalTokenCount;
@@ -552,25 +546,6 @@ export default function execCommandExtension(pi: ExtensionAPI) {
 		);
 	});
 	sessions.onSessionUpdate(updateBackgroundTerminalStatus);
-
-	pi.registerCommand("cg-wrap", {
-		description: "Toggle Context Guard wrapping for exec_command calls",
-		getArgumentCompletions: (prefix) => {
-			const items = ["on", "off"]
-				.filter((value) => value.startsWith(prefix.trim().toLowerCase()))
-				.map((value) => ({ value, label: value }));
-			return items.length > 0 ? items : null;
-		},
-		handler: async (args, ctx) => {
-			const parsed = parseBooleanToggleArgument(args);
-			if (parsed === "invalid") {
-				ctx.ui.notify("Usage: /cg-wrap [on|off]", "error");
-				return;
-			}
-			contextGuard.enabled = parsed ?? !contextGuard.enabled;
-			ctx.ui.notify(`Context Guard wrapping ${contextGuard.enabled ? "enabled" : "disabled"}.`, "info");
-		},
-	});
 
 	pi.registerCommand("ps", {
 		description: "list background terminals",

@@ -108,7 +108,7 @@ function largeReadGuidance(path: string, bytes: number): ToolTextResult {
 					"",
 					"Reading the whole file would put all bytes into the conversation.",
 					'Use bounded read arguments for edit targeting, for example `ranges: ["120-180"]` or `offset` with `limit`.',
-					"For analysis, summarization, filtering, or extraction, use `cg_process_file` so the file stays out of context and only your derived answer is returned.",
+					"For analysis, summarization, filtering, or extraction, use `exec_command` with `rg` or a script that prints only the needed results.",
 				].join("\n"),
 			},
 		],
@@ -1390,7 +1390,7 @@ function registerHashlineWorkflowTools(pi: ExtensionAPI, getConfig: () => EditCo
 				sections.push(
 					[
 						`[Search results truncated at ${resultLimit} rows.]`,
-						"Use a narrower path/glob/ranges, or index the source with `cg_index` and query it with `cg_search`.",
+						"Use a narrower path/glob/ranges or a more specific search pattern.",
 					].join("\n"),
 				);
 			}
@@ -1446,7 +1446,7 @@ function registerHashlineWorkflowTools(pi: ExtensionAPI, getConfig: () => EditCo
 							...unique,
 							...(truncatedFind
 								? [
-										`[Find results truncated at ${limit} files. Use a narrower glob/path, or index sources with cg_index and query them with cg_search.]`,
+										`[Find results truncated at ${limit} files. Use a narrower glob/path.]`,
 									]
 								: []),
 						].join("\n");

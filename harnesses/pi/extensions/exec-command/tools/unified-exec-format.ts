@@ -44,6 +44,10 @@ export function formatUnifiedExecResult(result: UnifiedExecResult, command?: str
 		sections.push(`Original token count: ${result.original_token_count}`);
 	}
 
+	if (result.full_output_path) {
+		sections.push(`Full output: ${result.full_output_path}`);
+	}
+
 	sections.push("Output:");
 	sections.push(result.output);
 

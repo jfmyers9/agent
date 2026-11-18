@@ -323,10 +323,10 @@ they do not lock out other editors or terminal processes.
 
 Core file, shell, and skill tools run under `codemode`; their JavaScript results
 contain `content` and `details`. Nested calls retain argument validation, shell
-output limits, error reporting, Context Guard wrapping, and disabled-tool checks.
-`tool_search` stays direct and loads deferred Context Guard and terminal-lane
-tools on demand. Native `searchTools()` and `describeTool()` discover callable
-tools omitted from the inline description. Subagent settings remain in `/xsettings`.
+output limits, error reporting, and disabled-tool checks.
+`tool_search` stays direct and loads deferred tools on demand. Native
+`searchTools()` and `describeTool()` discover callable tools omitted from the
+inline description. Subagent settings remain in `/xsettings`.
 
 Subagents use four slots including the root and allow two levels of children.
 `/spawn` still opens independent terminal lanes. Forking or navigating the tree
@@ -446,69 +446,12 @@ The runner does not auto-merge PRs, monitor merges, perform formal review, recov
 ambiguous publications automatically, or enforce a monetary budget. Per-ticket
 time limits are cooperative for worker/tool operations that support cancellation.
 
-## Context Guard core
+## Command output
 
-The `context-guard` Pi extension is registered by default. Its indexing,
-search, fetch, `cg_process_file`, and `exec_command(mode: "batch")` features
-are backed by the vendored Rust core in `../../crates/context-guard`.
-
-Reviewed upstream source: `luan/agents` at `ec62ad5`.
-
-`./install.sh pi` builds the release binary and links it to
-`~/.local/bin/context-guard`:
-
-```sh
-cargo build --release -p context-guard
-ln -sf "$PWD/target/release/context-guard" ~/.local/bin/context-guard
-```
-
-Pi finds the core in this order:
-
-1. `CONTEXT_GUARD_BIN=/absolute/path/to/context-guard`
-2. `target/release/context-guard` or `target/debug/context-guard` under this repo
-3. `context-guard` on `PATH`
-
-If `~/.local/bin` is not on the environment used to launch Pi, set an explicit
-binary path before starting Pi:
-
-```sh
-export CONTEXT_GUARD_BIN="/path/to/agent-config/target/release/context-guard"
-```
-Verify after restarting Pi:
-
-```text
-/cg-check
-```
-
-Expected installed output includes `[OK] Core binary: ...`. If the binary is
-missing, `cg_check` and `/cg-check` still work and report a clear diagnostic;
-core-backed tools remain unavailable until the binary is installed.
-
-`cg_status` reports measured raw, indexed, returned, and omitted bytes plus
-failures, latency percentiles, indexed-store size, and lifetime telemetry.
-Execution output uses unique internal source IDs, so repeated display labels do
-not overwrite history. Old execution sources are removed by age and store-size
-retention limits.
-
-Run the replay corpus to inspect savings, retrieval recall, latency, and storage
-growth across small output, large logs, long lines, Unicode, failures, mixed
-streams, and repeated labels:
-
-```sh
-cargo test -p context-guard --test replay_benchmark -- --nocapture
-```
-
-Context Guard stores searchable command and fetched content plus operational
-telemetry. It does not infer semantic memory, inject prompts, or create resume
-snapshots.
-
-The Rust core remains a one-shot process with SQLite storage; the replay report
-is the baseline for deciding whether daemon complexity is ever warranted.
-Command deny-pattern parsing is defense in depth, not a sandbox or authorization
-boundary.
-
-`ct` is different: it is Luan's broader Rust CLI. This config no longer requires
-`ct` for `edit` or TUI usage bars.
+`exec_command` runs shell commands directly. Large output stays bounded in the
+conversation, with the full output saved to a private temporary file. Use the
+returned `full_output_path` for targeted reads or `rg` searches. Pi handles
+conversation compaction.
 
 Use `/skill:artifact` when saving a durable plan, review, context map, or report.
 `/skill:review` returns findings in chat. Ordinary coding and PR work can consume

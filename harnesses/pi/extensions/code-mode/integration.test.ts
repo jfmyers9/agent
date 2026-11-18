@@ -32,7 +32,7 @@ test("installed extensions compose local tools and activate deferred tools", asy
 		await writeFile(
 			fixture,
 			`export default function (pi) {
-			pi.registerTool({ name: "cg_status", label: "Fixture status", exposure: "deferred", description: "Inspect fixture index status",
+			pi.registerTool({ name: "fixture_status", label: "Fixture status", exposure: "deferred", description: "Inspect fixture index status",
 				parameters: { type: "object", properties: {} },
 				async execute() { return { content: [{ type: "text", text: "fixture ready" }], details: {} }; }
 			});
@@ -98,7 +98,7 @@ test("installed extensions compose local tools and activate deferred tools", asy
 		expect(active).toContain("codemode");
 		expect(active).toContain("tool_search");
 		for (const name of ["read", "search", "apply_patch", "exec_command", "write_stdin"]) expect(active).toContain(name);
-		expect(active).not.toContain("cg_status");
+		expect(active).not.toContain("fixture_status");
 		expect(active).not.toContain("bash");
 		expect(active).toContain("request_user_input_async");
 		expect(session.getCallableToolNames()).not.toContain("request_user_input_async");
@@ -188,8 +188,8 @@ test("installed extensions compose local tools and activate deferred tools", asy
 							child.prompt = async () => {
 								const childTools = child.getActiveToolNames();
 								expect(childTools).toContain("codemode");
-								expect(childTools).not.toContain("cg_status");
-								expect(child.getCallableToolNames()).toContain("cg_status");
+								expect(childTools).not.toContain("fixture_status");
+								expect(child.getCallableToolNames()).toContain("fixture_status");
 								for (const tool of ["read", "search", "apply_patch", "exec_command", "write_stdin"])
 									expect(childTools).toContain(tool);
 								child.agent.state.messages.push({
@@ -230,10 +230,10 @@ test("installed extensions compose local tools and activate deferred tools", asy
 		expect(
 			JSON.stringify(await invoke("codemode", { code: 'text(await tools.read({path:"sample.txt",raw:true}));' })),
 		).toContain("changed needle");
-		const found = await invoke("tool_search", { query: "cg_status", limit: 1 });
-		expect(JSON.stringify(found)).toContain("cg_status");
-		expect(session.getActiveToolNames()).toContain("cg_status");
-		expect(JSON.stringify(await invoke("cg_status", {}))).toContain("fixture ready");
+		const found = await invoke("tool_search", { query: "fixture_status", limit: 1 });
+		expect(JSON.stringify(found)).toContain("fixture_status");
+		expect(session.getActiveToolNames()).toContain("fixture_status");
+		expect(JSON.stringify(await invoke("fixture_status", {}))).toContain("fixture ready");
 		const beforeQuestion = session.sessionManager.appendCustomEntry("async-test/branch", {});
 		const question = await invoke("request_user_input_async", {
 			questions: [{ title: "Which output format?", options: ["JSON", "Text"] }],

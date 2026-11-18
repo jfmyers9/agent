@@ -145,7 +145,7 @@ plan_pi() {
 	add_link_once "$SCRIPT_DIR/harnesses/pi/extensions/shared" "$dir/extensions/shared"
 	add_clean_dir "$SCRIPT_DIR/harnesses/pi/extensions" "$dir/extensions"
 	add_link "$SCRIPT_DIR/node_modules" "$dir/node_modules"
-	add_link "$SCRIPT_DIR/target/release/context-guard" "$HOME/.local/bin/context-guard"
+	add_clean_dir "$SCRIPT_DIR/target/release" "$HOME/.local/bin"
 }
 
 plan_codex() {
@@ -323,19 +323,9 @@ run_bun_install() {
 	fi
 }
 
-prepare_pi() {
-	if ! command -v cargo >/dev/null 2>&1; then
-		echo "Error: cargo is required to build Context Guard for Pi." >&2
-		exit 1
-	fi
-	run_bun_install
-	echo "Building Context Guard core..."
-	(cd "$SCRIPT_DIR" && cargo build --release -p context-guard)
-}
-
 prepare_install() {
 	case "$HARNESS" in
-	pi | all) prepare_pi ;;
+	pi | all) run_bun_install ;;
 	esac
 }
 
@@ -510,10 +500,6 @@ doctor() {
 	esac
 	case "$HARNESS" in
 	pi | all)
-		command -v cargo >/dev/null 2>&1 || {
-			echo "Missing required command for Pi: cargo" >&2
-			failed=1
-		}
 		if ! command -v mise >/dev/null 2>&1 && ! command -v bun >/dev/null 2>&1; then
 			echo "Missing required command for Pi: mise or bun" >&2
 			failed=1
@@ -530,7 +516,7 @@ doctor() {
 	local source
 	for source in "${SOURCES[@]}"; do
 		case "$source" in
-		"$SCRIPT_DIR/node_modules" | "$SCRIPT_DIR/target/release/context-guard") continue ;;
+		"$SCRIPT_DIR/node_modules") continue ;;
 		esac
 		if [ ! -e "$source" ]; then
 			echo "Missing install source: $source" >&2
@@ -539,10 +525,6 @@ doctor() {
 	done
 	[ -f "$SCRIPT_DIR/package.json" ] || {
 		echo "Missing Pi dependency manifest: $SCRIPT_DIR/package.json" >&2
-		failed=1
-	}
-	[ -f "$SCRIPT_DIR/crates/context-guard/Cargo.toml" ] || {
-		echo "Missing Context Guard crate." >&2
 		failed=1
 	}
 	[ "$failed" -eq 0 ]

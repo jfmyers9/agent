@@ -32,20 +32,15 @@ export function renderExecCommandCall(
 	theme: RenderTheme,
 	failed = false,
 	elapsedMs?: number,
-	contextGuardWrapped = false,
 ): string {
 	const summary = summarizeShellCommand(command);
 	return summary.maskAsExplored
-		? renderExplorationText([summary.actions], state, theme, failed, elapsedMs, contextGuardWrapped)
-		: renderCommandText(command, state, theme, failed, elapsedMs, contextGuardWrapped);
+		? renderExplorationText([summary.actions], state, theme, failed, elapsedMs)
+		: renderCommandText(command, state, theme, failed, elapsedMs);
 }
 
-export function renderSpawnedBackgroundTerminalCall(
-	command: string,
-	theme: RenderTheme,
-	contextGuardWrapped = false,
-): string {
-	return renderCommandText(command, "done", theme, false, undefined, contextGuardWrapped, {
+export function renderSpawnedBackgroundTerminalCall(command: string, theme: RenderTheme): string {
+	return renderCommandText(command, "done", theme, false, undefined, {
 		done: "Spawned background terminal",
 		running: "Spawning background terminal",
 	});
@@ -58,7 +53,7 @@ export function renderUserExecCommandCall(
 	failed = false,
 	elapsedMs?: number,
 ): string {
-	return renderCommandText(command, state, theme, failed, elapsedMs, false, {
+	return renderCommandText(command, state, theme, failed, elapsedMs, {
 		done: "You ran",
 		running: "You are running",
 	});
@@ -70,9 +65,8 @@ export function renderGroupedExecCommandCall(
 	theme: RenderTheme,
 	failed = false,
 	elapsedMs?: number,
-	contextGuardWrapped = false,
 ): string {
-	return renderExplorationText(actionGroups, state, theme, failed, elapsedMs, contextGuardWrapped);
+	return renderExplorationText(actionGroups, state, theme, failed, elapsedMs);
 }
 
 export function renderWriteStdinCall(
@@ -272,17 +266,12 @@ function renderExplorationText(
 	theme: RenderTheme,
 	_failed: boolean,
 	elapsedMs?: number,
-	contextGuardWrapped = false,
 ): string {
 	if (state === "running") {
-		return appendRoutingMarkers(`${theme.fg("dim", runningMarker(elapsedMs))} ${theme.bold("Exploring")}`, theme, {
-			contextGuardWrapped,
-		});
+		return `${theme.fg("dim", runningMarker(elapsedMs))} ${theme.bold("Exploring")}`;
 	}
 
-	let text = appendRoutingMarkers(`${theme.fg("success", "•")} ${theme.bold("Explored")}`, theme, {
-		contextGuardWrapped,
-	});
+	let text = `${theme.fg("success", "•")} ${theme.bold("Explored")}`;
 
 	for (const [index, line] of coalesceReadGroups(actionGroups).map(formatActionLine).entries()) {
 		const prefix = index === 0 ? "  └ " : "    ";
@@ -298,18 +287,13 @@ function renderCommandText(
 	theme: RenderTheme,
 	failed: boolean,
 	elapsedMs?: number,
-	contextGuardWrapped = false,
 	labels: { done: string; running: string } = { done: "Ran", running: "Running" },
 ): string {
 	const verb = state === "running" ? labels.running : labels.done;
 	const marker = state === "running" ? runningMarker(elapsedMs) : "•";
 	const [firstLine = "", ...continuationLines] = wrapCommandForDisplay(stripShellWrapper(command));
 	let text = appendElapsed(
-		appendRoutingMarkers(
-			`${renderStatusMarker(marker, state, theme, failed)} ${theme.bold(verb)} ${highlightShellCommand(firstLine, theme)}`,
-			theme,
-			{ contextGuardWrapped },
-		),
+		`${renderStatusMarker(marker, state, theme, failed)} ${theme.bold(verb)} ${highlightShellCommand(firstLine, theme)}`,
 		state,
 		theme,
 		elapsedMs,
@@ -318,19 +302,6 @@ function renderCommandText(
 		text += `\n${theme.fg("dim", "    ")}${highlightShellCommand(line, theme)}`;
 	}
 	return text;
-}
-
-function appendRoutingMarkers(
-	text: string,
-	theme: Pick<RenderTheme, "fg">,
-	options: { contextGuardWrapped?: boolean },
-): string {
-	if (!options.contextGuardWrapped) return text;
-	return `${text}${theme.fg("dim", " · ")}${theme.fg("mdLink", italic("via context-guard"))}`;
-}
-
-function italic(text: string): string {
-	return `\x1b[3m${text}\x1b[23m`;
 }
 
 function appendElapsed(

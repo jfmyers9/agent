@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
 import { execSync } from "node:child_process";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import execCommandExtension from "./index.ts";
 import { createExecSessionManager } from "./tools/exec-session-manager.ts";
 import { boundShellToolResult } from "./tools/output-truncation.ts";
@@ -102,7 +99,7 @@ test("uses process_id and suppresses a queued completion consumed by write_stdin
 			.get("exec_command")
 			.execute(
 				"call-process-id",
-				{ cmd: 'read line; printf "got:$line"', tty: true, yield_time_ms: 250, context_guard: false },
+				{ cmd: 'read line; printf "got:$line"', tty: true, yield_time_ms: 250 },
 				undefined,
 				undefined,
 				ctx,
@@ -137,7 +134,7 @@ test("emits exactly one delayed follow-up for idle background completion", async
 			.get("exec_command")
 			.execute(
 				"call-idle-completion",
-				{ cmd: "sleep 0.3; printf DONE", yield_time_ms: 250, context_guard: false },
+				{ cmd: "sleep 0.3; printf DONE", yield_time_ms: 250 },
 				undefined,
 				undefined,
 				ctx,
@@ -163,7 +160,7 @@ test("does not wake the agent for background completion during an active turn", 
 			.get("exec_command")
 			.execute(
 				"call-active-turn",
-				{ cmd: "sleep 0.3; printf ACTIVE_OK", yield_time_ms: 250, context_guard: false },
+				{ cmd: "sleep 0.3; printf ACTIVE_OK", yield_time_ms: 250 },
 				undefined,
 				undefined,
 				ctx,
@@ -226,7 +223,7 @@ test("Escape aborts a foreground exec_command", async () => {
 			.get("exec_command")
 			.execute(
 				"call-escape",
-				{ cmd: "sleep 60", yield_time_ms: 120_000, context_guard: false },
+				{ cmd: "sleep 60", yield_time_ms: 120_000 },
 				controller.signal,
 				undefined,
 				ctx,
@@ -243,122 +240,23 @@ test("Escape aborts a foreground exec_command", async () => {
 	}
 });
 
-test("AbortSignal cancels a context_guard:true exec command", async () => {
-	const originalCoreBin = process.env.CONTEXT_GUARD_BIN;
-	const dir = mkdtempSync(join(tmpdir(), "exec-command-context-guard-abort-"));
-	const coreBin = join(dir, "context-guard-core.js");
-	const marker = join(dir, "started");
-	writeFileSync(
-		coreBin,
-		[
-			`#!${process.execPath}`,
-			'let input = "";',
-			'process.stdin.on("data", chunk => input += chunk);',
-			'process.stdin.on("end", () => {',
-			"  const request = JSON.parse(input);",
-			'  if (request.command !== "batch") {',
-			'    process.stdout.write(JSON.stringify({ content: [{ type: "text", text: "{}" }] }));',
-			"    return;",
-			"  }",
-			`  require("node:fs").writeFileSync(${JSON.stringify(marker)}, "yes");`,
-			"  setInterval(() => {}, 1000);",
-			"});",
-		].join("\n"),
-	);
-	chmodSync(coreBin, 0o755);
-	process.env.CONTEXT_GUARD_BIN = coreBin;
-	const { handlers, tools } = createExtensionHarness();
-	const ctx = baseContext();
-	const controller = new AbortController();
-	emit(handlers, "session_start", undefined, ctx);
-	try {
-		const execution = tools
-			.get("exec_command")
-			.execute("call-context-guard-abort", { cmd: "sleep 60", context_guard: true }, controller.signal, undefined, ctx);
-		await waitForCondition(() => Bun.file(marker).size > 0);
-
-		controller.abort();
-		const result = await execution;
-
-		expect(result.isError).toBe(true);
-		expect(result.content[0]?.text).toContain("Context Guard core cancelled");
-	} finally {
-		emit(handlers, "session_shutdown", undefined, ctx);
-		if (originalCoreBin === undefined) delete process.env.CONTEXT_GUARD_BIN;
-		else process.env.CONTEXT_GUARD_BIN = originalCoreBin;
-	}
-});
-
-test("AbortSignal cancels explicit Context Guard batch mode", async () => {
-	const originalCoreBin = process.env.CONTEXT_GUARD_BIN;
-	const dir = mkdtempSync(join(tmpdir(), "exec-command-batch-abort-"));
-	const coreBin = join(dir, "context-guard-core.js");
-	const marker = join(dir, "started");
-	writeFileSync(
-		coreBin,
-		[
-			`#!${process.execPath}`,
-			'let input = "";',
-			'process.stdin.on("data", chunk => input += chunk);',
-			'process.stdin.on("end", () => {',
-			"  const request = JSON.parse(input);",
-			'  if (request.command === "session") {',
-			'    process.stdout.write(JSON.stringify({ content: [{ type: "text", text: "{}" }] }));',
-			"    return;",
-			"  }",
-			`  require("node:fs").writeFileSync(${JSON.stringify(marker)}, "yes");`,
-			"  setInterval(() => {}, 1000);",
-			"});",
-		].join("\n"),
-	);
-	chmodSync(coreBin, 0o755);
-	process.env.CONTEXT_GUARD_BIN = coreBin;
-	const { handlers, tools } = createExtensionHarness();
-	const ctx = baseContext();
-	const controller = new AbortController();
-	emit(handlers, "session_start", undefined, ctx);
-	try {
-		const execution = tools
-			.get("exec_command")
-			.execute(
-				"call-batch-abort",
-				{ mode: "batch", commands: [{ label: "sleep", command: "sleep 60" }] },
-				controller.signal,
-				undefined,
-				ctx,
-			);
-		await waitForCondition(() => Bun.file(marker).size > 0);
-
-		controller.abort();
-		const result = await execution;
-
-		expect(result.isError).toBe(true);
-		expect(result.content[0]?.text).toContain("Context Guard core cancelled");
-	} finally {
-		emit(handlers, "session_shutdown", undefined, ctx);
-		if (originalCoreBin === undefined) delete process.env.CONTEXT_GUARD_BIN;
-		else process.env.CONTEXT_GUARD_BIN = originalCoreBin;
-	}
-});
-
 test("shutdown terminates descendants that escaped the shell process group", async () => {
 	const marker = `exec-command-descendant-${process.pid}-${Date.now()}`;
-	const sessions = createExecSessionManager({ defaultExecYieldTimeMs: 250 });
+	const sessions = createExecSessionManager({ defaultExecYieldTimeMs: 250, minNonInteractiveExecYieldTimeMs: 250 });
 	const childCode = [
-		"import signal,time",
-		"signal.signal(signal.SIGTERM, signal.SIG_IGN)",
-		"signal.signal(signal.SIGHUP, signal.SIG_IGN)",
-		"time.sleep(30)",
+		'process.on("SIGTERM", () => {})',
+		'process.on("SIGHUP", () => {})',
+		"setTimeout(() => {}, 30_000)",
 	].join("; ");
 	const parentCode = [
-		"import subprocess,time",
-		`p=subprocess.Popen(["python3","-c",${JSON.stringify(childCode)},${JSON.stringify(`${marker}-child`)}], start_new_session=True)`,
-		'print("child="+str(p.pid), flush=True)',
-		"time.sleep(30)",
+		'const { spawn } = require("node:child_process")',
+		`const child = spawn(${JSON.stringify(process.execPath)}, ["-e", ${JSON.stringify(childCode)}, ${JSON.stringify(`${marker}-child`)}], { detached: true, stdio: "ignore" })`,
+		'console.log("child=" + child.pid)',
+		"setTimeout(() => {}, 30_000)",
 	].join("; ");
 	try {
 		const result = await sessions.exec(
-			{ cmd: `python3 -c ${shellQuote(parentCode)} ${shellQuote(`${marker}-parent`)}`, yield_time_ms: 250 },
+			{ cmd: `${shellQuote(process.execPath)} -e ${shellQuote(parentCode)} ${shellQuote(`${marker}-parent`)}`, yield_time_ms: 250 },
 			process.cwd(),
 		);
 		expect(result.process_id).toBeNumber();

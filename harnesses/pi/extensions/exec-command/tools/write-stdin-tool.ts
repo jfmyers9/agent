@@ -36,6 +36,7 @@ interface FormattedExecTranscript {
 	stdinOpen?: boolean;
 	originalTokenCount?: number;
 	outputTruncated?: boolean;
+	fullOutputPath?: string;
 }
 
 function parseFormattedExecTranscript(text: string): FormattedExecTranscript {
@@ -99,6 +100,7 @@ function getResultState(result: {
 			stdinOpen: details.stdin_open,
 			originalTokenCount: details.original_token_count,
 			outputTruncated: details.output_truncated,
+			fullOutputPath: details.full_output_path,
 		};
 	}
 	if (content?.type === "text") {
@@ -242,7 +244,7 @@ export function registerWriteStdinTool(
 					return createEmptyResultComponent();
 				}
 				const output = renderTerminalText(state.output);
-				const footer =
+				let footer =
 					state.processId !== undefined
 						? `${theme.fg("accent", `Process ${state.processId} still running`)}${
 								state.stdinOpen ? `${theme.fg("dim", " · ")}${theme.fg("mdLink", "tty")}` : ""
@@ -250,6 +252,9 @@ export function registerWriteStdinTool(
 						: state.exitCode !== undefined && state.exitCode !== 0
 							? theme.fg("muted", `Exit code: ${state.exitCode}`)
 							: undefined;
+				if (state.outputTruncated && state.fullOutputPath) {
+					footer = [footer, theme.fg("muted", `Full output: ${state.fullOutputPath}`)].filter(Boolean).join("\n");
+				}
 				return renderExecCellComponent(
 					{
 						kind: "write-stdin",

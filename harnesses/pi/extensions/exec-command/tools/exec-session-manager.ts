@@ -1,7 +1,9 @@
 // @ts-nocheck
 import { type ChildProcessByStdio, execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { resolve } from "node:path";
+import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import * as pty from "node-pty";
 import { DEFAULT_EXEC_SHELL, isFishShell, resolveRuntimeShell } from "../adapter/runtime-shell.ts";
@@ -28,6 +30,7 @@ export interface UnifiedExecResult {
 	stdin_open?: boolean;
 	original_token_count?: number;
 	output_truncated?: boolean;
+	full_output_path?: string;
 }
 
 export interface ExecSessionSnapshot {
@@ -43,6 +46,7 @@ export interface ExecSessionSnapshot {
 	elapsedMs: number;
 	originalTokenCount?: number;
 	outputTruncated: boolean;
+	fullOutputPath?: string;
 }
 
 export interface ExecSessionRecord {
@@ -77,6 +81,8 @@ interface BaseExecSession {
 	id: number;
 	command: string;
 	buffer: string;
+	outputPath: string;
+	outputError?: string;
 	pendingBuffer: string;
 	emittedBuffer: string;
 	exitCode: number | null | undefined;
@@ -427,6 +433,12 @@ function computePtyDelta(previous: string, current: string): string {
 	return current;
 }
 
+function createOutputFile(): string {
+	const path = join(mkdtempSync(join(tmpdir(), "pi-exec-")), "output.log");
+	writeFileSync(path, "", { mode: 0o600, flag: "wx" });
+	return path;
+}
+
 function generateChunkId(): string {
 	return randomBytes(3).toString("hex");
 }
@@ -650,9 +662,9 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 		sessionError?: string,
 	): void {
 		if (session.terminalState !== undefined) return;
-		session.terminalState = terminalState;
-		session.exitCode = terminalState === "exited" ? (exitCode ?? 0) : undefined;
-		session.sessionError = sessionError;
+		session.sessionError = session.outputError ?? sessionError;
+		session.terminalState = session.sessionError ? "session_error" : terminalState;
+		session.exitCode = session.terminalState === "exited" ? (exitCode ?? 0) : undefined;
 		finalizeSession(session);
 	}
 
@@ -667,8 +679,18 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 		}
 	}
 
-	function appendOutput(session: ExecSession, text: string): void {
-		if (text.length === 0) return;
+	function appendOutput(session: ExecSession, data: string | Buffer): void {
+		if (data.length === 0) return;
+		if (!session.outputError) {
+			try {
+				// Save raw output before terminal normalization or any in-memory truncation.
+				appendFileSync(session.outputPath, data);
+			} catch (error) {
+				session.outputError = `Could not save command output: ${error instanceof Error ? error.message : String(error)}`;
+				terminateSession(session);
+			}
+		}
+		const text = typeof data === "string" ? data : data.toString("utf8");
 		const previous = session.buffer;
 		if (session.kind === "pty") {
 			session.buffer = applyTerminalOutput(session, text);
@@ -720,6 +742,7 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 			chunk_id: generateChunkId(),
 			wall_time_seconds: waitMs / 1000,
 			output: consumed.output,
+			full_output_path: session.outputError ? undefined : session.outputPath,
 		};
 		if (consumed.original_token_count !== undefined) {
 			result.original_token_count = consumed.original_token_count;
@@ -745,6 +768,7 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 			chunk_id: generateChunkId(),
 			wall_time_seconds: (Date.now() - startedAtMs) / 1000,
 			output: truncated.output,
+			full_output_path: session.outputError ? undefined : session.outputPath,
 		};
 		if (truncated.output_truncated) {
 			result.output_truncated = true;
@@ -805,6 +829,7 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 		const login = input.login ?? true;
 		const execution = resolveExecution(input.shell, input.cmd);
 		const shellArgs = login ? ["-lc", execution.command] : ["-c", execution.command];
+		const outputPath = createOutputFile();
 		const child = spawn(shell, shellArgs, {
 			cwd: workdir,
 			stdio: [input.tty ? "pipe" : "ignore", "pipe", "pipe"],
@@ -818,6 +843,7 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 			command: input.cmd,
 			child,
 			buffer: "",
+			outputPath,
 			pendingBuffer: "",
 			emittedBuffer: "",
 			exitCode: undefined,
@@ -832,10 +858,10 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 		};
 
 		child.stdout.on("data", (data: Buffer) => {
-			appendOutput(session, data.toString("utf8"));
+			appendOutput(session, data);
 		});
 		child.stderr.on("data", (data: Buffer) => {
-			appendOutput(session, data.toString("utf8"));
+			appendOutput(session, data);
 		});
 		child.on("close", (code) => {
 			completeSession(session, session.pendingTerminalState ?? "exited", code ?? 0);
@@ -862,6 +888,7 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 		const login = input.login ?? true;
 		const execution = resolveExecution(input.shell, input.cmd);
 		const shellArgs = login ? ["-lc", execution.command] : ["-c", execution.command];
+		const outputPath = createOutputFile();
 		const child = pty.spawn(shell, shellArgs, {
 			cwd: workdir,
 			env: execution.env,
@@ -876,6 +903,7 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 			command: input.cmd,
 			child,
 			buffer: "",
+			outputPath,
 			pendingBuffer: "",
 			emittedBuffer: "",
 			exitCode: undefined,
@@ -999,6 +1027,7 @@ export function createExecSessionManager(options: ExecSessionManagerOptions = {}
 				elapsedMs: Date.now() - session.startedAtMs,
 				originalTokenCount: truncated.output_truncated ? approxTokenCount(session.buffer) : undefined,
 				outputTruncated: truncated.output_truncated === true,
+				fullOutputPath: session.outputError ? undefined : session.outputPath,
 			};
 		},
 		listSessions: () =>

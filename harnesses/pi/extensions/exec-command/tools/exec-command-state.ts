@@ -7,7 +7,6 @@ export interface ExecCommandRenderInfo {
 	status: ExecCommandStatus;
 	actionGroups?: ShellAction[][];
 	elapsedMs?: number;
-	contextGuardWrapped?: boolean;
 	sessionId?: number;
 }
 
@@ -18,7 +17,6 @@ interface ExecEntry {
 	status: ExecCommandStatus;
 	hidden: boolean;
 	startedAtMs: number;
-	contextGuardWrapped: boolean;
 	sessionId?: number;
 	groupId?: number;
 	invalidate?: () => void;
@@ -36,7 +34,6 @@ export interface ExecCommandTracker {
 	registerRenderContext(toolCallId: string | undefined, invalidate: () => void): void;
 	ensurePlannedExploration(toolCallId: string | undefined, command: string): void;
 	recordStart(toolCallId: string, command: string): void;
-	recordContextGuardWrapped(toolCallId: string): void;
 	recordPersistentSession(toolCallId: string, sessionId: number): void;
 	recordEnd(toolCallId: string): void;
 	recordSessionFinished(sessionId: number): void;
@@ -48,7 +45,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 	const commandByToolCallId = new Map<string, string>();
 	const runningCountsByCommand = new Map<string, number>();
 	const sessionBackedToolCallIds = new Set<string>();
-	const contextGuardWrappedToolCallIds = new Set<string>();
 	const toolCallIdBySessionId = new Map<number, string>();
 	const entriesByToolCallId = new Map<string, ExecEntry>();
 	const groupsById = new Map<number, ExecGroup>();
@@ -101,7 +97,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 				return {
 					hidden: false,
 					status: (runningCountsByCommand.get(command) ?? 0) > 0 ? "running" : "done",
-					contextGuardWrapped: contextGuardWrappedToolCallIds.has(toolCallId),
 				};
 			}
 
@@ -110,7 +105,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 					hidden: true,
 					status: entry.status,
 					elapsedMs: getElapsedMs([entry]),
-					contextGuardWrapped: entry.contextGuardWrapped,
 					sessionId: entry.sessionId,
 				};
 			}
@@ -122,7 +116,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 					status: entry.status,
 					actionGroups: entry.summary.maskAsExplored ? [entry.summary.actions] : undefined,
 					elapsedMs: getElapsedMs([entry]),
-					contextGuardWrapped: entry.contextGuardWrapped,
 					sessionId: entry.sessionId,
 				};
 			}
@@ -135,7 +128,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 				status: entries.some((groupEntry) => groupEntry.status === "running") ? "running" : "done",
 				actionGroups: entries.map((groupEntry) => groupEntry.summary.actions),
 				elapsedMs: getElapsedMs(entries),
-				contextGuardWrapped: entries.some((groupEntry) => groupEntry.contextGuardWrapped),
 			};
 		},
 		registerRenderContext(toolCallId, invalidate) {
@@ -156,7 +148,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 				status: "running",
 				hidden: false,
 				startedAtMs: Date.now(),
-				contextGuardWrapped: contextGuardWrappedToolCallIds.has(toolCallId),
 			};
 			entriesByToolCallId.set(toolCallId, entry);
 
@@ -203,7 +194,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 				status: "running",
 				hidden: false,
 				startedAtMs: Date.now(),
-				contextGuardWrapped: contextGuardWrappedToolCallIds.has(toolCallId),
 			};
 			entriesByToolCallId.set(toolCallId, entry);
 
@@ -229,14 +219,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 			entry.hidden = true;
 			entry.groupId = group.id;
 			invalidateToolCall(group.visibleEntryId);
-		},
-		recordContextGuardWrapped(toolCallId) {
-			contextGuardWrappedToolCallIds.add(toolCallId);
-			const entry = entriesByToolCallId.get(toolCallId);
-			if (!entry || entry.contextGuardWrapped) return;
-			entry.contextGuardWrapped = true;
-			const group = getGroupForEntry(entry);
-			invalidateToolCall(group?.visibleEntryId ?? entry.toolCallId);
 		},
 		recordPersistentSession(toolCallId, sessionId) {
 			sessionBackedToolCallIds.add(toolCallId);
@@ -281,7 +263,6 @@ export function createExecCommandTracker(): ExecCommandTracker {
 			commandByToolCallId.clear();
 			runningCountsByCommand.clear();
 			sessionBackedToolCallIds.clear();
-			contextGuardWrappedToolCallIds.clear();
 			toolCallIdBySessionId.clear();
 			entriesByToolCallId.clear();
 			groupsById.clear();

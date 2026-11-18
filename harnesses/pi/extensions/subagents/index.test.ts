@@ -79,7 +79,7 @@ test("child tool selection preserves the parent allowlist and child deactivation
 	const runner = await import(new URL("./runtime/agent-runner.ts", import.meta.resolve("@luan.sh/pi-subagents")).href);
 	expect(
 		runner.resolveChildActiveToolNames(
-			["codemode", "read", "apply_patch", "cg_status"],
+			["codemode", "read", "apply_patch", "fixture_status"],
 			["codemode", "read", "unrelated_tool"],
 		),
 	).toEqual(["codemode", "read"]);
@@ -110,7 +110,7 @@ test("children retain inactive callable tools without activating them", async ()
 				getAllTools: () => [
 					{ name: "read", exposure: "direct" },
 					{ name: "spawn_agent", exposure: "codemode" },
-					{ name: "cg_status", exposure: "deferred" },
+					{ name: "fixture_status", exposure: "deferred" },
 					{ name: "disabled_tool", exposure: "direct" },
 				],
 				getThinkingLevel: () => "off",
@@ -119,7 +119,7 @@ test("children retain inactive callable tools without activating them", async ()
 		},
 		false,
 	);
-	expect(prepared.toolNames).toEqual(["codemode", "read", "spawn_agent", "cg_status"]);
+	expect(prepared.toolNames).toEqual(["codemode", "read", "spawn_agent", "fixture_status"]);
 	expect(prepared.parentActiveToolNames).toEqual(activeTools);
 	// The SDK initially activates explicit tools; restore the parent's active subset.
 	expect(runner.resolveChildActiveToolNames(prepared.parentActiveToolNames, prepared.toolNames)).toEqual(activeTools);

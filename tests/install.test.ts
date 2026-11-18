@@ -55,13 +55,11 @@ function piCheckout(home: string) {
 	for (const source of ["install.sh", "global", "rules", "skills", "bin", "harnesses"]) {
 		symlinkSync(join(root, source), join(checkout, source));
 	}
-	// Exercise installation without downloading packages or rebuilding Rust.
+	// Exercise installation without downloading packages.
 	mkdirSync(join(checkout, "node_modules"));
-	mkdirSync(join(checkout, "target/release"), { recursive: true });
-	writeFileSync(join(checkout, "target/release/context-guard"), "fixture\n");
 	const buildBin = join(home, "build-bin");
 	mkdirSync(buildBin);
-	for (const command of ["mise", "bun", "cargo"]) {
+	for (const command of ["mise", "bun"]) {
 		writeFileSync(join(buildBin, command), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
 	}
 	return { checkout, environment: { PATH: `${buildBin}:${process.env.PATH}` } };
@@ -142,7 +140,7 @@ describe("installer safety", () => {
 		expect(() => readFileSync(join(paths.claude, "AGENTS.md"))).toThrow();
 	});
 
-	test("Pi cleanup prunes stale owned extension links", () => {
+	test("Pi cleanup prunes stale owned extension and helper links", () => {
 		const paths = workspace();
 		const extensions = join(paths.pi, "extensions");
 		mkdirSync(extensions, { recursive: true });
@@ -153,19 +151,29 @@ describe("installer safety", () => {
 		mkdirSync(foreignTarget);
 		const foreign = join(extensions, "foreign-extension");
 		symlinkSync(foreignTarget, foreign);
+		const bin = join(paths.home, ".local/bin");
+		mkdirSync(bin, { recursive: true });
+		const staleHelper = join(bin, "old-helper");
+		symlinkSync(join(root, "target/release/old-helper"), staleHelper);
+		const foreignHelper = join(bin, "foreign-helper");
+		symlinkSync(foreignTarget, foreignHelper);
 
 		const dryRun = install("dry-run", "pi", paths);
 		expect(dryRun.status).toBe(0);
 		expect(dryRun.stdout).toContain(`Would remove stale: ${stale}`);
+		expect(dryRun.stdout).toContain(`Would remove stale: ${staleHelper}`);
 		expect(dryRun.stdout).toContain(join(extensions, "async-questions"));
 		expect(dryRun.stdout).toContain(join(extensions, "collapse-transcript"));
 		expect(lstatSync(stale).isSymbolicLink()).toBe(true);
+		expect(lstatSync(staleHelper).isSymbolicLink()).toBe(true);
 
 		const unlink = install("unlink", "pi", paths);
 		expect(unlink.status).toBe(0);
 		expect(unlink.stdout).toContain(`Unlinked stale: ${stale}`);
 		expect(existsSync(stale)).toBe(false);
+		expect(() => lstatSync(staleHelper)).toThrow();
 		expect(lstatSync(foreign).isSymbolicLink()).toBe(true);
+		expect(lstatSync(foreignHelper).isSymbolicLink()).toBe(true);
 	});
 
 	test("Codex mutable config is seeded once and preserved", () => {

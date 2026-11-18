@@ -43,7 +43,6 @@ Environment overrides:
 - Python 3 for Claude statusline only
 - macOS Keychain only for Claude quota statusline enrichment
 - Codex CLI (`codex`) for the Codex adapter
-- Rust/Cargo for the Pi Context Guard core
 - Pi 1.0.0 or newer for built-in Code Mode and tool search
 - [mise](https://mise.jdx.dev/) for the pinned Bun toolchain
 - [just](https://just.systems/) for local development commands
@@ -57,8 +56,7 @@ just check
 ```
 
 `just check` is non-mutating. It validates shell syntax, skill frontmatter and
-references, Biome lint rules, TypeScript, Rust formatting and lints, and the
-Rust and Bun tests.
+references, Biome lint rules, TypeScript, and Bun tests.
 
 ## Layout
 
@@ -72,8 +70,6 @@ install.sh                 # harness-aware installer
 bin/blueprint              # portable artifact storage CLI
 bin/git-surgeon.ts         # deterministic selective-hunk Git CLI
 bin/validate-skills.ts     # repository skill schema/reference validator
-Cargo.toml                  # Rust workspace for vendored helper binaries
-crates/context-guard/       # Pi Context Guard Rust core
 rules/                     # shared coding/workflow rules
 skills/                    # Agent Skills packages
 harnesses/
@@ -145,7 +141,6 @@ Installed by `./install.sh pi` into `~/.pi/agent`:
 - links Pi `keybindings.json` and `tui.json` when present
 - links Pi extensions named in `settings.json`, plus shared extension support, and prunes stale owned extension links
 - installs `blueprint` and `git-surgeon` to `~/.local/bin`
-- builds `crates/context-guard` and links `context-guard` to `~/.local/bin`
 - installs pinned package dependencies and enables Pi's built-in Code Mode
 
 Pi composes the existing file, shell, and skill tools through `codemode`, discovers
